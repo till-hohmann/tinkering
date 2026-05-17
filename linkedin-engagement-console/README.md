@@ -8,9 +8,9 @@ A self-contained HTML console that turns your daily LinkedIn engagement pass int
 
 The console renders three columns:
 
-- **Comments** — top-N posts from your feed and tracked peer companies, each with a draft comment in your voice, a "why this matters" line, and one-click open + copy + redraft + done + skip actions.
-- **Engage with** — profiles worth following or connecting with, with a one-liner reason.
-- **Post Ideas** — own-content angles grounded in your recent activity, with hook and supporting paragraph.
+- **Comments**. Top-N posts from your feed and tracked peer companies, each with a draft comment in your voice, a "why this matters" line, and one-click open + copy + redraft + done + skip actions.
+- **Engage with**. Profiles worth following or connecting with, with a one-liner reason.
+- **Post Ideas**. Own-content angles grounded in your recent activity, with hook and supporting paragraph.
 
 State persists in `localStorage`, so cards you mark done or skip stay out of view across sessions.
 
@@ -60,7 +60,7 @@ cd tinkering/linkedin-engagement-console
 
 ```bash
 cp strategy.template.md linkedin-strategy.md
-# Edit linkedin-strategy.md — fill in your lenses, personas, skip patterns.
+# Edit linkedin-strategy.md. Fill in your lenses, personas, skip patterns.
 ```
 
 `linkedin-strategy.md` is in `.gitignore` so your real strategy never leaves your machine.
@@ -111,7 +111,7 @@ Open `index.html` in your LLM client's artifact viewer. The demo data ships with
 ```
 linkedin-engagement-console/
 ├── README.md                # this file
-├── index.html               # the console — one file, no build step
+├── index.html               # the console (one file, no build step)
 ├── strategy.template.md     # template for linkedin-strategy.md (gitignored when filled)
 ├── skill.template.md        # the orchestration skill the LLM runs
 └── examples/
@@ -122,11 +122,11 @@ linkedin-engagement-console/
 
 The `<script id="briefing-data">` block in `index.html` is parsed at load. Your skill replaces it. See `examples/example-data.json` for the canonical shape. Fields:
 
-- `generated_at` — ISO 8601 timestamp
-- `posts_scanned` — integer, shown in header
-- `comments[]` — `{ url, author, company?, lens, score, why, draft }`
-- `engage[]` — `{ name, profile_hint, reason, lens }`
-- `post_ideas[]` — `{ angle, hook, supporting }`
+- `generated_at`: ISO 8601 timestamp
+- `posts_scanned`: integer, shown in header
+- `comments[]`: `{ url, author, company?, lens, score, why, draft }`
+- `engage[]`: `{ name, profile_hint, reason, lens }`
+- `post_ideas[]`: `{ angle, hook, supporting }`
 
 `lens` must be one of the keys in `PERSONA.lensPostures` (`biotech`, `ai_builder`, `operator`, `vc` by default). Add or rename keys to match your own lenses; the lens chip color CSS in `index.html` covers those four.
 
@@ -134,7 +134,7 @@ The `<script id="briefing-data">` block in `index.html` is parsed at load. Your 
 
 LinkedIn is a real channel for operator-credibility but has a high noise-to-signal ratio. Most engagement tools optimise for volume; this one optimises for the opposite. The point is to put 3-4 substantive comments and 1-2 connect requests on the right posts each day, grounded in what you actually did this week, and skip everything else without the algorithm grinding you down.
 
-The hardest part of "draft a comment in my voice" is not voice — it's that the LLM has no idea what you did this week. Generic operator-speak ("real partner deals replacing pilot grants") reads as authentic to nobody. The mandatory grounding step in `skill.template.md` is the load-bearing part of the architecture.
+The hardest part of "draft a comment in my voice" is not voice. It's that the LLM has no idea what you did this week. Generic operator-speak ("real partner deals replacing pilot grants") reads as authentic to nobody. The mandatory grounding step in `skill.template.md` is the load-bearing part of the architecture.
 
 ## Customization
 
@@ -156,4 +156,4 @@ MIT. See top-level [LICENSE](../LICENSE).
 
 ## Contributing
 
-If you fork this and ship a meaningful variant — different industry, different lens model, different LLM stack — open an issue with a link. Happy to point to it from this README.
+If you fork this and ship a meaningful variant (different industry, different lens model, different LLM stack), open an issue with a link. Happy to point to it from this README.

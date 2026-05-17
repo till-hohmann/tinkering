@@ -4,13 +4,13 @@ Small AI-assisted operator tools, released as I build them. Each subfolder is a 
 
 ## What's here
 
-- **[linkedin-engagement-console](./linkedin-engagement-console/)** — daily LinkedIn engagement console. Pulls feed + peer-company posts via an MCP server, drafts comments grounded in your own recent activity, surfaces profiles to engage with, proposes own-content angles. Renders as a single self-contained HTML page in LinkedIn brand colors.
+- **[linkedin-engagement-console](./linkedin-engagement-console/)**. Daily LinkedIn engagement console. Pulls feed + peer-company posts via an MCP server, drafts comments grounded in your own recent activity, surfaces profiles to engage with, proposes own-content angles. Renders as a single self-contained HTML page in LinkedIn brand colors.
 
 More to come as I open-source pieces of my own operator stack.
 
 ## Philosophy
 
-These are tools I use myself. Each one solves a real workflow problem I had. The release is the sanitized version — voice and data placeholders where my own context used to be — but the architectural pattern is what was actually battle-tested.
+These are tools I use myself. Each one solves a real workflow problem I had. The release is the sanitized version, with voice and data placeholders where my own context used to be. The architectural pattern is what was actually battle-tested.
 
 A few patterns recur across projects:
 
@@ -26,4 +26,4 @@ Each project is MIT-licensed. See the top-level [LICENSE](./LICENSE) file.
 
 Issues and PRs welcome. If you fork a project and make it your own, I'd love to hear about it.
 
-— [@till-hohmann](https://github.com/till-hohmann)
+By [@till-hohmann](https://github.com/till-hohmann).
