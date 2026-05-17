@@ -4,7 +4,7 @@ Small AI-assisted operator tools, released as I build them. Each subfolder is a 
 
 ## What's here
 
-- **[linkedin-engagement-console](./linkedin-engagement-console/)**. Daily LinkedIn engagement console. Pulls feed + peer-company posts via an MCP server, drafts comments grounded in your own recent activity, surfaces profiles to engage with, proposes own-content angles. Renders as a single self-contained HTML page in LinkedIn brand colors.
+- **[linkedin-engagement-console](./linkedin-engagement-console/)**. Daily LinkedIn engagement console. Pulls feed + peer-company posts via an MCP server, drafts comments grounded in your own recent activity, surfaces profiles to engage with, proposes own-content angles. Renders as a single self-contained HTML page in LinkedIn brand colors. **Not a developer?** Start with the [step-by-step getting-started guide](./linkedin-engagement-console/GETTING_STARTED.md).
 
 More to come as I open-source pieces of my own operator stack.
 

@@ -4,6 +4,10 @@ A self-contained HTML console that turns your daily LinkedIn engagement pass int
 
 ![LinkedIn-blue cards, three columns: Comments, Engage with, Post Ideas.](./preview.png)
 
+> **New here?** Read **[GETTING_STARTED.md](./GETTING_STARTED.md)** first. Step-by-step setup for non-developers, with two tracks: one for Claude Cowork (desktop app) and one for Claude Code (terminal). 30 minutes to first use.
+>
+> The rest of this README is the technical reference: architecture, data shape, customization.
+
 ## What it does
 
 The console renders three columns:
