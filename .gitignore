@@ -1,0 +1,47 @@
+# Auth and session state - NEVER commit
+.linkedin_session.json
+.linkedin_cookies.json
+.env
+.env.*
+*.token
+*_credentials.json
+session_*.json
+cookies.txt
+
+# Your own private context files (these stay local)
+identity.md
+voice.md
+anti-patterns.md
+linkedin-strategy.md
+my-strategy.md
+
+# Live data outputs (regenerate from scratch each session)
+briefing-*.md
+*_engagement_brief.md
+out/
+data/
+.cache/
+
+# OS junk
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Editor
+.idea/
+.vscode/
+*.iml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*

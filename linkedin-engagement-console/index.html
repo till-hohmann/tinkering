@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LinkedIn Engagement Console</title>
+<style>
+  :root {
+    color-scheme: light;
+    --li-blue: #0A66C2;
+    --li-blue-dark: #004182;
+    --li-blue-light: #E7F0F9;
+    --li-bg: #F4F2EE;
+    --li-card: #FFFFFF;
+    --li-border: #E0DFDC;
+    --li-text: #1D2226;
+    --li-text-muted: #666666;
+    --li-text-subtle: #8E8E8E;
+    --li-done-bg: #E7F3EC;
+    --li-done-border: #A0D2B4;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: var(--li-text); background: var(--li-bg); line-height: 1.45; padding: 16px 20px 40px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--li-border); margin-bottom: 16px; flex-wrap: wrap; }
+  header .title-wrap { display: flex; align-items: center; gap: 10px; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; color: var(--li-text); }
+  header .sub { font-size: 12px; color: var(--li-text-muted); margin-top: 2px; }
+  .li-mark { display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
+  .li-mark svg { display: block; }
+  .controls { display: flex; gap: 8px; align-items: center; }
+  button { font-family: inherit; font-size: 13px; border: 1px solid var(--li-border); background: var(--li-card); color: var(--li-text); padding: 6px 14px; border-radius: 20px; cursor: pointer; font-weight: 500; }
+  button:hover:not(:disabled) { background: var(--li-blue-light); border-color: var(--li-blue); color: var(--li-blue); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary { background: var(--li-blue); color: #fff; border-color: var(--li-blue); }
+  button.primary:hover:not(:disabled) { background: var(--li-blue-dark); border-color: var(--li-blue-dark); color: #fff; }
+  button.tiny { padding: 3px 10px; font-size: 11px; border-radius: 14px; }
+  a.btn-link { display: inline-block; font-family: inherit; font-size: 13px; border: 1px solid var(--li-border); background: var(--li-card); color: var(--li-text); padding: 6px 14px; border-radius: 20px; cursor: pointer; text-decoration: none; font-weight: 500; }
+  a.btn-link:hover { background: var(--li-blue-light); border-color: var(--li-blue); color: var(--li-blue); }
+  a.btn-link.primary { background: var(--li-blue); color: #fff; border-color: var(--li-blue); }
+  a.btn-link.primary:hover { background: var(--li-blue-dark); border-color: var(--li-blue-dark); color: #fff; }
+  a.btn-link.tiny { padding: 3px 10px; font-size: 11px; border-radius: 14px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } }
+  .col { background: var(--li-card); border: 1px solid var(--li-border); border-radius: 8px; padding: 14px; min-height: 200px; }
+  .col h2 { font-size: 13px; margin: 0 0 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--li-blue); }
+  .col h2 .count { font-weight: 400; color: var(--li-text-subtle); font-size: 11px; }
+  .card { border: 1px solid var(--li-border); border-radius: 8px; padding: 12px; margin-bottom: 10px; background: var(--li-card); transition: border-color 0.15s; }
+  .card:hover { border-color: var(--li-blue); }
+  .card:last-child { margin-bottom: 0; }
+  .card.done { background: var(--li-done-bg); border-color: var(--li-done-border); }
+  .author { font-size: 13px; font-weight: 600; color: var(--li-text); }
+  .meta-line { font-size: 11px; color: var(--li-text-muted); margin-bottom: 6px; }
+  .lens { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 6px; }
+  .lens.biotech { background: #E7F3EC; color: #057642; }
+  .lens.ai_builder { background: #EFE7FB; color: #5E2CA5; }
+  .lens.operator { background: #FFF1DD; color: #8A4D00; }
+  .lens.vc { background: var(--li-blue-light); color: var(--li-blue); }
+  .why { font-size: 11px; color: var(--li-text-muted); font-style: italic; margin: 6px 0; padding: 6px 10px; background: var(--li-bg); border-left: 3px solid var(--li-blue); border-radius: 0 4px 4px 0; }
+  .draft { font-size: 12px; color: var(--li-text); padding: 10px; background: var(--li-bg); border: 1px solid var(--li-border); border-radius: 6px; margin: 6px 0; white-space: pre-wrap; user-select: text; cursor: text; }
+  .draft:hover { border-color: var(--li-blue); }
+  .draft.selected { outline: 2px solid var(--li-blue); outline-offset: -2px; background: var(--li-blue-light); }
+  .actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .empty { font-size: 12px; color: var(--li-text-subtle); padding: 20px; text-align: center; font-style: italic; }
+  .score { font-size: 11px; color: var(--li-text-muted); }
+  .score.high { color: var(--li-blue); font-weight: 600; }
+  details { font-size: 11px; color: var(--li-text-muted); margin-top: 6px; }
+  details summary { cursor: pointer; user-select: none; color: var(--li-blue); }
+  .info-banner { font-size: 11px; color: var(--li-text-muted); padding: 8px 12px; background: var(--li-blue-light); border: 1px solid var(--li-blue); border-radius: 6px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title-wrap">
+    <a class="li-mark" href="https://www.linkedin.com/feed/" target="_blank" rel="noopener noreferrer" title="Open LinkedIn">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="#0A66C2" xmlns="http://www.w3.org/2000/svg" aria-label="LinkedIn">
+        <path d="M20.5 2h-17A1.5 1.5 0 002 3.5v17A1.5 1.5 0 003.5 22h17a1.5 1.5 0 001.5-1.5v-17A1.5 1.5 0 0020.5 2zM8 19H5v-9h3zM6.5 8.25A1.75 1.75 0 118.3 6.5a1.78 1.78 0 01-1.8 1.75zM19 19h-3v-4.74c0-1.42-.6-1.93-1.38-1.93A1.74 1.74 0 0013 14.19a.66.66 0 000 .14V19h-3v-9h2.9v1.3a3.11 3.11 0 012.7-1.4c1.55 0 3.36.86 3.36 3.66z"/>
+      </svg>
+    </a>
+    <div>
+      <h1>Engagement Console <span style="font-size:10px;font-weight:400;color:#8E8E8E;">v1.0</span></h1>
+      <div class="sub" id="header-sub">Loading...</div>
+    </div>
+  </div>
+  <div class="controls">
+    <button id="btn-clear" title="Clear skip/done history">Reset history</button>
+    <button id="btn-refresh" class="primary">Refresh from chat</button>
+  </div>
+</header>
+
+<div class="info-banner">
+  Demo data shown below. Replace the &lt;script id="briefing-data"&gt; block with output from your orchestration skill. See README.md for the data shape and the chat-fetches-artifact-displays pattern.
+</div>
+
+<div id="status" class="status"></div>
+
+<div class="cols">
+  <div class="col" id="col-comments"><h2>Comments <span class="count"></span></h2><div class="empty">Loading...</div></div>
+  <div class="col" id="col-engage"><h2>Engage with <span class="count"></span></h2><div class="empty">Loading...</div></div>
+  <div class="col" id="col-ideas"><h2>Post Ideas <span class="count"></span></h2><div class="empty">Loading...</div></div>
+</div>
+
+<!--
+  PERSONA CONFIG
+  Edit the constants below to set how the Redraft and Expand buttons prompt
+  the in-artifact LLM. These are the only two places to localise the console
+  to your voice. Everything else is data-driven.
+-->
+<script>
+const PERSONA = {
+  // Short one-liner describing who is posting. Used in both Redraft and Expand prompts.
+  // Example: "an independent consultant in renewable energy" / "the founder of a B2B SaaS company"
+  identity: "an operator who builds. Keep tone direct, concrete, numerate.",
+
+  // Voice rules. These are enforced verbatim in the prompt. Edit to match your own style.
+  voiceRules: [
+    "Short sentences. Concrete nouns. Real names and real numbers.",
+    "No em-dashes. Use periods or commas instead.",
+    "No AI-tells: avoid 'delve', 'dive deep', 'leverage' (verb), 'unlock', 'synergy', 'seamless', 'elevate', 'journey', 'ecosystem' as cliche.",
+    "No 'Great post', 'Thanks for sharing', 'Absolutely'. No thumbs-up restated as prose.",
+    "No exclamation marks. No emojis. Open with substance, not pleasantries."
+  ],
+
+  // Lens postures. Tell the LLM what kind of comment is appropriate per lens.
+  // Keys must match the 'lens' field in the briefing-data JSON below.
+  lensPostures: {
+    biotech: "add a concrete number, a counterexample from your own experience, or a sharp question about unit economics",
+    ai_builder: "add a specific build detail from real work, reference a real tool by name",
+    operator: "ground abstract content with operational specifics, comment as an operator who has done it",
+    vc: "add a data point or specific company reference, do not tribally agree"
+  },
+
+  // Default comment length target.
+  commentLength: "1 to 3 sentences",
+
+  // Default post length target for 'Expand in chat'.
+  postLength: "120 to 150 words"
+};
+</script>
+
+<script type="application/json" id="briefing-data">
+{
+  "generated_at": "2026-05-17T13:30:00+02:00",
+  "posts_scanned": 18,
+  "comments": [
+    {
+      "url": "https://www.linkedin.com/feed/",
+      "author": "Acme Mycelium",
+      "company": "acme-mycelium",
+      "lens": "biotech",
+      "score": 90,
+      "why": "Demo entry. Acme just announced basic engineering for a 15,000 t/y facility with a named engineering partner stack. Real numbers + a specific question move the conversation past congratulations.",
+      "draft": "The engineering partner stack you named is the right call at this scale. Question we keep coming back to on our side: at 15,000 tonnes per year, what is the locked-in feedstock pricing assumption, and how sensitive is the COGS to a 20% input cost swing across the depreciation window?"
+    },
+    {
+      "url": "https://www.linkedin.com/feed/",
+      "author": "Helen Brooks",
+      "company": "northwind-capital",
+      "lens": "vc",
+      "score": 85,
+      "why": "Demo entry. VC partner posted a contrarian take on the sector trough. Adding operator credibility plus a concrete data point is more useful than tribal agreement.",
+      "draft": "Agreed on the trough-not-collapse read. The operators still in this category are doing harder work than two years ago. Three peer raises this quarter make that concrete, the selection signal is whether the partner has real customer revenue, not whether the pitch deck looks clean."
+    },
+    {
+      "url": "https://www.linkedin.com/feed/",
+      "author": "Quill Builds",
+      "company": "quill-builds",
+      "lens": "ai_builder",
+      "score": 78,
+      "why": "Demo entry. AI tooling founder posted about an agent failure mode. Specific build details from your own work outrank generic agreement.",
+      "draft": "The retry-on-tool-error failure mode you describe is exactly what we hit shipping our briefing skill last month. The fix that worked: log the failed tool call, surface it in the next chat turn, let the user decide whether to retry rather than auto-loop. Cheaper context, fewer phantom retries."
+    },
+    {
+      "url": "https://www.linkedin.com/feed/",
+      "author": "BrewLabs Engineering",
+      "company": "brewlabs-engineering",
+      "lens": "biotech",
+      "score": 74,
+      "why": "Demo entry. Industrial peer announced a utility-services partnership for their next-scale facility. Naming candidate peers where the same structure fits adds sector fluency.",
+      "draft": "Off-loading utility infrastructure to a partner is the move that actually makes the capex math close at this scale. More biomass-fermentation peers should be running this play. Three off the top of my head where it would fit cleanly are public projects in Europe currently looking at brownfield co-location."
+    }
+  ],
+  "engage": [
+    {
+      "name": "Helen Brooks",
+      "profile_hint": "helen-brooks-demo",
+      "reason": "Demo entry. Managing partner at a contrarian foodtech VC, publicly bullish on the category while peers retreat. Engage = follow first, comment lands on the trough post, then connect with a one-line reason.",
+      "lens": "vc"
+    },
+    {
+      "name": "Karim Reyes",
+      "profile_hint": "",
+      "reason": "Demo entry. COO at a peer industrial-fermentation company. Direct peer in the role. High learning value on capex-partner structure and 10x scale-up sequencing. Engage = follow + comment + connect after substantive thread.",
+      "lens": "biotech"
+    },
+    {
+      "name": "Sam Iyer",
+      "profile_hint": "sam-iyer-demo",
+      "reason": "Demo entry. Author of an open-source MCP server you forked. Worth a follow plus a thank-you comment on their next substantive technical post.",
+      "lens": "ai_builder"
+    }
+  ],
+  "post_ideas": [
+    {
+      "angle": "The capex-bucket problem in industrial scale-up",
+      "hook": "The sector keeps having the same conversation about technical feasibility. The harder question is rarely on the panel: whose industrial P&L absorbs the floor space and utility load that the new process actually needs at parity with established categories.",
+      "supporting": "Demo entry. Anchor in three peer signals from the last 30 days. Argue that the under-discussed selection criterion is which model carries the industrial-site capex burden, not which has the cleanest science. 120 to 150 words. Replace with your own anchors before posting."
+    },
+    {
+      "angle": "Acquisition is solved. Repeat purchase is the category bet.",
+      "hook": "Most panel content this year is still on trial mechanics. Our most recent retail promo moved well over 3x baseline volume. The volume is real. The rotation curve post-promo is where the engineering bill actually lands, and almost no conversation is treating it as the primary question.",
+      "supporting": "Demo entry. Cite macro context (peer pricing dynamics, category bankruptcies as downside signal, easier-category captures as evidence of the trial-vs-repeat gap). 120 to 150 words. Replace with your own anchors before posting."
+    }
+  ]
+}
+</script>
+
+<script>
+(function() {
+  try {
+    var dataEl = document.getElementById('briefing-data');
+    var data = JSON.parse(dataEl.textContent);
+
+    var LS_KEY = 'linkedin-console-history-v2';
+    var history = { skipped: {}, done: {} };
+    try {
+      var raw = localStorage.getItem(LS_KEY);
+      if (raw) {
+        var p = JSON.parse(raw);
+        if (p.skipped) history.skipped = p.skipped;
+        if (p.done) history.done = p.done;
+      }
+    } catch (e) {}
+    function saveHistory() { try { localStorage.setItem(LS_KEY, JSON.stringify(history)); } catch (e) {} }
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // copyText tries execCommand first (works in sandboxed iframes where the
+    // permission-based navigator.clipboard API is blocked), then falls back
+    // to the modern API. Returns true if either succeeded.
+    function copyText(t) {
+      if (t == null || t === '') return false;
+      var s = String(t);
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = s;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '0';
+        ta.style.left = '0';
+        ta.style.width = '1px';
+        ta.style.height = '1px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, s.length);
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        document.body.removeChild(ta);
+        if (ok) return true;
+      } catch (e) { /* fall through */ }
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText(s).catch(function() {});
+          return true;
+        }
+      } catch (e) { /* fall through */ }
+      return false;
+    }
+
+    function selectElementText(el) {
+      try {
+        var range = document.createRange();
+        range.selectNodeContents(el);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        return true;
+      } catch (e) { return false; }
+    }
+
+    function lensTag(lens) { return '<span class="lens ' + (lens || '') + '">' + (lens || 'other').replace('_',' ') + '</span>'; }
+    function cardKey(x) { return x.url || (x.profile_hint && 'p:' + x.profile_hint) || (x.name && 'n:' + x.name) || (x.angle && 'i:' + x.angle.slice(0,40)); }
+
+    function buildRedraftPrompt(card) {
+      var posture = PERSONA.lensPostures[card.lens] || "add concrete substance, never thumbs-up restated";
+      var lines = [
+        "Redraft this LinkedIn comment for " + PERSONA.identity,
+        "VOICE: " + PERSONA.voiceRules.join(' '),
+        "Length: " + PERSONA.commentLength + ".",
+        "Lens posture for '" + card.lens + "': " + posture + ".",
+        "Open with substance, end with a real question or a real claim.",
+        "Return ONLY the new comment text, no preamble, no quotes around it."
+      ];
+      return lines.join('\n');
+    }
+
+    function buildExpandPrompt() {
+      var lines = [
+        "Expand this LinkedIn post idea into a " + PERSONA.postLength + " post for " + PERSONA.identity,
+        "VOICE: " + PERSONA.voiceRules.join(' '),
+        "Open with substance, end with a real claim or question.",
+        "Return ONLY the post text, no preamble."
+      ];
+      return lines.join('\n');
+    }
+
+    function renderComments() {
+      var c = document.getElementById('col-comments');
+      var items = data.comments || [];
+      c.innerHTML = '<h2>Comments <span class="count">' + items.length + '</span></h2>';
+      var visible = items.filter(function(x) { return !history.skipped[cardKey(x)]; });
+      if (!visible.length) { c.innerHTML += '<div class="empty">No qualifying posts.</div>'; return; }
+      visible.forEach(function(x) {
+        var k = cardKey(x);
+        var done = history.done[k];
+        var div = document.createElement('div');
+        div.className = 'card' + (done ? ' done' : '');
+        div.innerHTML =
+          '<div class="author">' + escapeHtml(x.author) + (x.company ? ' <span class="meta-line">· ' + escapeHtml(x.company) + '</span>' : '') + '</div>' +
+          '<div class="meta-line">' + lensTag(x.lens) + '<span class="score ' + (x.score >= 85 ? 'high' : '') + '">score ' + x.score + '</span></div>' +
+          '<div class="why">' + escapeHtml(x.why) + '</div>' +
+          '<div class="draft">' + escapeHtml(x.draft) + '</div>' +
+          '<div class="actions">' +
+            '<a href="' + escapeHtml(x.url) + '" target="_blank" rel="noopener noreferrer" class="btn-link primary tiny" data-a="open-link">Open in LinkedIn (copies)</a>' +
+            '<button class="tiny" data-a="copy">Copy comment</button>' +
+            '<button class="tiny" data-a="done">Done</button>' +
+            '<button class="tiny" data-a="skip">Skip</button>' +
+            '<button class="tiny" data-a="regen">Redraft</button>' +
+          '</div>';
+        var draftEl = div.querySelector('.draft');
+        if (draftEl) {
+          draftEl.addEventListener('click', function() {
+            if (selectElementText(draftEl)) draftEl.classList.add('selected');
+          });
+        }
+        div.addEventListener('click', function(e) {
+          var anchor = e.target.closest('a[data-a="open-link"]');
+          if (anchor) {
+            var copied = copyText(x.draft);
+            if (!copied && draftEl) { selectElementText(draftEl); draftEl.classList.add('selected'); }
+            return;
+          }
+          var btn = e.target.closest('button'); if (!btn) return;
+          var a = btn.dataset.a;
+          if (a === 'copy') {
+            var ok = copyText(x.draft);
+            if (ok) {
+              btn.textContent = 'Copied';
+              setTimeout(function() { btn.textContent = 'Copy comment'; }, 1500);
+            } else {
+              if (draftEl) { selectElementText(draftEl); draftEl.classList.add('selected'); }
+              btn.textContent = 'Selected - press Ctrl+C';
+              setTimeout(function() { btn.textContent = 'Copy comment'; if (draftEl) draftEl.classList.remove('selected'); }, 3000);
+            }
+          }
+          else if (a === 'done') { history.done[k] = Date.now(); saveHistory(); div.classList.add('done'); }
+          else if (a === 'skip') { history.skipped[k] = Date.now(); saveHistory(); div.style.display = 'none'; }
+          else if (a === 'regen') {
+            var prompt = buildRedraftPrompt(x);
+            if (typeof window.sendPrompt === 'function') {
+              try {
+                window.sendPrompt(prompt + "\n\nPost URL: " + x.url + "\nAuthor: " + x.author + "\nCurrent draft (rewrite this): " + x.draft + "\nWhy the post matters: " + x.why);
+                return;
+              } catch (e) { /* fall through to inline */ }
+            }
+            if (window.cowork && typeof window.cowork.askClaude === 'function') {
+              btn.textContent = 'Redrafting...';
+              btn.disabled = true;
+              window.cowork.askClaude(prompt, [{
+                url: x.url, author: x.author, lens: x.lens,
+                current_draft: x.draft, why_this_post: x.why
+              }]).then(function(response) {
+                var newText = typeof response === 'string' ? response : (response.text || response.content || JSON.stringify(response));
+                newText = String(newText).trim().replace(/^["']|["']$/g, '').trim();
+                if (draftEl) draftEl.textContent = newText;
+                x.draft = newText;
+                btn.textContent = 'Redrafted';
+                btn.disabled = false;
+                setTimeout(function() { btn.textContent = 'Redraft'; }, 1500);
+              }).catch(function(err) {
+                console.error('Redraft failed', err);
+                btn.textContent = 'Failed - see console';
+                btn.disabled = false;
+                setTimeout(function() { btn.textContent = 'Redraft'; }, 2500);
+              });
+            } else {
+              btn.textContent = 'Unavailable';
+              setTimeout(function() { btn.textContent = 'Redraft'; }, 2000);
+            }
+          }
+        });
+        c.appendChild(div);
+      });
+    }
+
+    function renderEngage() {
+      var c = document.getElementById('col-engage');
+      var items = data.engage || [];
+      c.innerHTML = '<h2>Engage with <span class="count">' + items.length + '</span></h2>';
+      var visible = items.filter(function(x) { return !history.skipped[cardKey(x)]; });
+      if (!visible.length) { c.innerHTML += '<div class="empty">No new targets.</div>'; return; }
+      visible.forEach(function(x) {
+        var k = cardKey(x);
+        var done = history.done[k];
+        var url;
+        if (x.profile_hint && x.profile_hint.indexOf('http') === 0) url = x.profile_hint;
+        else if (x.profile_hint) url = 'https://www.linkedin.com/in/' + x.profile_hint.replace(/^\/in\//,'').replace(/^\//,'').replace(/\/$/,'') + '/';
+        else url = 'https://www.linkedin.com/search/results/people/?keywords=' + encodeURIComponent(x.name);
+        var div = document.createElement('div');
+        div.className = 'card' + (done ? ' done' : '');
+        div.innerHTML =
+          '<div class="author">' + escapeHtml(x.name) + '</div>' +
+          '<div class="meta-line">' + lensTag(x.lens) + '</div>' +
+          '<div class="why">' + escapeHtml(x.reason) + '</div>' +
+          '<div class="actions">' +
+            '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" class="btn-link primary tiny" data-a="open-link">Open profile</a>' +
+            '<button class="tiny" data-a="done">Engaged</button>' +
+            '<button class="tiny" data-a="skip">Skip</button>' +
+          '</div>';
+        div.addEventListener('click', function(e) {
+          var btn = e.target.closest('button'); if (!btn) return;
+          var a = btn.dataset.a;
+          if (a === 'done') { history.done[k] = Date.now(); saveHistory(); div.classList.add('done'); }
+          else if (a === 'skip') { history.skipped[k] = Date.now(); saveHistory(); div.style.display = 'none'; }
+        });
+        c.appendChild(div);
+      });
+    }
+
+    function renderIdeas() {
+      var c = document.getElementById('col-ideas');
+      var items = data.post_ideas || [];
+      c.innerHTML = '<h2>Post Ideas <span class="count">' + items.length + '</span></h2>';
+      var visible = items.filter(function(x) { return !history.skipped[cardKey(x)]; });
+      if (!visible.length) { c.innerHTML += '<div class="empty">No own-content angles.</div>'; return; }
+      visible.forEach(function(x) {
+        var k = cardKey(x);
+        var done = history.done[k];
+        var div = document.createElement('div');
+        div.className = 'card' + (done ? ' done' : '');
+        div.innerHTML =
+          '<div class="author">' + escapeHtml(x.angle) + '</div>' +
+          '<div class="draft">' + escapeHtml(x.hook) + '</div>' +
+          '<details><summary>Why this angle</summary><div style="padding-top:4px">' + escapeHtml(x.supporting) + '</div></details>' +
+          '<div class="actions">' +
+            '<button class="primary tiny" data-a="expand">Expand in chat</button>' +
+            '<button class="tiny" data-a="copy">Copy hook</button>' +
+            '<button class="tiny" data-a="done">Used</button>' +
+            '<button class="tiny" data-a="skip">Skip</button>' +
+          '</div>';
+        div.addEventListener('click', function(e) {
+          var btn = e.target.closest('button'); if (!btn) return;
+          var a = btn.dataset.a;
+          if (a === 'expand') {
+            var ePrompt = buildExpandPrompt();
+            if (typeof window.sendPrompt === 'function') {
+              try { window.sendPrompt(ePrompt + "\n\nAngle: " + x.angle + "\nHook: " + x.hook + "\nSupporting: " + x.supporting); return; } catch (e) {}
+            }
+            if (window.cowork && typeof window.cowork.askClaude === 'function') {
+              var oldHook = btn.textContent; btn.textContent = 'Expanding...'; btn.disabled = true;
+              window.cowork.askClaude(ePrompt, [{ angle: x.angle, hook: x.hook, supporting: x.supporting }]).then(function(r) {
+                var newText = typeof r === 'string' ? r : (r.text || r.content || JSON.stringify(r));
+                newText = String(newText).trim().replace(/^["']|["']$/g, '').trim();
+                var hookEl = div.querySelector('.draft');
+                if (hookEl) { hookEl.textContent = newText; hookEl.classList.add('selected'); }
+                x.hook = newText;
+                btn.textContent = 'Expanded'; btn.disabled = false;
+                setTimeout(function() { btn.textContent = oldHook; }, 1500);
+              }).catch(function() {
+                btn.textContent = 'Failed'; btn.disabled = false;
+                setTimeout(function() { btn.textContent = oldHook; }, 2000);
+              });
+            }
+          }
+          else if (a === 'copy') { copyText(x.hook); btn.textContent = 'Copied'; setTimeout(function() { btn.textContent = 'Copy hook'; }, 1200); }
+          else if (a === 'done') { history.done[k] = Date.now(); saveHistory(); div.classList.add('done'); }
+          else if (a === 'skip') { history.skipped[k] = Date.now(); saveHistory(); div.style.display = 'none'; }
+        });
+        c.appendChild(div);
+      });
+    }
+
+    var d = new Date(data.generated_at);
+    var stamp = isNaN(d) ? data.generated_at : d.toLocaleString();
+    document.getElementById('header-sub').textContent = 'Generated ' + stamp + ' · ' + data.posts_scanned + ' posts scanned · ' + (data.comments || []).length + ' comments / ' + (data.engage || []).length + ' engage / ' + (data.post_ideas || []).length + ' ideas';
+    document.getElementById('status').textContent = '';
+
+    renderComments();
+    renderEngage();
+    renderIdeas();
+
+    document.getElementById('btn-refresh').addEventListener('click', function() {
+      if (window.sendPrompt) window.sendPrompt('linkedin brief - re-run the pipeline and update the engagement console artifact');
+    });
+    document.getElementById('btn-clear').addEventListener('click', function() {
+      if (confirm('Clear all skip/done history?')) {
+        history.skipped = {}; history.done = {};
+        saveHistory();
+        location.reload();
+      }
+    });
+  } catch (e) {
+    document.getElementById('status').innerHTML = '<div style="color:#b91c1c;padding:10px;background:#fef2f2;border-radius:6px">RENDER ERROR: ' + (e && e.stack || e) + '</div>';
+  }
+})();
+</script>
+
+</body>
+</html>

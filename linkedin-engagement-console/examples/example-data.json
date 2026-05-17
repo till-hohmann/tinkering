@@ -1,0 +1,74 @@
+{
+  "generated_at": "2026-05-17T13:30:00+02:00",
+  "posts_scanned": 18,
+  "comments": [
+    {
+      "url": "https://www.linkedin.com/feed/",
+      "author": "Acme Mycelium",
+      "company": "acme-mycelium",
+      "lens": "biotech",
+      "score": 90,
+      "why": "Acme announced basic engineering for a 15,000 t/y facility with a named partner stack. Concrete COGS-sensitivity question moves the conversation past congratulations.",
+      "draft": "The engineering partner stack you named is the right call at this scale. Question we keep coming back to on our side: at 15,000 tonnes per year, what is the locked-in feedstock pricing assumption, and how sensitive is the COGS to a 20% input cost swing across the depreciation window?"
+    },
+    {
+      "url": "https://www.linkedin.com/feed/",
+      "author": "Helen Brooks",
+      "company": "northwind-capital",
+      "lens": "vc",
+      "score": 85,
+      "why": "VC partner posted a contrarian take on the sector trough. Operator credibility plus a concrete data point is more useful than tribal agreement.",
+      "draft": "Agreed on the trough-not-collapse read. The operators still in this category are doing harder work than two years ago. Three peer raises this quarter make that concrete, the selection signal is whether the partner has real customer revenue, not whether the pitch deck looks clean."
+    },
+    {
+      "url": "https://www.linkedin.com/feed/",
+      "author": "Quill Builds",
+      "company": "quill-builds",
+      "lens": "ai_builder",
+      "score": 78,
+      "why": "AI tooling founder posted about an agent failure mode. Specific build details from your own work outrank generic agreement.",
+      "draft": "The retry-on-tool-error failure mode you describe is exactly what we hit shipping our briefing skill last month. The fix that worked: log the failed tool call, surface it in the next chat turn, let the user decide whether to retry rather than auto-loop. Cheaper context, fewer phantom retries."
+    },
+    {
+      "url": "https://www.linkedin.com/feed/",
+      "author": "BrewLabs Engineering",
+      "company": "brewlabs-engineering",
+      "lens": "biotech",
+      "score": 74,
+      "why": "Industrial peer announced a utility-services partnership for their next-scale facility. Naming candidate peers where the same structure fits adds sector fluency.",
+      "draft": "Off-loading utility infrastructure to a partner is the move that actually makes the capex math close at this scale. More biomass-fermentation peers should be running this play. Three off the top of my head where it would fit cleanly are public projects in Europe currently looking at brownfield co-location."
+    }
+  ],
+  "engage": [
+    {
+      "name": "Helen Brooks",
+      "profile_hint": "helen-brooks-demo",
+      "reason": "Managing partner at a contrarian foodtech VC, publicly bullish on the category while peers retreat. Engage = follow first, comment lands on the trough post, then connect with a one-line reason.",
+      "lens": "vc"
+    },
+    {
+      "name": "Karim Reyes",
+      "profile_hint": "",
+      "reason": "COO at a peer industrial-fermentation company. Direct peer in the role. High learning value on capex-partner structure and 10x scale-up sequencing. Engage = follow + comment + connect after substantive thread.",
+      "lens": "biotech"
+    },
+    {
+      "name": "Sam Iyer",
+      "profile_hint": "sam-iyer-demo",
+      "reason": "Author of an open-source MCP server you forked. Worth a follow plus a thank-you comment on their next substantive technical post.",
+      "lens": "ai_builder"
+    }
+  ],
+  "post_ideas": [
+    {
+      "angle": "The capex-bucket problem in industrial scale-up",
+      "hook": "The sector keeps having the same conversation about technical feasibility. The harder question is rarely on the panel: whose industrial P&L absorbs the floor space and utility load that the new process actually needs at parity with established categories.",
+      "supporting": "Anchor in three peer signals from the last 30 days. Argue that the under-discussed selection criterion is which model carries the industrial-site capex burden, not which has the cleanest science. 120 to 150 words. Replace with your own anchors before posting."
+    },
+    {
+      "angle": "Acquisition is solved. Repeat purchase is the category bet.",
+      "hook": "Most panel content this year is still on trial mechanics. Our most recent retail promo moved well over 3x baseline volume. The volume is real. The rotation curve post-promo is where the engineering bill actually lands, and almost no conversation is treating it as the primary question.",
+      "supporting": "Cite macro context (peer pricing dynamics, category bankruptcies as downside signal, easier-category captures as evidence of the trial-vs-repeat gap). 120 to 150 words. Replace with your own anchors before posting."
+    }
+  ]
+}
