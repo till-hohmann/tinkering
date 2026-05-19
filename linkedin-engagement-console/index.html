@@ -65,6 +65,35 @@
   details { font-size: 11px; color: var(--li-text-muted); margin-top: 6px; }
   details summary { cursor: pointer; user-select: none; color: var(--li-blue); }
   .info-banner { font-size: 11px; color: var(--li-text-muted); padding: 8px 12px; background: var(--li-blue-light); border: 1px solid var(--li-blue); border-radius: 6px; margin-bottom: 12px; }
+  .audit-strip { font-size: 11px; color: var(--li-text-muted); padding: 8px 12px; background: var(--li-card); border: 1px solid var(--li-border); border-radius: 6px; margin-bottom: 12px; display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+  .audit-strip .audit-item { display: inline-flex; align-items: center; gap: 6px; }
+  .audit-strip .audit-label { color: var(--li-text-subtle); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; font-weight: 600; }
+  .audit-strip details { display: inline; margin: 0; }
+  .audit-strip details summary { display: inline; color: var(--li-blue); cursor: pointer; user-select: none; }
+  .audit-strip details ul { margin: 6px 0 0 0; padding-left: 16px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 10px; color: var(--li-text); }
+  .audit-strip details ul li { margin: 2px 0; }
+  .cadence-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 10px; background: var(--li-bg); color: var(--li-text-muted); font-weight: 500; text-transform: none; letter-spacing: 0; margin-left: 6px; border: 1px solid var(--li-border); }
+  .cadence-badge.on-track { background: var(--li-done-bg); color: #057642; border-color: var(--li-done-border); }
+  .age-tag { font-size: 10px; color: var(--li-text-subtle); margin-left: 8px; font-weight: 400; }
+  .results-strip { background: var(--li-bg); border: 1px solid var(--li-border); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px; }
+  .results-strip .header-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .results-strip .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; color: var(--li-text-subtle); }
+  .results-strip .summary { color: var(--li-text); font-weight: 500; }
+  .results-strip .empty-text { color: var(--li-text-subtle); font-style: italic; font-size: 11px; }
+  .results-strip .post-list { margin-top: 6px; }
+  .results-strip .post-row { display: flex; gap: 10px; align-items: center; padding: 5px 0; border-top: 1px solid var(--li-border); font-size: 11px; }
+  .results-strip .post-row:first-of-type { border-top: none; padding-top: 6px; }
+  .results-strip .post-preview { color: var(--li-text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .results-strip .post-stats { color: var(--li-text-muted); white-space: nowrap; font-size: 10px; }
+  .results-strip .post-link { color: var(--li-blue); text-decoration: none; font-size: 10px; white-space: nowrap; }
+  .results-strip .post-link:hover { text-decoration: underline; }
+  .cadence-warn { display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 8px; margin-left: 6px; font-weight: 500; background: #FFF1DD; color: #8A4D00; border: 1px solid #F0D9A5; }
+  .cadence-warn.high { background: #FDE6E6; color: #B91C1C; border-color: #F5BBBB; }
+  .connect-note { font-size: 12px; color: var(--li-text); padding: 8px 10px; background: var(--li-bg); border: 1px solid var(--li-border); border-radius: 6px; margin: 6px 0; white-space: pre-wrap; user-select: text; cursor: text; font-style: normal; }
+  .connect-note:hover { border-color: var(--li-blue); }
+  .connect-note.selected { outline: 2px solid var(--li-blue); outline-offset: -2px; background: var(--li-blue-light); }
+  .connect-note-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--li-text-subtle); font-weight: 600; margin-top: 4px; }
+  .card.reacted { background: #EEF6FF; border-color: #8AB4E8; }
 </style>
 </head>
 <body>
@@ -77,19 +106,22 @@
       </svg>
     </a>
     <div>
-      <h1>Engagement Console <span style="font-size:10px;font-weight:400;color:#8E8E8E;">v1.0</span></h1>
+      <h1>Engagement Console <span style="font-size:10px;font-weight:400;color:#8E8E8E;">v2.6</span></h1>
       <div class="sub" id="header-sub">Loading...</div>
     </div>
   </div>
   <div class="controls">
-    <button id="btn-clear" title="Clear skip/done history">Reset history</button>
-    <button id="btn-refresh" class="primary">Refresh from chat</button>
+    <button id="btn-clear" title="Bring back cards marked Done or Reacted. Skipped cards stay hidden permanently.">Reset done/reacted</button>
   </div>
 </header>
 
 <div class="info-banner">
-  Demo data shown below. Replace the &lt;script id="briefing-data"&gt; block with output from your orchestration skill. See README.md for the data shape and the chat-fetches-artifact-displays pattern.
+  Demo data baked in. Replace the contents of the <code>&lt;script type="application/json" id="briefing-data"&gt;</code> block below with a real run from your orchestration skill. See <code>skill.template.md</code> for the prompt that generates it.
 </div>
+
+<div class="results-strip" id="results-strip"></div>
+
+<div class="audit-strip" id="audit-strip"></div>
 
 <div id="status" class="status"></div>
 
@@ -108,10 +140,9 @@
 <script>
 const PERSONA = {
   // Short one-liner describing who is posting. Used in both Redraft and Expand prompts.
-  // Example: "an independent consultant in renewable energy" / "the founder of a B2B SaaS company"
   identity: "an operator who builds. Keep tone direct, concrete, numerate.",
 
-  // Voice rules. These are enforced verbatim in the prompt. Edit to match your own style.
+  // Voice rules. Enforced verbatim in the prompt. Edit to match your own style.
   voiceRules: [
     "Short sentences. Concrete nouns. Real names and real numbers.",
     "No em-dashes. Use periods or commas instead.",
@@ -129,18 +160,50 @@ const PERSONA = {
     vc: "add a data point or specific company reference, do not tribally agree"
   },
 
-  // Default comment length target.
   commentLength: "1 to 3 sentences",
-
-  // Default post length target for 'Expand in chat'.
   postLength: "120 to 150 words"
 };
 </script>
 
 <script type="application/json" id="briefing-data">
 {
-  "generated_at": "2026-05-17T13:30:00+02:00",
-  "posts_scanned": 18,
+  "generated_at": "2026-05-18T22:00:00+02:00",
+  "posts_scanned": 51,
+  "filtered_summary": {
+    "ai_slop": 3,
+    "off_lens": 14,
+    "motivational": 2,
+    "engagement_bait": 1,
+    "too_old": 6,
+    "skip_list_match": 0,
+    "own_post": 1
+  },
+  "grounding_sources": [
+    "context/identity.md",
+    "context/voice.md",
+    "context/anti-patterns.md",
+    "context/linkedin-strategy.md",
+    "journal/weekly_learnings_latest.md",
+    "journal/coo_briefing_latest.md"
+  ],
+  "posts_published_this_week": 1,
+  "weekly_post_target": 2,
+  "own_posts_last_week": [
+    {
+      "url": "https://www.linkedin.com/feed/",
+      "posted_at": "2026-05-16T18:00:00+02:00",
+      "text_preview": "Demo entry. Sample own-post showing how the Last Week results strip renders engagement counts.",
+      "reactions": 42,
+      "comments": 7,
+      "reshares": 1,
+      "top_commenter": null
+    }
+  ],
+  "author_cadence_14d": {
+    "Acme Mycelium": 2,
+    "BrewLabs Engineering": 1,
+    "Quill Builds": 1
+  },
   "comments": [
     {
       "url": "https://www.linkedin.com/feed/",
@@ -148,7 +211,9 @@ const PERSONA = {
       "company": "acme-mycelium",
       "lens": "biotech",
       "score": 90,
-      "why": "Demo entry. Acme just announced basic engineering for a 15,000 t/y facility with a named engineering partner stack. Real numbers + a specific question move the conversation past congratulations.",
+      "age_hours": 14,
+      "author_cadence_14d": 2,
+      "why": "Demo entry. Acme just announced basic engineering for a 15,000 t/y facility with a named engineering partner stack. Cadence 2 means a moderate suppression has been applied.",
       "draft": "The engineering partner stack you named is the right call at this scale. Question we keep coming back to on our side: at 15,000 tonnes per year, what is the locked-in feedstock pricing assumption, and how sensitive is the COGS to a 20% input cost swing across the depreciation window?"
     },
     {
@@ -157,7 +222,9 @@ const PERSONA = {
       "company": "northwind-capital",
       "lens": "vc",
       "score": 85,
-      "why": "Demo entry. VC partner posted a contrarian take on the sector trough. Adding operator credibility plus a concrete data point is more useful than tribal agreement.",
+      "age_hours": 22,
+      "author_cadence_14d": 0,
+      "why": "Demo entry. VC partner posted a contrarian take on the sector trough. Operator credibility plus a concrete data point is more useful than tribal agreement. First cadence touch, no penalty.",
       "draft": "Agreed on the trough-not-collapse read. The operators still in this category are doing harder work than two years ago. Three peer raises this quarter make that concrete, the selection signal is whether the partner has real customer revenue, not whether the pitch deck looks clean."
     },
     {
@@ -166,6 +233,8 @@ const PERSONA = {
       "company": "quill-builds",
       "lens": "ai_builder",
       "score": 78,
+      "age_hours": 40,
+      "author_cadence_14d": 1,
       "why": "Demo entry. AI tooling founder posted about an agent failure mode. Specific build details from your own work outrank generic agreement.",
       "draft": "The retry-on-tool-error failure mode you describe is exactly what we hit shipping our briefing skill last month. The fix that worked: log the failed tool call, surface it in the next chat turn, let the user decide whether to retry rather than auto-loop. Cheaper context, fewer phantom retries."
     },
@@ -175,6 +244,8 @@ const PERSONA = {
       "company": "brewlabs-engineering",
       "lens": "biotech",
       "score": 74,
+      "age_hours": 60,
+      "author_cadence_14d": 1,
       "why": "Demo entry. Industrial peer announced a utility-services partnership for their next-scale facility. Naming candidate peers where the same structure fits adds sector fluency.",
       "draft": "Off-loading utility infrastructure to a partner is the move that actually makes the capex math close at this scale. More biomass-fermentation peers should be running this play. Three off the top of my head where it would fit cleanly are public projects in Europe currently looking at brownfield co-location."
     }
@@ -183,32 +254,49 @@ const PERSONA = {
     {
       "name": "Helen Brooks",
       "profile_hint": "helen-brooks-demo",
-      "reason": "Demo entry. Managing partner at a contrarian foodtech VC, publicly bullish on the category while peers retreat. Engage = follow first, comment lands on the trough post, then connect with a one-line reason.",
-      "lens": "vc"
+      "lens": "vc",
+      "reason": "Demo entry. Managing partner at a contrarian foodtech VC, publicly bullish on the category while peers retreat.",
+      "connect_note": "Followed your trough-not-collapse post. We are inside the operator cohort you are bullish on. Three peer raises landed this fortnight, happy to compare notes on the selection signal. Worth being connected."
     },
     {
       "name": "Karim Reyes",
       "profile_hint": "",
-      "reason": "Demo entry. COO at a peer industrial-fermentation company. Direct peer in the role. High learning value on capex-partner structure and 10x scale-up sequencing. Engage = follow + comment + connect after substantive thread.",
-      "lens": "biotech"
+      "lens": "biotech",
+      "reason": "Demo entry. COO at a peer industrial-fermentation company. Direct peer in the role. High learning value on capex-partner structure and scale-up sequencing.",
+      "connect_note": "Direct peer COO in biomass fermentation. The partner-led capex pattern your team has been talking about publicly maps onto questions we are working through on our side. Worth being connected on the COO side."
     },
     {
       "name": "Sam Iyer",
       "profile_hint": "sam-iyer-demo",
+      "lens": "ai_builder",
       "reason": "Demo entry. Author of an open-source MCP server you forked. Worth a follow plus a thank-you comment on their next substantive technical post.",
-      "lens": "ai_builder"
+      "connect_note": ""
+    },
+    {
+      "name": "Maya Lindstrom",
+      "profile_hint": "",
+      "lens": "operator",
+      "reason": "Demo entry. Operator at a comparable-stage scale-up. Writes candidly about org design under constraint. Solid follow before any direct outreach.",
+      "connect_note": ""
+    },
+    {
+      "name": "Diego Santos",
+      "profile_hint": "diego-santos-demo",
+      "lens": "biotech",
+      "reason": "Demo entry. Process engineering lead at a regulated-industry peer. Geographic adjacency plus shared scale-up vocabulary.",
+      "connect_note": "Saw your write-up on the brownfield-vs-greenfield decision tree. We were inside the same trade-off last quarter and landed in a similar place. Worth a connect."
     }
   ],
   "post_ideas": [
     {
       "angle": "The capex-bucket problem in industrial scale-up",
       "hook": "The sector keeps having the same conversation about technical feasibility. The harder question is rarely on the panel: whose industrial P&L absorbs the floor space and utility load that the new process actually needs at parity with established categories.",
-      "supporting": "Demo entry. Anchor in three peer signals from the last 30 days. Argue that the under-discussed selection criterion is which model carries the industrial-site capex burden, not which has the cleanest science. 120 to 150 words. Replace with your own anchors before posting."
+      "supporting": "Demo entry. Anchor in three peer signals from the last 30 days. Argue that the under-discussed selection criterion is which model carries the industrial-site capex burden, not which has the cleanest science. Replace with your own anchors before posting."
     },
     {
       "angle": "Acquisition is solved. Repeat purchase is the category bet.",
-      "hook": "Most panel content this year is still on trial mechanics. Our most recent retail promo moved well over 3x baseline volume. The volume is real. The rotation curve post-promo is where the engineering bill actually lands, and almost no conversation is treating it as the primary question.",
-      "supporting": "Demo entry. Cite macro context (peer pricing dynamics, category bankruptcies as downside signal, easier-category captures as evidence of the trial-vs-repeat gap). 120 to 150 words. Replace with your own anchors before posting."
+      "hook": "Most panel content this year is still on trial mechanics. Our most recent retail promo moved well over 3x baseline volume. The volume is real. The rotation curve post-promo is where the engineering bill actually lands.",
+      "supporting": "Demo entry. Cite macro context (peer pricing dynamics, category bankruptcies as downside signal). Replace with your own anchors before posting."
     }
   ]
 }
@@ -221,13 +309,14 @@ const PERSONA = {
     var data = JSON.parse(dataEl.textContent);
 
     var LS_KEY = 'linkedin-console-history-v2';
-    var history = { skipped: {}, done: {} };
+    var history = { skipped: {}, done: {}, reacted: {} };
     try {
       var raw = localStorage.getItem(LS_KEY);
       if (raw) {
         var p = JSON.parse(raw);
         if (p.skipped) history.skipped = p.skipped;
         if (p.done) history.done = p.done;
+        if (p.reacted) history.reacted = p.reacted;
       }
     } catch (e) {}
     function saveHistory() { try { localStorage.setItem(LS_KEY, JSON.stringify(history)); } catch (e) {} }
@@ -236,10 +325,6 @@ const PERSONA = {
       if (s == null) return '';
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
-
-    // copyText tries execCommand first (works in sandboxed iframes where the
-    // permission-based navigator.clipboard API is blocked), then falls back
-    // to the modern API. Returns true if either succeeded.
     function copyText(t) {
       if (t == null || t === '') return false;
       var s = String(t);
@@ -261,13 +346,13 @@ const PERSONA = {
         try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
         document.body.removeChild(ta);
         if (ok) return true;
-      } catch (e) { /* fall through */ }
+      } catch (e) {}
       try {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
           navigator.clipboard.writeText(s).catch(function() {});
           return true;
         }
-      } catch (e) { /* fall through */ }
+      } catch (e) {}
       return false;
     }
 
@@ -281,31 +366,80 @@ const PERSONA = {
         return true;
       } catch (e) { return false; }
     }
-
     function lensTag(lens) { return '<span class="lens ' + (lens || '') + '">' + (lens || 'other').replace('_',' ') + '</span>'; }
     function cardKey(x) { return x.url || (x.profile_hint && 'p:' + x.profile_hint) || (x.name && 'n:' + x.name) || (x.angle && 'i:' + x.angle.slice(0,40)); }
-
-    function buildRedraftPrompt(card) {
-      var posture = PERSONA.lensPostures[card.lens] || "add concrete substance, never thumbs-up restated";
-      var lines = [
-        "Redraft this LinkedIn comment for " + PERSONA.identity,
-        "VOICE: " + PERSONA.voiceRules.join(' '),
-        "Length: " + PERSONA.commentLength + ".",
-        "Lens posture for '" + card.lens + "': " + posture + ".",
-        "Open with substance, end with a real question or a real claim.",
-        "Return ONLY the new comment text, no preamble, no quotes around it."
-      ];
-      return lines.join('\n');
+    function ageLabel(h) {
+      if (typeof h !== 'number' || isNaN(h)) return '';
+      if (h < 1) return '<1h ago';
+      if (h < 24) return h + 'h ago';
+      return Math.floor(h/24) + 'd ago';
     }
 
-    function buildExpandPrompt() {
-      var lines = [
-        "Expand this LinkedIn post idea into a " + PERSONA.postLength + " post for " + PERSONA.identity,
-        "VOICE: " + PERSONA.voiceRules.join(' '),
-        "Open with substance, end with a real claim or question.",
-        "Return ONLY the post text, no preamble."
-      ];
-      return lines.join('\n');
+    function buildPrompt(kind, x) {
+      var posture = (PERSONA.lensPostures && PERSONA.lensPostures[x.lens]) || 'add concrete substance, never thumbs-up restated';
+      var voice = (PERSONA.voiceRules || []).join(' ');
+      if (kind === 'redraft') {
+        return 'Redraft this LinkedIn comment for ' + PERSONA.identity + ' VOICE: ' + voice + ' ' + (PERSONA.commentLength || '1 to 3 sentences') + '. Opens with substance, ends with a real question or a real claim. Lens posture for "' + x.lens + '": ' + posture + '. Return ONLY the new comment text, no preamble, no quotes around it.';
+      }
+      if (kind === 'expand') {
+        return 'Expand this LinkedIn post idea into a ' + (PERSONA.postLength || '120-150 word') + ' post for ' + PERSONA.identity + ' VOICE: ' + voice + ' Open with substance, end with a real claim or question. Return ONLY the post text.';
+      }
+      return '';
+    }
+
+    function renderResultsStrip() {
+      var el = document.getElementById('results-strip');
+      if (!el) return;
+      var posts = data.own_posts_last_week;
+      if (!Array.isArray(posts)) { el.style.display = 'none'; return; }
+      if (posts.length === 0) {
+        el.innerHTML = '<div class="header-row"><span class="label">Last week</span><span class="empty-text">No own posts in the last 7 days. Target ' + (data.weekly_post_target || 2) + '/week.</span></div>';
+        return;
+      }
+      var totals = posts.reduce(function(acc, p) {
+        acc.reactions += (p.reactions || 0);
+        acc.comments += (p.comments || 0);
+        acc.reshares += (p.reshares || 0);
+        return acc;
+      }, { reactions: 0, comments: 0, reshares: 0 });
+      var summary = posts.length + ' post' + (posts.length === 1 ? '' : 's') + ' · ' +
+        totals.reactions + ' reaction' + (totals.reactions === 1 ? '' : 's') + ' · ' +
+        totals.comments + ' comment' + (totals.comments === 1 ? '' : 's') + ' · ' +
+        totals.reshares + ' reshare' + (totals.reshares === 1 ? '' : 's');
+      var rows = posts.slice(0, 3).map(function(p) {
+        var preview = p.text_preview ? '"' + p.text_preview.replace(/"/g, '”') + (p.text_preview.length >= 100 ? '…' : '') + '"' : '(no preview)';
+        var stats = (p.reactions || 0) + 'R · ' + (p.comments || 0) + 'C · ' + (p.reshares || 0) + 'S';
+        var link = p.url ? '<a class="post-link" href="' + escapeHtml(p.url) + '" target="_blank" rel="noopener noreferrer">open</a>' : '';
+        return '<div class="post-row"><div class="post-preview">' + escapeHtml(preview) + '</div><div class="post-stats">' + escapeHtml(stats) + '</div>' + link + '</div>';
+      }).join('');
+      el.innerHTML =
+        '<div class="header-row"><span class="label">Last week</span><span class="summary">' + escapeHtml(summary) + '</span></div>' +
+        '<div class="post-list">' + rows + '</div>';
+    }
+
+    function renderAuditStrip() {
+      var el = document.getElementById('audit-strip');
+      if (!el) return;
+      var parts = [];
+      var fs = data.filtered_summary;
+      if (fs && typeof fs === 'object') {
+        var fParts = [];
+        var total = 0;
+        Object.keys(fs).forEach(function(k) {
+          var v = fs[k];
+          if (typeof v === 'number' && v > 0) { fParts.push(escapeHtml(k.replace(/_/g, ' ')) + ' ' + v); total += v; }
+        });
+        if (fParts.length) {
+          parts.push('<div class="audit-item"><span class="audit-label">Filtered ' + total + '</span>' + fParts.join(', ') + '</div>');
+        }
+      }
+      var gs = data.grounding_sources;
+      if (gs && gs.length) {
+        var srcLis = gs.map(function(s) { return '<li>' + escapeHtml(s) + '</li>'; }).join('');
+        parts.push('<div class="audit-item"><span class="audit-label">Grounded in</span><details><summary>' + gs.length + ' file' + (gs.length === 1 ? '' : 's') + '</summary><ul>' + srcLis + '</ul></details></div>');
+      }
+      if (!parts.length) { el.style.display = 'none'; return; }
+      el.innerHTML = parts.join('');
     }
 
     function renderComments() {
@@ -317,19 +451,24 @@ const PERSONA = {
       visible.forEach(function(x) {
         var k = cardKey(x);
         var done = history.done[k];
+        var reactedAt = history.reacted[k];
         var div = document.createElement('div');
-        div.className = 'card' + (done ? ' done' : '');
+        div.className = 'card' + (done ? ' done' : (reactedAt ? ' reacted' : ''));
         div.innerHTML =
-          '<div class="author">' + escapeHtml(x.author) + (x.company ? ' <span class="meta-line">· ' + escapeHtml(x.company) + '</span>' : '') + '</div>' +
-          '<div class="meta-line">' + lensTag(x.lens) + '<span class="score ' + (x.score >= 85 ? 'high' : '') + '">score ' + x.score + '</span></div>' +
+          '<div class="author">' + escapeHtml(x.author) + (x.company ? ' <span class="meta-line">· ' + escapeHtml(x.company) + '</span>' : '') +
+            (typeof x.author_cadence_14d === 'number' && x.author_cadence_14d >= 2 ? '<span class="cadence-warn ' + (x.author_cadence_14d >= 3 ? 'high' : '') + '">engaged ' + x.author_cadence_14d + '× in 14d</span>' : '') +
+          '</div>' +
+          '<div class="meta-line">' + lensTag(x.lens) + '<span class="score ' + (x.score >= 85 ? 'high' : '') + '">score ' + x.score + '</span>' +
+            (typeof x.age_hours === 'number' ? '<span class="age-tag">' + ageLabel(x.age_hours) + '</span>' : '') +
+          '</div>' +
           '<div class="why">' + escapeHtml(x.why) + '</div>' +
           '<div class="draft">' + escapeHtml(x.draft) + '</div>' +
           '<div class="actions">' +
             '<a href="' + escapeHtml(x.url) + '" target="_blank" rel="noopener noreferrer" class="btn-link primary tiny" data-a="open-link">Open in LinkedIn (copies)</a>' +
+            '<a href="' + escapeHtml(x.url) + '" target="_blank" rel="noopener noreferrer" class="btn-link tiny" data-a="react-link">React on LinkedIn</a>' +
             '<button class="tiny" data-a="copy">Copy comment</button>' +
             '<button class="tiny" data-a="done">Done</button>' +
             '<button class="tiny" data-a="skip">Skip</button>' +
-            '<button class="tiny" data-a="regen">Redraft</button>' +
           '</div>';
         var draftEl = div.querySelector('.draft');
         if (draftEl) {
@@ -344,6 +483,12 @@ const PERSONA = {
             if (!copied && draftEl) { selectElementText(draftEl); draftEl.classList.add('selected'); }
             return;
           }
+          var reactAnchor = e.target.closest('a[data-a="react-link"]');
+          if (reactAnchor) {
+            history.reacted[k] = Date.now(); saveHistory();
+            div.classList.remove('done'); div.classList.add('reacted');
+            return;
+          }
           var btn = e.target.closest('button'); if (!btn) return;
           var a = btn.dataset.a;
           if (a === 'copy') {
@@ -353,45 +498,12 @@ const PERSONA = {
               setTimeout(function() { btn.textContent = 'Copy comment'; }, 1500);
             } else {
               if (draftEl) { selectElementText(draftEl); draftEl.classList.add('selected'); }
-              btn.textContent = 'Selected - press Ctrl+C';
+              btn.textContent = 'Selected - Ctrl+C';
               setTimeout(function() { btn.textContent = 'Copy comment'; if (draftEl) draftEl.classList.remove('selected'); }, 3000);
             }
           }
-          else if (a === 'done') { history.done[k] = Date.now(); saveHistory(); div.classList.add('done'); }
+          else if (a === 'done') { history.done[k] = Date.now(); saveHistory(); div.classList.remove('reacted'); div.classList.add('done'); }
           else if (a === 'skip') { history.skipped[k] = Date.now(); saveHistory(); div.style.display = 'none'; }
-          else if (a === 'regen') {
-            var prompt = buildRedraftPrompt(x);
-            if (typeof window.sendPrompt === 'function') {
-              try {
-                window.sendPrompt(prompt + "\n\nPost URL: " + x.url + "\nAuthor: " + x.author + "\nCurrent draft (rewrite this): " + x.draft + "\nWhy the post matters: " + x.why);
-                return;
-              } catch (e) { /* fall through to inline */ }
-            }
-            if (window.cowork && typeof window.cowork.askClaude === 'function') {
-              btn.textContent = 'Redrafting...';
-              btn.disabled = true;
-              window.cowork.askClaude(prompt, [{
-                url: x.url, author: x.author, lens: x.lens,
-                current_draft: x.draft, why_this_post: x.why
-              }]).then(function(response) {
-                var newText = typeof response === 'string' ? response : (response.text || response.content || JSON.stringify(response));
-                newText = String(newText).trim().replace(/^["']|["']$/g, '').trim();
-                if (draftEl) draftEl.textContent = newText;
-                x.draft = newText;
-                btn.textContent = 'Redrafted';
-                btn.disabled = false;
-                setTimeout(function() { btn.textContent = 'Redraft'; }, 1500);
-              }).catch(function(err) {
-                console.error('Redraft failed', err);
-                btn.textContent = 'Failed - see console';
-                btn.disabled = false;
-                setTimeout(function() { btn.textContent = 'Redraft'; }, 2500);
-              });
-            } else {
-              btn.textContent = 'Unavailable';
-              setTimeout(function() { btn.textContent = 'Redraft'; }, 2000);
-            }
-          }
         });
         c.appendChild(div);
       });
@@ -412,19 +524,41 @@ const PERSONA = {
         else url = 'https://www.linkedin.com/search/results/people/?keywords=' + encodeURIComponent(x.name);
         var div = document.createElement('div');
         div.className = 'card' + (done ? ' done' : '');
+        var hasNote = typeof x.connect_note === 'string' && x.connect_note.trim().length > 0;
         div.innerHTML =
           '<div class="author">' + escapeHtml(x.name) + '</div>' +
           '<div class="meta-line">' + lensTag(x.lens) + '</div>' +
           '<div class="why">' + escapeHtml(x.reason) + '</div>' +
+          (hasNote
+            ? '<div class="connect-note-label">Connect note</div><div class="connect-note">' + escapeHtml(x.connect_note) + '</div>'
+            : '<div class="connect-note-label">Follow first (no connect note drafted)</div>') +
           '<div class="actions">' +
             '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" class="btn-link primary tiny" data-a="open-link">Open profile</a>' +
+            (hasNote ? '<button class="tiny" data-a="copy-note">Copy note</button>' : '') +
             '<button class="tiny" data-a="done">Engaged</button>' +
             '<button class="tiny" data-a="skip">Skip</button>' +
           '</div>';
+        var noteEl = div.querySelector('.connect-note');
+        if (noteEl) {
+          noteEl.addEventListener('click', function() {
+            if (selectElementText(noteEl)) noteEl.classList.add('selected');
+          });
+        }
         div.addEventListener('click', function(e) {
           var btn = e.target.closest('button'); if (!btn) return;
           var a = btn.dataset.a;
-          if (a === 'done') { history.done[k] = Date.now(); saveHistory(); div.classList.add('done'); }
+          if (a === 'copy-note') {
+            var ok = copyText(x.connect_note);
+            if (ok) {
+              btn.textContent = 'Copied';
+              setTimeout(function() { btn.textContent = 'Copy note'; }, 1500);
+            } else if (noteEl) {
+              selectElementText(noteEl); noteEl.classList.add('selected');
+              btn.textContent = 'Selected - Ctrl+C';
+              setTimeout(function() { btn.textContent = 'Copy note'; noteEl.classList.remove('selected'); }, 3000);
+            }
+          }
+          else if (a === 'done') { history.done[k] = Date.now(); saveHistory(); div.classList.add('done'); }
           else if (a === 'skip') { history.skipped[k] = Date.now(); saveHistory(); div.style.display = 'none'; }
         });
         c.appendChild(div);
@@ -434,7 +568,11 @@ const PERSONA = {
     function renderIdeas() {
       var c = document.getElementById('col-ideas');
       var items = data.post_ideas || [];
-      c.innerHTML = '<h2>Post Ideas <span class="count">' + items.length + '</span></h2>';
+      var published = (typeof data.posts_published_this_week === 'number') ? data.posts_published_this_week : 0;
+      var target = (typeof data.weekly_post_target === 'number') ? data.weekly_post_target : 2;
+      var cadenceClass = published >= target ? 'on-track' : '';
+      c.innerHTML = '<h2>Post Ideas <span class="count">' + items.length + '</span>' +
+        '<span class="cadence-badge ' + cadenceClass + '">' + published + '/' + target + ' this week</span></h2>';
       var visible = items.filter(function(x) { return !history.skipped[cardKey(x)]; });
       if (!visible.length) { c.innerHTML += '<div class="empty">No own-content angles.</div>'; return; }
       visible.forEach(function(x) {
@@ -447,7 +585,6 @@ const PERSONA = {
           '<div class="draft">' + escapeHtml(x.hook) + '</div>' +
           '<details><summary>Why this angle</summary><div style="padding-top:4px">' + escapeHtml(x.supporting) + '</div></details>' +
           '<div class="actions">' +
-            '<button class="primary tiny" data-a="expand">Expand in chat</button>' +
             '<button class="tiny" data-a="copy">Copy hook</button>' +
             '<button class="tiny" data-a="done">Used</button>' +
             '<button class="tiny" data-a="skip">Skip</button>' +
@@ -455,28 +592,7 @@ const PERSONA = {
         div.addEventListener('click', function(e) {
           var btn = e.target.closest('button'); if (!btn) return;
           var a = btn.dataset.a;
-          if (a === 'expand') {
-            var ePrompt = buildExpandPrompt();
-            if (typeof window.sendPrompt === 'function') {
-              try { window.sendPrompt(ePrompt + "\n\nAngle: " + x.angle + "\nHook: " + x.hook + "\nSupporting: " + x.supporting); return; } catch (e) {}
-            }
-            if (window.cowork && typeof window.cowork.askClaude === 'function') {
-              var oldHook = btn.textContent; btn.textContent = 'Expanding...'; btn.disabled = true;
-              window.cowork.askClaude(ePrompt, [{ angle: x.angle, hook: x.hook, supporting: x.supporting }]).then(function(r) {
-                var newText = typeof r === 'string' ? r : (r.text || r.content || JSON.stringify(r));
-                newText = String(newText).trim().replace(/^["']|["']$/g, '').trim();
-                var hookEl = div.querySelector('.draft');
-                if (hookEl) { hookEl.textContent = newText; hookEl.classList.add('selected'); }
-                x.hook = newText;
-                btn.textContent = 'Expanded'; btn.disabled = false;
-                setTimeout(function() { btn.textContent = oldHook; }, 1500);
-              }).catch(function() {
-                btn.textContent = 'Failed'; btn.disabled = false;
-                setTimeout(function() { btn.textContent = oldHook; }, 2000);
-              });
-            }
-          }
-          else if (a === 'copy') { copyText(x.hook); btn.textContent = 'Copied'; setTimeout(function() { btn.textContent = 'Copy hook'; }, 1200); }
+          if (a === 'copy') { copyText(x.hook); btn.textContent = 'Copied'; setTimeout(function() { btn.textContent = 'Copy hook'; }, 1200); }
           else if (a === 'done') { history.done[k] = Date.now(); saveHistory(); div.classList.add('done'); }
           else if (a === 'skip') { history.skipped[k] = Date.now(); saveHistory(); div.style.display = 'none'; }
         });
@@ -489,16 +605,18 @@ const PERSONA = {
     document.getElementById('header-sub').textContent = 'Generated ' + stamp + ' · ' + data.posts_scanned + ' posts scanned · ' + (data.comments || []).length + ' comments / ' + (data.engage || []).length + ' engage / ' + (data.post_ideas || []).length + ' ideas';
     document.getElementById('status').textContent = '';
 
+    renderResultsStrip();
+    renderAuditStrip();
     renderComments();
     renderEngage();
     renderIdeas();
 
-    document.getElementById('btn-refresh').addEventListener('click', function() {
-      if (window.sendPrompt) window.sendPrompt('linkedin brief - re-run the pipeline and update the engagement console artifact');
-    });
     document.getElementById('btn-clear').addEventListener('click', function() {
-      if (confirm('Clear all skip/done history?')) {
-        history.skipped = {}; history.done = {};
+      var doneCount = Object.keys(history.done || {}).length;
+      var reactedCount = Object.keys(history.reacted || {}).length;
+      var msg = 'Reset Done (' + doneCount + ') and Reacted (' + reactedCount + ') cards back to pending? Skipped cards stay hidden.';
+      if (confirm(msg)) {
+        history.done = {}; history.reacted = {};
         saveHistory();
         location.reload();
       }

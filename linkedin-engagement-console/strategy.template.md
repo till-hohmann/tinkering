@@ -63,6 +63,41 @@ The defaults below are sized for an operator who builds. Rename, replace, or del
 
 ---
 
+## Target companies
+
+The peer-company set that the orchestration skill scrapes via `linkedin__get_company_posts` on every run. One slug per line. Keep the slug list in the strategy file, not in the skill body, so adding a new peer takes one YAML edit and no skill rebuild.
+
+```yaml
+target_companies:
+  - slug: example-company-a
+    name: Example Company A
+    lens: biotech
+  - slug: example-company-b
+    name: Example Company B
+    lens: biotech
+    note: company page often empty; track <Founder Name> personal feed instead
+  - slug: example-company-c
+    name: Example Company C
+    lens: biotech
+```
+
+**Persona-to-company collapse rules** (used by the cadence guard). Each company groups with its named employees; engagement with any of them counts toward the same cadence key. Without this, the cadence guard is trivially circumventable: 3 posts from a company plus 1 from an employee reads as "different authors" rather than "4 touches on the same peer". Maintain this list as new peers join the strategy.
+
+```yaml
+company_employee_map:
+  example-company-a: [<Founder Name>, <COO Name>, <Head of R&D>]
+  example-company-b: [<Founder Name>]
+  example-company-c: [<CEO Name>, <CCO Name>]
+```
+
+**Notes for adding a new peer:**
+
+- Add the slug to `target_companies`. The skill picks it up on the next run.
+- Add the company + at least one known employee name to `company_employee_map` so cadence collapse works from day one.
+- If the company page is dormant, set `note:` accordingly and consider scraping a key personal profile instead.
+
+---
+
 ## Skip patterns
 
 Cut the noise before scoring runs.

@@ -1,5 +1,7 @@
 # LinkedIn Engagement Console
 
+> **v2.6.** Adds connect-note drafts on Engage cards, a React-on-LinkedIn shortcut on Comment cards (separate from the comment path), an own-post results strip showing engagement on your recent posts, a per-author cadence guard that collapses company + known-employee posts, freshness decay on stale-post scoring, an audit strip showing filter counts and grounding sources, and skip-permanence (the Reset button only clears Done/Reacted, never Skip). Target companies live in `linkedin-strategy.md` now, not in the skill body.
+
 A self-contained HTML console that turns your daily LinkedIn engagement pass into a triage workflow. Drafts grounded comments, surfaces profiles to engage with, proposes your own-content angles. Designed to keep you on the value-adding part of LinkedIn without burning an hour on it.
 
 ![LinkedIn-blue cards, three columns: Comments, Engage with, Post Ideas.](./preview.png)
