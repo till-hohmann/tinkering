@@ -442,9 +442,20 @@ const PERSONA = {
       el.innerHTML = parts.join('');
     }
 
+
+    // Returns true if url is a LinkedIn person-profile URL (/in/<slug>/)
+    // rather than a post URL (/posts/...) or company URL (/company/...).
+    // Person profile URLs cannot be commented on -- filter them from Comments.
+    function isPersonProfileUrl(url) {
+      if (!url) return false;
+      return /linkedin\.com\/in\/[^\/]+\/?(\..*)?$/.test(url);
+    }
+
     function renderComments() {
       var c = document.getElementById('col-comments');
-      var items = data.comments || [];
+      // Filter out person-profile URLs -- you can't comment on a profile page.
+      var allItems = data.comments || [];
+      var items = allItems.filter(function(x) { return !isPersonProfileUrl(x.url); });
       c.innerHTML = '<h2>Comments <span class="count">' + items.length + '</span></h2>';
       var visible = items.filter(function(x) { return !history.skipped[cardKey(x)]; });
       if (!visible.length) { c.innerHTML += '<div class="empty">No qualifying posts.</div>'; return; }
@@ -602,7 +613,7 @@ const PERSONA = {
 
     var d = new Date(data.generated_at);
     var stamp = isNaN(d) ? data.generated_at : d.toLocaleString();
-    document.getElementById('header-sub').textContent = 'Generated ' + stamp + ' · ' + data.posts_scanned + ' posts scanned · ' + (data.comments || []).length + ' comments / ' + (data.engage || []).length + ' engage / ' + (data.post_ideas || []).length + ' ideas';
+    document.getElementById('header-sub').textContent = 'Generated ' + stamp + ' · ' + data.posts_scanned + ' posts scanned · ' + (data.comments || []).filter(function(x){ return !isPersonProfileUrl(x.url); }).length + ' comments / ' + (data.engage || []).length + ' engage / ' + (data.post_ideas || []).length + ' ideas';
     document.getElementById('status').textContent = '';
 
     renderResultsStrip();
