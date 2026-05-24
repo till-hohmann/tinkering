@@ -128,14 +128,24 @@ one-command workflow. You're done.
 
 ## Doing it with Claude Code or Cowork
 
-If you'd rather not run commands at all: this repo ships skill bundles in
-`skills/`. Install them into Claude Code or Cowork, then say *"ingest my
-Plaud recordings"* and the assistant will run the same pipeline against your
-own config. The skills are thin wrappers around `plaud-ingest` — no separate
-implementation, no second source of truth.
+If you'd rather not run commands at all: this repo ships four skill bundles
+in [`skills/`](./skills/). Install whichever you want into your Claude
+Code skills directory, and then talk to them in plain English:
 
-(Phase B and C of this stack add a wikilink templater and graph-hygiene
-tools. Same idea: a CLI, a skill bundle, you choose which surface you want.)
+| Skill | What to say |
+|---|---|
+| [plaud-ingester](./skills/plaud-ingester) | "ingest my Plaud recordings" |
+| [plaud-templater](./skills/plaud-templater) | "update my Plaud templates" |
+| [plaud-relinker](./skills/plaud-relinker) | "re-link my vault" |
+| [plaud-graph-audit](./skills/plaud-graph-audit) | "audit my vault" |
+
+The first three are thin wrappers — they invoke the matching CLI and
+handle the preview/confirm/apply loop interactively. The fourth adds real
+AI value: the audit CLI surfaces concept candidates and missing index
+entries, and the skill classifies them into the right index and proposes
+additions for your approval.
+
+See [`skills/README.md`](./skills/README.md) for install instructions.
 
 ## Things that can go wrong
 
