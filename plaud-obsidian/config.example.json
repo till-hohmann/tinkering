@@ -43,5 +43,35 @@
   },
 
   "_comment_self_participant": "Names that count as 'yourself' in a 1-on-1. The first non-self participant becomes the filename.",
-  "self_participant_names": ["You"]
+  "self_participant_names": ["You"],
+
+  "_comment_indices": "Your Obsidian index files. The templater (plaud-template-sync) reads these to find canonical [[wikilinks]] for every person, company, project, etc. Each index file should use H2 (## Heading) sections to group entries by category. Paths are relative to vault_root.",
+  "indices": [
+    { "id": "people",    "path": "_Meta/Indices/People Index.md" },
+    { "id": "companies", "path": "_Meta/Indices/Companies Index.md" }
+  ],
+
+  "_comment_templates_note": "A single markdown note in your vault where you keep your Plaud-side transcription templates. The templater only rewrites content between <!-- WIKILINK-RULES:<id> --> and <!-- /WIKILINK-RULES:<id> --> markers. You own the rest. Path is relative to vault_root.",
+  "templates_note": "_Meta/PlaudTemplates.md",
+
+  "_comment_templates": "Which indices and which categories feed each template's wikilink-rules block. 'index' must match an id in 'indices' above. 'categories' lists the H2 section names to include from that index, or use '*' for all categories in the index.",
+  "templates": [
+    {
+      "id": "1on1",
+      "include": [
+        { "index": "people",    "categories": "*" },
+        { "index": "companies", "categories": ["Customers"] }
+      ]
+    },
+    {
+      "id": "project_meeting",
+      "include": [
+        { "index": "people",    "categories": ["Team"] },
+        { "index": "companies", "categories": "*" }
+      ]
+    }
+  ],
+
+  "_comment_corrections": "Optional. Find-and-replace pairs applied to every wikilink-rules block after rendering. Useful when an index file has a name that should be normalised before reaching the Plaud device (e.g. uppercase vs canonical casing). Leave empty if you don't need it.",
+  "corrections": []
 }

@@ -8,10 +8,14 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 
 VALID_NAMING = {"one_on_one", "titled", "journal", "inbox"}
+
+# A template's `categories` list can be the literal string "*" (all) or a list
+# of H2 section names from the referenced index file.
+CategoriesSpec = Union[str, List[str]]
 
 
 @dataclass
@@ -32,6 +36,30 @@ class NamingConfig:
 
 
 @dataclass
+class IndexRef:
+    id: str
+    path: str   # vault-relative
+
+
+@dataclass
+class TemplateInclude:
+    index: str                  # references IndexRef.id
+    categories: CategoriesSpec  # "*" or list of H2 section names
+
+
+@dataclass
+class TemplateSpec:
+    id: str
+    include: List[TemplateInclude]
+
+
+@dataclass
+class Correction:
+    from_: str
+    to: str
+
+
+@dataclass
 class Config:
     recordings_dir: Path
     vault_root: Path
@@ -40,6 +68,10 @@ class Config:
     routing: List[RouteRule]
     naming: NamingConfig
     self_participant_names: List[str]
+    indices: List[IndexRef] = field(default_factory=list)
+    templates_note: Optional[str] = None
+    templates: List[TemplateSpec] = field(default_factory=list)
+    corrections: List[Correction] = field(default_factory=list)
     source_path: Optional[Path] = None
 
     def field_name(self, key: str) -> str:
@@ -105,6 +137,36 @@ def load_config(path: Path) -> Config:
 
     self_names = raw.get("self_participant_names") or []
 
+    indices = [
+        IndexRef(id=e["id"], path=e["path"])
+        for e in (raw.get("indices") or [])
+    ]
+    valid_index_ids = {i.id for i in indices}
+
+    templates: List[TemplateSpec] = []
+    for t in (raw.get("templates") or []):
+        includes: List[TemplateInclude] = []
+        for inc in t.get("include", []):
+            idx_id = inc["index"]
+            if idx_id not in valid_index_ids:
+                raise ValueError(
+                    f"template {t.get('id')!r} references unknown index "
+                    f"{idx_id!r}. Valid ids: {sorted(valid_index_ids)}"
+                )
+            cats = inc.get("categories", "*")
+            if not (cats == "*" or isinstance(cats, list)):
+                raise ValueError(
+                    f"template {t.get('id')!r} include for index {idx_id!r}: "
+                    f"'categories' must be '*' or a list"
+                )
+            includes.append(TemplateInclude(index=idx_id, categories=cats))
+        templates.append(TemplateSpec(id=t["id"], include=includes))
+
+    corrections = [
+        Correction(from_=c["from"], to=c["to"])
+        for c in (raw.get("corrections") or [])
+    ]
+
     return Config(
         recordings_dir=recordings_dir,
         vault_root=vault_root,
@@ -113,5 +175,9 @@ def load_config(path: Path) -> Config:
         routing=routes,
         naming=naming,
         self_participant_names=list(self_names),
+        indices=indices,
+        templates_note=raw.get("templates_note"),
+        templates=templates,
+        corrections=corrections,
         source_path=path.resolve(),
     )

@@ -34,10 +34,10 @@ being properly linked into your knowledge graph. No more triage.
 
 This repo ships the **upper layers**:
 
-- **Ingester** — routes Plaud summaries into vault subfolders with clean,
-  consistent filenames. Config-driven; no IR-specific routing knowledge baked
-  in. *(Phase A — this commit.)*
-- **Templater** *(Phase B, coming next)* — keeps the wikilink-reference block
+- **Ingester** (`plaud-ingest`) — routes Plaud summaries into vault subfolders
+  with clean, consistent filenames. Config-driven; no IR-specific routing
+  knowledge baked in.
+- **Templater** (`plaud-template-sync`) — keeps the wikilink-reference block
   of your Plaud-side templates in sync with your Obsidian indices, so the AI
   on the device knows the canonical link format for every person, company,
   and project you care about.
@@ -85,9 +85,13 @@ One file, `config.json`. Copy from `config.example.json` and edit:
 |---|---|
 | `paths` | Where your Plaud staging folder is, where your vault is, what subfolder to use for unroutable files. |
 | `fields` | Frontmatter field names this tool reads (`type`, `participant`, `meeting_title`, `date`). Change if your Plaud templates use different names. |
-| `routing` | The whole story. Each entry maps a `type` value in the frontmatter to a vault folder, a filename prefix, and a naming style. First match wins. Unknown `type` → inbox. |
+| `routing` | The whole story for the ingester. Each entry maps a `type` value in the frontmatter to a vault folder, a filename prefix, and a naming style. First match wins. Unknown `type` → inbox. |
 | `naming` | Knobs for the short-title rule (max words, stopwords to strip). |
 | `self_participant_names` | Names that count as "you" in a 1-on-1, so the *other* participant ends up in the filename. |
+| `indices` | List of `{id, path}` entries pointing at your Obsidian index files. The templater reads these. Paths are vault-relative. |
+| `templates_note` | Vault-relative path to the markdown note that holds your Plaud-side templates. The templater rewrites only the content between `<!-- WIKILINK-RULES:<id> -->` markers. |
+| `templates` | List of `{id, include: [{index, categories}]}` entries. Each one says how to populate the matching marker block. `categories` is either `"*"` (all H2 sections from that index) or a list of section names. |
+| `corrections` | Optional list of `{from, to}` find/replace pairs applied to every rendered template block. |
 
 Four naming styles are supported per route:
 
@@ -95,6 +99,42 @@ Four naming styles are supported per route:
 - `titled` → `YYYY-MM-DD_<prefix>_<Short Title>.md`
 - `journal` → `YYYY-MM-DD_Journal.md` (one per day; numbered if multiple)
 - `inbox` → `YYYY-MM-DD_Inbox_<Short Title>.md` (parking lot for the unroutable)
+
+## Templater: keep your wikilinks in sync
+
+The `plaud-template-sync` command rewrites the wikilink-reference block of
+your Plaud-side templates from your Obsidian indices. The flow:
+
+1. You keep all your Plaud transcription templates in one vault note (set
+   `templates_note` in config — default `_Meta/PlaudTemplates.md`).
+2. Each template has a `<!-- WIKILINK-RULES:<id> --> ... <!-- /WIKILINK-RULES:<id> -->`
+   marker pair. The templater only rewrites the content between markers; the
+   rest of the note is yours.
+3. Each `id` matches a `templates[].id` in `config.json`, which says which
+   indices and which categories to pull from. Categories are H2 headings in
+   your index files.
+
+```bash
+plaud-template-sync --config config.json --dry-run    # see what would change
+plaud-template-sync --config config.json              # rewrite the note
+```
+
+When you copy the templates note's contents to your Plaud account, the AI
+on the device knows the canonical wikilink form for every entity in your
+indices. Add a new person to your People Index, re-run the templater, and
+the next Plaud summary will link them correctly.
+
+The templater warns about:
+- Configured template ids that have no matching marker in the templates note
+  (you forgot to add the markers).
+- Marker blocks whose id doesn't match any template config (left untouched,
+  surfaced for review).
+- `categories` entries in config that don't match any H2 section in the
+  referenced index file (typo catcher — lists the available categories).
+
+Optional `corrections` block in config applies find/replace pairs to every
+rendered block — useful for normalising names that appear inconsistently
+across your indices (e.g. `[[ACME]]` → `[[Acme Corp]]`).
 
 ## Inbox fallback
 
