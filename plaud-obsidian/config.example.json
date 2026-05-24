@@ -1,0 +1,47 @@
+{
+  "_comment_paths": "Where Plaud staging files come from and where your vault lives. Absolute paths, or ~ for home.",
+  "paths": {
+    "recordings_dir": "~/PlaudRecordings",
+    "vault_root": "~/ObsidianVault",
+    "inbox_folder": "00_Inbox"
+  },
+
+  "_comment_fields": "Frontmatter field names this tool reads from each Plaud summary. Change if your Plaud templates use different names.",
+  "fields": {
+    "type": "type",
+    "participant": "participant",
+    "meeting_title": "meeting_title",
+    "date": "date"
+  },
+
+  "_comment_routing": "How the 'type' field maps to a vault folder, filename prefix, and naming style. Order doesn't matter; the first matching type wins. Any 'type' not listed here is parked in the inbox_folder. Available naming styles: 'one_on_one' (uses Participant), 'titled' (uses Short Title), 'journal' (YYYY-MM-DD_Journal.md), 'inbox' (YYYY-MM-DD_Inbox_<Title>.md).",
+  "routing": [
+    {
+      "type": "1on1",
+      "folder": "10_Meetings/14_1on1",
+      "prefix": "1on1",
+      "naming": "one_on_one"
+    },
+    {
+      "type": "general",
+      "folder": "10_Meetings/11_General",
+      "prefix": "GEN",
+      "naming": "titled"
+    },
+    {
+      "type": "journal",
+      "folder": "20_Journal",
+      "prefix": "",
+      "naming": "journal"
+    }
+  ],
+
+  "_comment_naming": "Knobs for the Short Title rule used by 'titled' routes.",
+  "naming": {
+    "short_title_max_words": 4,
+    "strip_words": ["a", "an", "the", "and", "or", "with", "for", "in", "on", "at", "of", "to"]
+  },
+
+  "_comment_self_participant": "Names that count as 'yourself' in a 1-on-1. The first non-self participant becomes the filename.",
+  "self_participant_names": ["You"]
+}

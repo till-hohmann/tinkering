@@ -5,6 +5,7 @@ Small AI-assisted operator tools, released as I build them. Each subfolder is a 
 ## What's here
 
 - **[linkedin-engagement-console](./linkedin-engagement-console/)**. Daily LinkedIn engagement console. Pulls feed + peer-company posts via an MCP server, drafts comments grounded in your own recent activity, surfaces profiles to engage with, proposes own-content angles. Renders as a single self-contained HTML page in LinkedIn brand colors. **Not a developer?** Start with the [step-by-step getting-started guide](./linkedin-engagement-console/GETTING_STARTED.md).
+- **[plaud-obsidian](./plaud-obsidian/)**. Config-driven pipeline that turns Plaud voice-recording summaries into meaningful, properly-named, well-linked notes in an Obsidian vault. Reads frontmatter, routes by `type`, builds clean filenames, parks unroutable files in an inbox instead of letting them disappear in a staging folder. Runs on top of [plaud-api](https://github.com/till-hohmann/plaud-api). **Not a developer?** Start with the [step-by-step getting-started guide](./plaud-obsidian/GETTING_STARTED.md). *(Phase A of three; templater + graph hygiene coming.)*
 
 More to come as I open-source pieces of my own operator stack.
 

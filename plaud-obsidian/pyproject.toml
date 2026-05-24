@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plaud-obsidian"
+version = "0.1.0"
+description = "Config-driven pipeline that turns Plaud voice recordings into meaningful, well-linked notes in an Obsidian vault."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Till Hohmann" }]
+keywords = ["plaud", "obsidian", "notes", "voice-recording", "knowledge-management"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.scripts]
+plaud-ingest = "plaud_obsidian.ingester.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/till-hohmann/tinkering"
+Issues = "https://github.com/till-hohmann/tinkering/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

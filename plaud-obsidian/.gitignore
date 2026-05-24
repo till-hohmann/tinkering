@@ -1,0 +1,21 @@
+# local config — never commit your token or real paths
+config.json
+.plaud_config.json
+.plaud_ingested.json
+.plaud_downloaded.json
+.plaud_state.json
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.eggs/
+
+# editor cruft
+.vscode/
+.idea/
+.DS_Store
