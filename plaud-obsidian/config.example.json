@@ -73,5 +73,24 @@
   ],
 
   "_comment_corrections": "Optional. Find-and-replace pairs applied to every wikilink-rules block after rendering. Useful when an index file has a name that should be normalised before reaching the Plaud device (e.g. uppercase vs canonical casing). Leave empty if you don't need it.",
-  "corrections": []
+  "corrections": [],
+
+  "_comment_relinker": "Knobs for plaud-relink, which finds plain-text mentions of note titles that should be [[wikilinks]] and fixes them. state_file is relative to vault_root. skip_prefixes / skip_exact exclude notes whose titles start with / equal a value (e.g. templates, dashboards). protected_paths is a list of vault-relative file paths that the relinker will never modify. min_title_length protects against false matches for very short titles. exclude_folders are vault-relative folder prefixes that will not be scanned for relinking.",
+  "relinker": {
+    "state_file": "_Meta/.relinker-state.json",
+    "skip_prefixes": ["TPL ", "Dashboard "],
+    "skip_exact": [],
+    "protected_paths": [],
+    "min_title_length": 4,
+    "exclude_folders": ["_Meta", "_Assets"]
+  },
+
+  "_comment_graph_audit": "Knobs for plaud-graph-audit, the read-only health check that surfaces (a) wikilinks referenced anywhere in the vault but not listed in any index, (b) index entries with no inbound reference, (c) frequently-mentioned Title-Case phrases without their own note, (d) semantic notes that look stale (few backlinks + old). semantic_folders are the vault-relative folders considered 'concept notes' for the stale check. min_phrase_count is how many distinct notes a phrase must appear in to surface as a candidate. max_stale_backlinks + min_stale_age_days control the stale-note check.",
+  "graph_audit": {
+    "semantic_folders": ["People", "Companies"],
+    "exclude_folders": ["_Meta", "_Assets"],
+    "min_phrase_count": 3,
+    "max_stale_backlinks": 2,
+    "min_stale_age_days": 90
+  }
 }

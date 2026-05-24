@@ -60,6 +60,25 @@ class Correction:
 
 
 @dataclass
+class RelinkerConfig:
+    state_file: str = "_Meta/.relinker-state.json"
+    skip_prefixes: List[str] = field(default_factory=lambda: ["TPL ", "Dashboard "])
+    skip_exact: List[str] = field(default_factory=list)
+    protected_paths: List[str] = field(default_factory=list)
+    min_title_length: int = 4
+    exclude_folders: List[str] = field(default_factory=lambda: ["_Meta", "_Assets"])
+
+
+@dataclass
+class GraphAuditConfig:
+    semantic_folders: List[str] = field(default_factory=list)
+    exclude_folders: List[str] = field(default_factory=lambda: ["_Meta", "_Assets"])
+    min_phrase_count: int = 3
+    max_stale_backlinks: int = 2
+    min_stale_age_days: int = 90
+
+
+@dataclass
 class Config:
     recordings_dir: Path
     vault_root: Path
@@ -72,6 +91,8 @@ class Config:
     templates_note: Optional[str] = None
     templates: List[TemplateSpec] = field(default_factory=list)
     corrections: List[Correction] = field(default_factory=list)
+    relinker: RelinkerConfig = field(default_factory=RelinkerConfig)
+    graph_audit: GraphAuditConfig = field(default_factory=GraphAuditConfig)
     source_path: Optional[Path] = None
 
     def field_name(self, key: str) -> str:
@@ -167,6 +188,25 @@ def load_config(path: Path) -> Config:
         for c in (raw.get("corrections") or [])
     ]
 
+    rl_raw = raw.get("relinker") or {}
+    relinker = RelinkerConfig(
+        state_file=rl_raw.get("state_file", RelinkerConfig.state_file),
+        skip_prefixes=list(rl_raw.get("skip_prefixes", RelinkerConfig.__dataclass_fields__["skip_prefixes"].default_factory())),
+        skip_exact=list(rl_raw.get("skip_exact", [])),
+        protected_paths=list(rl_raw.get("protected_paths", [])),
+        min_title_length=int(rl_raw.get("min_title_length", 4)),
+        exclude_folders=list(rl_raw.get("exclude_folders", RelinkerConfig.__dataclass_fields__["exclude_folders"].default_factory())),
+    )
+
+    ga_raw = raw.get("graph_audit") or {}
+    graph_audit = GraphAuditConfig(
+        semantic_folders=list(ga_raw.get("semantic_folders", [])),
+        exclude_folders=list(ga_raw.get("exclude_folders", GraphAuditConfig.__dataclass_fields__["exclude_folders"].default_factory())),
+        min_phrase_count=int(ga_raw.get("min_phrase_count", 3)),
+        max_stale_backlinks=int(ga_raw.get("max_stale_backlinks", 2)),
+        min_stale_age_days=int(ga_raw.get("min_stale_age_days", 90)),
+    )
+
     return Config(
         recordings_dir=recordings_dir,
         vault_root=vault_root,
@@ -179,5 +219,7 @@ def load_config(path: Path) -> Config:
         templates_note=raw.get("templates_note"),
         templates=templates,
         corrections=corrections,
+        relinker=relinker,
+        graph_audit=graph_audit,
         source_path=path.resolve(),
     )

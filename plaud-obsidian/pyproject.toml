@@ -22,6 +22,8 @@ dependencies = []
 [project.scripts]
 plaud-ingest = "plaud_obsidian.ingester.__main__:main"
 plaud-template-sync = "plaud_obsidian.templater.__main__:main"
+plaud-relink = "plaud_obsidian.relinker.run:main"
+plaud-graph-audit = "plaud_obsidian.graph.__main__:main"
 
 [project.urls]
 Repository = "https://github.com/till-hohmann/tinkering"

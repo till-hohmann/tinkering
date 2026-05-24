@@ -1,6 +1,6 @@
 ---
 role: Engineering lead
-aliases: []
+aliases: [Anna]
 ---
 
 # Anna Schmidt
