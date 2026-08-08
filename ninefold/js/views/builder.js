@@ -31,7 +31,7 @@ import { ADAPTATIONS, byId as adaptationById, analysePriorities, compatibility,
   BLOCK_SHAPES, isCardio } from "../builder/adaptations.js";
 import { generateProgram } from "../builder/generate.js";
 import { getProfile, patchProfile } from "../profile.js";
-import { defaultEquipmentFor, weightValue, weightToKg, weightLabel } from "../units.js";
+import { defaultEquipmentFor, weightValue, weightToKg, weightLabel, distanceValue, distanceLabel } from "../units.js";
 import { importProgram } from "../store.js";
 import { todayISO } from "../model.js";
 
@@ -124,7 +124,7 @@ function bar(label, onClick, { disabled = false, secondary = null } = {}) {
 function stepGoal(body) {
   const nameIn = input("Block name", "e.g. Autumn strength", S.name);
   const goalIn = textarea("What does success look like?",
-    "Specific and measurable beats vague. \"Squat 100 kg for 5\" or \"run 10 km without walking\" — not \"get fitter\".", S.goalText);
+    `Specific and measurable beats vague. "Squat ${weightValue(100)} ${weightLabel()} for 5" or "run ${Math.round(distanceValue(10))} ${distanceLabel()} without walking" — not "get fitter".`, S.goalText);
   body.append(
     el("p.dim", { text: "A goal you can measure is one you can program for. The more precisely you can name it, the faster you'll get there." }),
     nameIn.wrap, goalIn.wrap,

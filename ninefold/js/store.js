@@ -23,10 +23,15 @@ export async function syncedPrefs() {
 // file restore.
 async function restorePrefs(prefs, { overwrite = false } = {}) {
   if (!prefs) return;
+  let touchedProfile = false;
   for (const k of SYNCED_PREFS) {
     if (prefs[k] === undefined) continue;
-    if (overwrite || (await db.getPref(k)) === undefined) await db.setPref(k, prefs[k]);
+    if (overwrite || (await db.getPref(k)) === undefined) { await db.setPref(k, prefs[k]); touchedProfile ||= k === "profile"; }
   }
+  // The profile is written straight to the pref store here, behind profile.js's
+  // back. Without this its in-memory copy — and the display units derived from
+  // it — would keep serving the pre-restore values until the next cold start.
+  if (touchedProfile) (await import("./profile.js")).clearProfileCache();
 }
 
 // Full local state for the cloud backup (programs + sessions + synced settings).

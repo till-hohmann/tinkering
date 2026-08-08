@@ -17,6 +17,7 @@ import { runRoutine } from "./routine.js";
 import { runStrength } from "./strength.js";
 import { runCardioCore, logCardio } from "./cardio.js";
 import { recoveryToday, body as trackerBody, provider, has, CAP } from "../health/index.js";
+import { weightLabel, weightValue, weightToKg, readEdit } from "../units.js";
 
 const repLo = (range) => { const n = (range || "").match(/\d+/); return n ? Number(n[0]) : 8; };
 const isTimedSets = (ex) => ex && ex.sets && ex.sets.length && ex.sets.every((s) => s.reps == null);
@@ -378,15 +379,15 @@ async function notes(stage, draft) {
   const canPullWeight = await has(CAP.body);
   return new Promise((res) => {
     clear(stage);
-    const bw = el("input", { type: "text", inputmode: "decimal", placeholder: "kg",
-      style: inStyle(), value: draft.sessionNotes.bodyweightKg || "" });
+    const bw = el("input", { type: "text", inputmode: "decimal", placeholder: weightLabel(),
+      style: inStyle(), value: draft.sessionNotes.bodyweightKg ? String(weightValue(draft.sessionNotes.bodyweightKg)) : "" });
     const energy = el("input", { type: "text", placeholder: "energy / sleep", style: inStyle(true) });
     const niggles = el("input", { type: "text", placeholder: "anything to watch", style: inStyle(true) });
     const bwPull = el("button.btn", { style: "padding:7px 12px", onclick: async () => {
       bwPull.disabled = true; const old = bwPull.textContent; bwPull.textContent = "…";
       try {
         const m = await trackerBody();
-        if (m && m.weightKg != null) { bw.value = String(m.weightKg); bwPull.textContent = "✓"; }
+        if (m && m.weightKg != null) { bw.value = String(weightValue(m.weightKg)); bwPull.textContent = "✓"; }
         else bwPull.textContent = "none";
       } catch (e) { bwPull.textContent = /401|not_linked/.test(e.message || "") ? "link first" : "offline"; }
       finally { setTimeout(() => { bwPull.disabled = false; bwPull.textContent = old; }, 1400); }
@@ -400,7 +401,10 @@ async function notes(stage, draft) {
       el("div", { style: "margin:12px 0" }, [el("div.dim", { text: "Niggles" }), niggles]),
     ]));
     const bar = addActionBar(el("button.btn.primary.big.block", { onclick: () => {
-      if (bw.value) { draft.sessionNotes.bodyweightKg = M.parseNum(bw.value); setBodyweight(M.parseNum(bw.value)); }
+      if (bw.value) {
+        const kg = weightToKg(M.parseNum(bw.value)) ?? 0;      // typed in the display unit
+        draft.sessionNotes.bodyweightKg = kg; setBodyweight(kg);
+      }
       if (energy.value) draft.sessionNotes.energySleep = energy.value;
       if (niggles.value) draft.sessionNotes.niggles = niggles.value;
       bar.remove();
@@ -672,9 +676,10 @@ function subReview(stage, strengthResult, program) {
           el("span.badge", { text: ex.substituted ? "core" : "logged" }),
         ]);
       }
-      const wIn = el("input", { type: "number", inputmode: "decimal", value: String(topW), style: revInStyle() });
+      const wIn = el("input", { type: "number", inputmode: "decimal", value: String(weightValue(topW)), style: revInStyle() });
+      wIn.dataset.shown = wIn.value;      // untouched = keep the back-calculated kg exactly (see readEdit)
       const rIn = el("input", { type: "number", inputmode: "numeric", value: String(reps), style: revInStyle() });
-      edits.push({ ex, wIn, rIn });
+      edits.push({ ex, wIn, rIn, topW });
       return el("div.card.tight", {}, [
         el("div.row", {}, [
           el("div", { style: "flex:1;min-width:0" }, [
@@ -684,7 +689,7 @@ function subReview(stage, strengthResult, program) {
           ]),
         ]),
         el("div.row", { style: "gap:10px;margin-top:8px;align-items:center" }, [
-          wIn, el("span.dim", { text: "kg" }), rIn, el("span.dim", { text: "reps" }),
+          wIn, el("span.dim", { text: weightLabel() }), rIn, el("span.dim", { text: "reps" }),
           el("span.faint", { style: "font-size:.78rem", text: `× ${ex.sets.length} sets` }),
         ]),
       ]);
@@ -697,7 +702,8 @@ function subReview(stage, strengthResult, program) {
     ]));
     const bar = addActionBar(el("button.btn.primary.big.block", { onclick: () => {
       for (const e of edits) {
-        const w = Number(e.wIn.value) || 0, r = Math.max(0, Math.round(Number(e.rIn.value) || 0));
+        const w = readEdit(e.wIn, e.topW, (v) => weightToKg(Number(v) || 0));
+        const r = Math.max(0, Math.round(Number(e.rIn.value) || 0));
         e.ex.sets = e.ex.sets.map((s, i) => ({ setNumber: i + 1, weightKg: w, reps: r, ...(s.rir != null ? { rir: s.rir } : {}) }));
       }
       bar.remove();

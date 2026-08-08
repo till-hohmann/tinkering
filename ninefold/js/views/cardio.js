@@ -26,6 +26,7 @@ function runStructure(prescription) {
 }
 import { bestWorkoutFor, provider, has, CAP } from "../health/index.js";
 import { isDeloadWeek } from "../progression.js";
+import { distanceLabel, distanceValue, distanceToKm } from "../units.js";
 import * as M from "../model.js";
 
 // Deload/taper flag for the week governing this date — cardio backs off in the
@@ -169,8 +170,8 @@ export async function logCardio(container, program, day, weekday, iso, { tracked
   const secIn = el("input", { type: "number", inputmode: "numeric", placeholder: "sec", min: "0", max: "59",
     value: totSec ? String(totSec % 60).padStart(2, "0") : "", style: tStyle });
   const fields = {
-    distance: el("input", { type: "text", inputmode: "decimal", placeholder: "km",
-      value: prev ? String(prev.cardioResult.distanceKm) : "" }),
+    distance: el("input", { type: "text", inputmode: "decimal", placeholder: distanceLabel(),
+      value: prev ? String(distanceValue(prev.cardioResult.distanceKm)) : "" }),
     hr: el("input", { type: "number", inputmode: "numeric", placeholder: "bpm",
       value: prev ? String(prev.cardioResult.avgHR) : "" }),
   };
@@ -241,7 +242,7 @@ export async function logCardio(container, program, day, weekday, iso, { tracked
         minIn.value = String(Math.floor((m.timeSeconds % 3600) / 60)).padStart(2, "0");
         secIn.value = String(m.timeSeconds % 60).padStart(2, "0");
       }
-      if (m.distanceKm != null) fields.distance.value = String(m.distanceKm);
+      if (m.distanceKm != null) fields.distance.value = String(distanceValue(m.distanceKm));
       if (m.avgHR != null) fields.hr.value = String(m.avgHR);
       whoopExtra = { source: m.source || tracker.id, maxHR: m.maxHR, zoneMins: m.zoneMins, strain: m.strain, whoopSport: m.sport };
       if (m.sport) {   // let the tracker's sport pick the modality (elliptical/treadmill/run)
@@ -263,7 +264,7 @@ export async function logCardio(container, program, day, weekday, iso, { tracked
   }
 
   container.appendChild(timeRow);
-  container.appendChild(row("Distance", fields.distance, "km"));
+  container.appendChild(row("Distance", fields.distance, distanceLabel()));
   container.appendChild(row("Avg HR", fields.hr, "bpm"));
 
   // live insight: which zone the avg HR landed in vs today's target, plus a
@@ -272,7 +273,7 @@ export async function logCardio(container, program, day, weekday, iso, { tracked
   function reading() {
     return {
       timeSeconds: (Number(hrIn.value) || 0) * 3600 + (Number(minIn.value) || 0) * 60 + (Number(secIn.value) || 0),
-      distanceKm: M.parseNum(fields.distance.value),
+      distanceKm: distanceToKm(M.parseNum(fields.distance.value)) ?? 0,   // typed in the display unit, stored in km
       avgHR: Math.round(M.parseNum(fields.hr.value)),
     };
   }
@@ -334,7 +335,7 @@ export async function logCardio(container, program, day, weekday, iso, { tracked
     setLastCardioModality(modality);
     onComplete && onComplete({
       timeSeconds: (Number(hrIn.value) || 0) * 3600 + (Number(minIn.value) || 0) * 60 + (Number(secIn.value) || 0),
-      distanceKm: M.parseNum(fields.distance.value),
+      distanceKm: distanceToKm(M.parseNum(fields.distance.value)) ?? 0,   // typed in the display unit, stored in km
       avgHR: Math.round(M.parseNum(fields.hr.value)),
       feltRPE: rpe,
       ...(whoopExtra || {}),   // max HR, per-zone minutes, strain, sport, source="whoop" (when pulled)

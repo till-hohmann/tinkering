@@ -28,7 +28,27 @@ export const kgToLb = (kg) => (kg == null ? null : kg * LB_PER_KG);
 export const lbToKg = (lb) => (lb == null ? null : lb / LB_PER_KG);
 
 // --- resolving the active system --------------------------------------------
-export const unitsOf = (profile) => (profile && profile.units) || { weight: "kg", length: "cm", distance: "km" };
+//
+// THE AMBIENT PROFILE. Units belong to the person, not to the call site, and
+// the person doesn't change halfway down a screen. Threading a profile argument
+// through every formatter would mean making `model.js` — pure, storage-free,
+// imported by everything — take a profile it has no other use for, and would
+// still miss any call site whose author forgot.
+//
+// So the active profile is registered once (profile.js does it on every read and
+// every save) and every function here takes it as an OPTIONAL argument that
+// defaults to it. Explicit still wins, which keeps the tests parameterised and
+// lets a view format in a unit that isn't the current one. Unset = metric,
+// which is also what a fresh install has before onboarding runs.
+const DEFAULT_UNITS = { weight: "kg", length: "cm", distance: "km" };
+// Pass this where a readout must stay metric whatever the user's units are —
+// the vault export, whose column names say `_kg` and `_km`, is the one case.
+export const METRIC_PROFILE = { units: DEFAULT_UNITS };
+let ambient = null;
+export function setDisplayProfile(profile) { ambient = profile || null; }
+export const displayProfile = () => ambient;
+
+export const unitsOf = (profile) => ((profile || ambient) || {}).units || DEFAULT_UNITS;
 export const isImperialWeight = (profile) => unitsOf(profile).weight === "lb";
 
 export const weightLabel = (profile) => (isImperialWeight(profile) ? "lb" : "kg");
@@ -86,6 +106,44 @@ export function distanceToKm(value, profile) {
   const n = Number(String(value).replace(",", "."));
   if (!Number.isFinite(n)) return null;
   return unitsOf(profile).distance === "mi" ? n / MI_PER_KM : n;
+}
+
+// --- pace --------------------------------------------------------------------
+// Pace is stored as seconds per km and read out as seconds per DISPLAYED unit,
+// so an imperial user gets minutes per mile — a slower-looking number for the
+// same run, which is the whole point of showing it in their unit.
+export const paceLabel = (profile) => `/${distanceLabel(profile)}`;
+export function paceValue(secPerKm, profile) {
+  if (secPerKm == null) return null;
+  return unitsOf(profile).distance === "mi" ? secPerKm / MI_PER_KM : secPerKm;
+}
+export function fmtPace(secPerKm, profile, { withUnit = true } = {}) {
+  const v = paceValue(secPerKm, profile);
+  if (v == null) return "–";
+  const m = Math.floor(v / 60), s = Math.round(v % 60);
+  const mmss = `${m}:${String(s).padStart(2, "0")}`;
+  return withUnit ? `${mmss} ${paceLabel(profile)}` : mmss;
+}
+
+// --- editing a stored value ---------------------------------------------------
+//
+// THE TRAP THIS EXISTS TO CLOSE. A form that shows a stored value must not
+// convert it back on save unless the user actually typed something new. The
+// displayed number is ROUNDED — 18 kg reads as "40 lb" — so a blind round-trip
+// stores 18.1437 kg, and the next open-and-save quantises it again. Opening an
+// editor and pressing Save with no edit at all silently rewrites the log.
+//
+// So an edit field records what it was shown, and on save an unchanged field
+// keeps the stored value byte for byte. Only a genuine edit converts.
+//   const input = el("input", { value: String(weightValue(kg)) });
+//   input.dataset.shown = input.value;
+//   ...
+//   set.weightKg = readEdit(input, set.weightKg, (v) => weightToKg(v));
+export function readEdit(input, stored, toStorage) {
+  const typed = String(input.value ?? "").trim();
+  if (typed === String(input.dataset.shown ?? "").trim()) return stored;
+  const v = toStorage(typed);
+  return v == null ? stored : v;
 }
 
 // --- imperial equipment ------------------------------------------------------

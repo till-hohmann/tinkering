@@ -17,6 +17,8 @@ import { provider, has, resetProviderCache, PROVIDERS, CAP,
 import { resetAppleCache } from "../health/apple.js";
 import { getProfile, patchProfile } from "../profile.js";
 import { THEMES, DEFAULT_THEME, applyTheme } from "../theme.js";
+import { weightLabel, weightValue, weightToKg, lengthLabel, lengthValue, lengthToCm,
+  distanceLabel, distanceValue, readEdit } from "../units.js";
 import { resolvedConfig, setRuntimeConfig, hasBackup } from "../config.js";
 import * as db from "../db.js";
 import { el, mount, go } from "../ui.js";
@@ -25,7 +27,7 @@ import { cloudPull, cloudCheck } from "../cloudsync.js";
 // Running build version — baked into the code so it always reflects the
 // installed version (iOS standalone PWAs don't reliably expose caches.keys()
 // or SW messaging to the page). BUMP THIS together with CACHE in sw.js.
-const APP_VERSION = "v138";
+const APP_VERSION = "v139";
 
 function daysSince(iso) {
   if (!iso) return null;
@@ -151,23 +153,31 @@ export async function renderSettings() {
   ]);
 
   // --- Nutrition: bodyweight (drives the protein target) + protein g/kg -------
-  const bw0 = await getBodyweight();
+  let bw0 = await getBodyweight();
   const perKg0 = await getProteinPerKg();
   const def0 = await getDeficitTarget();
   const nutStatus = el("p.note", { style: "margin-top:8px;min-height:1em" });
   const numStyle = "width:96px;text-align:center;font-size:1.05rem;font-weight:700;padding:8px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)";
-  const bwIn = el("input", { type: "text", inputmode: "decimal", placeholder: "kg", value: bw0 != null ? String(bw0) : "", style: numStyle });
+  const bwIn = el("input", { type: "text", inputmode: "decimal", placeholder: weightLabel(),
+    value: bw0 != null ? String(weightValue(bw0)) : "", style: numStyle });
+  bwIn.dataset.shown = bwIn.value;      // an untouched field keeps the stored kg exactly (see readEdit)
+  const bwKgNow = () => readEdit(bwIn, bw0 ?? 0, (v) => weightToKg(M.parseNum(v)));
+  // Protein stays g per KG even on an imperial profile: it's the convention every
+  // source states the number in, and converting it would leave the user guessing
+  // which one their 2.0 was. The target it produces is in grams either way.
   const perKgIn = el("input", { type: "text", inputmode: "decimal", placeholder: "g/kg", value: String(perKg0), style: numStyle });
   const defIn = el("input", { type: "text", inputmode: "numeric", placeholder: "kcal", value: String(def0), style: numStyle });
   const targetLine = el("div.note", { style: "margin-top:10px" });
   function showTarget() {
-    const bw = M.parseNum(bwIn.value), pk = M.parseNum(perKgIn.value);
-    targetLine.textContent = bw && pk ? `Protein target: ${Math.round(bw * pk)} g/day (${pk} g/kg × ${bw} kg).` : "Enter bodyweight to compute a protein target.";
+    const bwKg = bwKgNow(), pk = M.parseNum(perKgIn.value);
+    targetLine.textContent = bwKg && pk
+      ? `Protein target: ${Math.round(bwKg * pk)} g/day (${pk} g/kg at ${M.fmtWeight(bwKg)}).`
+      : "Enter bodyweight to compute a protein target.";
   }
   showTarget();
   [bwIn, perKgIn].forEach((i) => i.addEventListener("input", showTarget));
   async function saveNutrition() {
-    const bw = M.parseNum(bwIn.value), pk = M.parseNum(perKgIn.value), def = M.parseNum(defIn.value);
+    const bw = bwKgNow(), pk = M.parseNum(perKgIn.value), def = M.parseNum(defIn.value);
     if (bw && (bw < 30 || bw > 250)) { nutStatus.textContent = "Bodyweight looks off."; return; }
     if (pk && (pk < 1 || pk > 4)) { nutStatus.textContent = "Protein g/kg should be ~1.4–2.5."; return; }
     if (def && (def < 0 || def > 1500)) { nutStatus.textContent = "Deficit target should be ~0–1000 kcal."; return; }
@@ -180,7 +190,13 @@ export async function renderSettings() {
     nutStatus.textContent = `Checking ${trk.label}…`;
     try {
       const m = await trackerBody();
-      if (m && m.weightKg != null) { bwIn.value = String(m.weightKg); await setBodyweight(m.weightKg); showTarget(); nutStatus.textContent = `Bodyweight ${m.weightKg} kg from ${trk.label}.`; }
+      if (m && m.weightKg != null) {
+        // A pulled reading is authoritative: show it, and mark it as shown so a
+        // later Save doesn't round-trip it back through the display unit.
+        bwIn.value = String(weightValue(m.weightKg)); bwIn.dataset.shown = bwIn.value; bw0 = m.weightKg;
+        await setBodyweight(m.weightKg); showTarget();
+        nutStatus.textContent = `Bodyweight ${M.fmtWeight(m.weightKg)} from ${trk.label}.`;
+      }
       else nutStatus.textContent = `${trk.label} didn't return a weight.`;
     } catch (e) { nutStatus.textContent = /401|not_linked/.test(e.message || "") ? "Connect your tracker first." : `Couldn't reach ${trk.label}.`; }
   }
@@ -203,17 +219,21 @@ export async function renderSettings() {
     text: latestM ? `Last measured ${latestM.date}.` : "Not measured yet — waist alone is enough (navel level, relaxed)." });
   const mIn = {};
   const mRow = (key, label, hint) => {
-    mIn[key] = el("input", { type: "text", inputmode: "decimal", placeholder: "cm",
-      value: latestM && latestM[key] != null ? String(latestM[key]) : "", style: numStyle });
+    mIn[key] = el("input", { type: "text", inputmode: "decimal", placeholder: lengthLabel(),
+      value: latestM && latestM[key] != null ? String(lengthValue(latestM[key])) : "", style: numStyle });
+    mIn[key].dataset.shown = mIn[key].value;   // carrying last month's number forward must not re-round it
     return el("div.row", { style: "margin-top:10px;align-items:center" }, [
       el("div", { style: "flex:1" }, [el("div", { text: label }), hint ? el("div.faint", { style: "font-size:.78rem", text: hint }) : null]),
       el("span.spacer"), mIn[key]]);
   };
   async function saveMeasurements() {
-    const vals = { waistCm: M.parseNum(mIn.waistCm.value), chestCm: M.parseNum(mIn.chestCm.value),
-      armCm: M.parseNum(mIn.armCm.value), thighCm: M.parseNum(mIn.thighCm.value) };
+    // Typed in the display unit, stored in cm — the sanity gate below is on the
+    // stored value, so it reads the same whichever unit was typed.
+    const toCm = (k) => readEdit(mIn[k], (latestM && latestM[k]) || 0, (v) => lengthToCm(M.parseNum(v)));
+    const vals = { waistCm: toCm("waistCm"), chestCm: toCm("chestCm"),
+      armCm: toCm("armCm"), thighCm: toCm("thighCm") };
     if (!Object.values(vals).some((v) => v > 0)) { mStatus.textContent = "Enter at least one measurement."; return; }
-    if (vals.waistCm && (vals.waistCm < 50 || vals.waistCm > 200)) { mStatus.textContent = "Waist looks off — cm, not inches?"; return; }
+    if (vals.waistCm && (vals.waistCm < 50 || vals.waistCm > 200)) { mStatus.textContent = `Waist looks off — is that ${lengthLabel()}?`; return; }
     await addMeasurement(todayISO(), vals);
     mStatus.textContent = "Saved for today. Progress trends your waist.";
   }
@@ -382,7 +402,7 @@ export async function renderSettings() {
       if (w) {
         const hard = ((w.zoneMins && w.zoneMins[4]) || 0) + ((w.zoneMins && w.zoneMins[5]) || 0);
         rows.push(statRow(w.sport || "Last workout", [
-          w.distanceKm != null ? w.distanceKm + " km" : null,
+          w.distanceKm != null ? `${distanceValue(w.distanceKm)} ${distanceLabel()}` : null,
           w.timeSeconds ? M.fmtDuration(w.timeSeconds) : null,
           w.avgHR != null ? "avg " + w.avgHR : null,
           w.maxHR != null ? "max " + w.maxHR : null,
@@ -574,6 +594,34 @@ export async function renderSettings() {
     }));
   }
   paintThemes(currentTheme);
+
+  // --- Units ---------------------------------------------------------------
+  // Onboarding asks once, and until now that was the only chance to answer: an
+  // install that picked the wrong system was stuck with it. Switching is safe
+  // because nothing stored changes — every weight, length and distance is held
+  // in metric and converted at the edges — so this only changes what's printed.
+  // The three move together: nobody wants pounds with kilometres.
+  const unitsNow = (profileNow && profileNow.units && profileNow.units.weight) || "kg";
+  const uSeg = el("div.segmented");
+  const uOpt = (val, label) => {
+    const b = el("button" + (unitsNow === val ? ".on" : ""), {}, label);
+    b.onclick = async () => {
+      [...uSeg.children].forEach((c) => c.classList.toggle("on", c === b));
+      await patchProfile({ units: val === "lb"
+        ? { weight: "lb", length: "in", distance: "mi" }
+        : { weight: "kg", length: "cm", distance: "km" } });
+      go("#/settings");                    // redraw so this screen's own numbers convert
+    };
+    return b;
+  };
+  uSeg.appendChild(uOpt("kg", "kg · cm · km"));
+  uSeg.appendChild(uOpt("lb", "lb · in · mi"));
+  const unitsCard = el("div.card", {}, [
+    el("div.label", { text: "Units" }),
+    el("p.note", { style: "margin-top:4px", text: "Display only — your log is stored in metric and converted on the way out, so switching never rewrites a single logged set." }),
+    el("div", { style: "margin-top:12px" }, [uSeg]),
+  ]);
+
   const themeCard = el("div.card", {}, [
     el("div.label", { text: "Theme" }),
     el("p.note", { style: "margin-top:4px", text: "Changes surfaces and the accent. Chart colours stay fixed — mint is strength, cyan is cardio, violet is recovery, coral is intensity, in every theme." }),
@@ -660,6 +708,7 @@ export async function renderSettings() {
     hrCard,
 
     sectionH("Appearance"),
+    unitsCard,
     themeCard,
 
     sectionH("Audio"),

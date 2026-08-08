@@ -7,6 +7,7 @@ import * as M from "../model.js";
 import { el, mount, go, addActionBar, backBtn, countUp } from "../ui.js";
 import { barChart } from "../components/charts.js";
 import { celebrate } from "../components/confetti.js";
+import { weightLabel, weightValue, distanceLabel, distanceValue } from "../units.js";
 
 const exName = (program, id) => (program.exercises[id] || {}).name || id;
 
@@ -63,7 +64,7 @@ export async function renderWeekSummary(n) {
     if (cur && prev) {
       const cmp = M.compareCardio(cur.cardioResult, prev.cardioResult);
       const parts = [];
-      if (cmp.distanceDelta > 0.05) parts.push(`+${cmp.distanceDelta.toFixed(2)} km`);
+      if (cmp.distanceDelta > 0.05) parts.push(`+${distanceValue(cmp.distanceDelta).toFixed(2)} ${distanceLabel()}`);
       if (cmp.paceDelta != null && cmp.paceDelta < -2) parts.push("faster");
       if (cmp.hrDelta < -2) parts.push(`HR −${Math.abs(Math.round(cmp.hrDelta))}`);
       cardioBits.push(`${wd === "Mon" ? "Zone-2 run" : "Intervals"}: ${parts.length ? parts.join(", ") : "steady"}`);
@@ -78,7 +79,7 @@ export async function renderWeekSummary(n) {
 
   // headline volume + bar chart by day
   const volNum = el("div.metric", { text: "0" });
-  countUp(volNum, Math.round(totalVol), { dur: 850, fmt: (v) => Math.round(v).toLocaleString("en-GB") });
+  countUp(volNum, Math.round(weightValue(totalVol)), { dur: 850, fmt: (v) => Math.round(v).toLocaleString("en-GB") });
   const byDay = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((wd) => {
     const s = strengthThis.find((x) => x.weekday === wd);
     return { wd, vol: s ? M.sessionVolume(s) : 0 };
@@ -86,7 +87,7 @@ export async function renderWeekSummary(n) {
   const volCard = [
     el("div.row", {}, [el("div.label", { text: "Strength volume" }), el("span.spacer"),
       prevVol ? el("span.delta." + (totalVol >= prevVol ? "up" : "down"), { text: `${totalVol >= prevVol ? "+" : "−"}${M.fmtWeight(Math.round(Math.abs(totalVol - prevVol)))}` }) : null]),
-    el("div.row", { style: "align-items:baseline;gap:6px;margin-top:8px" }, [volNum, el("span.unit", { text: "kg" })]),
+    el("div.row", { style: "align-items:baseline;gap:6px;margin-top:8px" }, [volNum, el("span.unit", { text: weightLabel() })]),
   ];
   if (byDay.length && byDay.some((d) => d.vol > 0))
     volCard.push(el("div", { style: "margin-top:16px" }, [barChart({ values: byDay.map((d) => d.vol), labels: byDay.map((d) => d.wd[0]), color: "accent", height: 110, highlightLast: false })]));

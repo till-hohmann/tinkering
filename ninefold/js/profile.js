@@ -21,6 +21,7 @@
 import * as db from "./db.js";
 import { resolvedConfig } from "./config.js";
 import { cloudPushDebounced } from "./cloudsync.js";
+import { setDisplayProfile } from "./units.js";
 
 export const PROFILE_KEY = "profile";
 export const PROFILE_VERSION = 1;
@@ -123,6 +124,7 @@ export async function getProfile() {
   if (cache) return cache;
   const stored = await db.getPref(PROFILE_KEY);
   cache = stored ? mergeDefaults(stored) : null;
+  setDisplayProfile(cache);      // keep the display-unit layer pointed at the live profile
   return cache;
 }
 
@@ -146,6 +148,7 @@ export async function saveProfile(p) {
   const next = mergeDefaults({ ...p, version: PROFILE_VERSION });
   await db.setPref(PROFILE_KEY, next);
   cache = next;
+  setDisplayProfile(next);       // a units switch in Settings takes effect on the next render
   cloudPushDebounced(async () => {
     const { snapshot } = await import("./store.js");
     return snapshot();
@@ -163,7 +166,7 @@ export async function patchProfile(patch) {
   return saveProfile(next);
 }
 
-export function clearProfileCache() { cache = null; }
+export function clearProfileCache() { cache = null; setDisplayProfile(null); }
 
 export const isOnboarded = (p) => !!(p && p.onboardedAt);
 

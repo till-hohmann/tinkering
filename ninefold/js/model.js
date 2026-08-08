@@ -1,5 +1,11 @@
 // model.js — pure domain logic: effective-weight rules, volume, comparison, dates.
 // No DOM, no storage. The single source of truth for the math in requirements §3/§9.
+//
+// The maths is metric, always. The three formatters at the bottom are the only
+// unit-aware things in here, and they delegate to units.js rather than printing
+// "kg" themselves — a display concern that happens to live next to the numbers.
+
+import { weightValue, weightLabel, fmtWeight as fmtWeightU, fmtPace as fmtPaceU, paceLabel } from "./units.js";
 
 export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -57,12 +63,12 @@ export function fmtDuration(totalSeconds) {
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
 }
 
-export function fmtPace(secPerKm) {
-  if (secPerKm == null) return "–";
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${String(s).padStart(2, "0")} /km`;
+// Pace stays stored and compared in seconds per km; only the readout converts.
+// `withUnit: false` for the many places that show the unit in their own label.
+export function fmtPace(secPerKm, { withUnit = true } = {}) {
+  return fmtPaceU(secPerKm, undefined, { withUnit });
 }
+export const paceUnit = () => paceLabel();
 
 // Parse a typed number tolerantly: accept a comma decimal separator (German
 // keyboards) and strip stray characters. `<input type="number">` rejects "," so
@@ -73,10 +79,12 @@ export function parseNum(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-export function fmtWeight(kg) {
-  const n = Number(kg) || 0;
-  return (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, "")) + " kg";
+// A stored kg value, read out in the profile's unit. `withUnit: false` for the
+// callers that carry the unit in a neighbouring label.
+export function fmtWeight(kg, { withUnit = true } = {}) {
+  return fmtWeightU(Number(kg) || 0, undefined, { withUnit });
 }
+export const weightUnit = () => weightLabel();
 
 // Per-set display string, implement-aware. Uses "·" before reps so the only
 // "×" is the dumbbell-pair multiplier (e.g. "2×17.5kg · 10", "60kg · 8", "45s").
@@ -85,8 +93,9 @@ export function setDisplay(implement, set) {
   if (set.reps == null) return `${set.seconds ?? 0}s`;
   const w = Number(set.weightKg) || 0;
   if (implement === "bodyweight" || (w === 0 && implement !== "cable")) return `BW · ${set.reps}`;
-  if (implement === "dumbbell_pair") return `2×${trim(w)}kg · ${set.reps}`;
-  return `${trim(w)}kg · ${set.reps}`;
+  const shown = `${trim(weightValue(w))}${weightLabel()}`;
+  if (implement === "dumbbell_pair") return `2×${shown} · ${set.reps}`;
+  return `${shown} · ${set.reps}`;
 }
 
 function trim(n) {

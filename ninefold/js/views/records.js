@@ -7,6 +7,7 @@ import * as M from "../model.js";
 import { el, mount, go, backBtn } from "../ui.js";
 import { illustration } from "../illustrations.js";
 import { e1rm } from "../progression.js";
+import { weightLabel, weightValue, distanceLabel, distanceValue } from "../units.js";
 
 const workSets = (ex) => (ex.sets || []).filter((s) => s.reps != null);
 const bestE1 = (ex) => { const w = workSets(ex); return w.length ? Math.max(...w.map((s) => e1rm(s.weightKg, s.reps))) : 0; };
@@ -48,8 +49,8 @@ export async function renderRecords() {
     el("div.label", { text: "Lifetime" }),
     el("div.statgrid.three", { style: "margin-top:14px" }, [
       stat(String(logged.length), "Sessions"),
-      stat(totalVol.toLocaleString("en-GB"), "kg lifted"),
-      stat(totalKm.toFixed(totalKm >= 100 ? 0 : 1), "km run"),
+      stat(Math.round(weightValue(totalVol)).toLocaleString("en-GB"), `${weightLabel()} lifted`),
+      stat(distanceValue(totalKm).toFixed(distanceValue(totalKm) >= 100 ? 0 : 1), `${distanceLabel()} run`),
     ]),
   ]));
 
@@ -70,7 +71,7 @@ export async function renderRecords() {
         el("div.s", { text: `best set ${p.top ? M.setDisplay(p.implement, p.top) : "—"} · ${prettyShort(p.date)}` }),
       ]),
       el("div", { style: "text-align:right;flex:none" }, [
-        el("div", { style: "font-weight:800;font-variant-numeric:tabular-nums", text: Math.round(p.e1) + " kg" }),
+        el("div", { style: "font-weight:800;font-variant-numeric:tabular-nums", text: M.fmtWeight(Math.round(p.e1)) }),
         el("div.faint", { style: "font-size:.68rem;letter-spacing:.04em", text: "EST. 1RM" }),
       ]),
     ]))));
@@ -90,8 +91,9 @@ export async function renderRecords() {
       sub ? el("div.note", { style: "margin-top:4px", text: sub }) : null,
     ]);
     children.push(el("h2", { style: "margin-top:8px", text: "Cardio" }));
-    const cardioCards = [rec("Longest distance", (longest.cardioResult.distanceKm || 0).toFixed(2) + " km", prettyShort(longest.date))];
-    if (fastest) cardioCards.push(rec("Fastest pace", M.fmtPace(fastest.pace), `${(fastest.s.cardioResult.distanceKm || 0).toFixed(2)} km · ${prettyShort(fastest.s.date)}`));
+    const dist = (s) => `${distanceValue(s.cardioResult.distanceKm || 0).toFixed(2)} ${distanceLabel()}`;
+    const cardioCards = [rec("Longest distance", dist(longest), prettyShort(longest.date))];
+    if (fastest) cardioCards.push(rec("Fastest pace", M.fmtPace(fastest.pace), `${dist(fastest.s)} · ${prettyShort(fastest.s.date)}`));
     cardioCards.push(rec("Longest run", M.fmtDuration(longestRun.cardioResult.timeSeconds || 0), prettyShort(longestRun.date)));
     children.push(el("div.list", {}, cardioCards));
   }

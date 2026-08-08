@@ -28,7 +28,10 @@ import { compatibility, interference, analysePriorities, blockShape } from "../j
 import { generateProgram, spreadDays } from "../js/builder/generate.js";
 import { THEMES, themeById, DEFAULT_THEME } from "../js/theme.js";
 import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT, METRIC_EQUIPMENT,
-  defaultEquipmentFor, plateLabel, weightLabel, isImperialWeight } from "../js/units.js";
+  defaultEquipmentFor, plateLabel, weightLabel, isImperialWeight, setDisplayProfile,
+  distanceValue, distanceToKm, lengthValue, lengthToCm, fmtPace as fmtPaceU, paceLabel,
+  METRIC_PROFILE, readEdit } from "../js/units.js";
+import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay } from "../js/model.js";
 import { parseAppleExport, summarise, appleTime } from "../js/health/apple-import.js";
 
 let passed = 0, failed = 0;
@@ -601,6 +604,22 @@ group("units — display only, storage stays metric", () => {
     assert.equal(isImperialWeight(metric), false);
     assert.equal(isImperialWeight(undefined), false);
   });
+  it("length and distance convert at both edges", () => {
+    assert.equal(lengthValue(100, metric), 100);
+    assert.equal(lengthValue(2.54, imperial), 1);
+    assert.ok(Math.abs(lengthToCm(1, imperial) - 2.54) < 1e-9);
+    assert.equal(distanceValue(10, metric), 10);
+    assert.equal(distanceValue(1.609344, imperial), 1);
+    assert.ok(Math.abs(distanceToKm(1, imperial) - 1.609344) < 1e-9);
+  });
+  it("pace reads out per displayed distance unit", () => {
+    // 5:00/km is a slower-LOOKING 8:03/mi — same run, the runner's own number.
+    assert.equal(fmtPaceU(300, metric), "5:00 /km");
+    assert.equal(fmtPaceU(300, imperial), "8:03 /mi");
+    assert.equal(fmtPaceU(300, imperial, { withUnit: false }), "8:03");
+    assert.equal(paceLabel(imperial), "/mi");
+    assert.equal(fmtPaceU(null, metric), "–");
+  });
   it("a loaded imperial barbell lands on whole pounds", () => {
     // bar + 45 a side should read exactly 135, not 134 or 136 — which is the
     // whole reason plate denominations are stored as exact lb equivalents.
@@ -608,6 +627,64 @@ group("units — display only, storage stays metric", () => {
     const plate45 = IMPERIAL_EQUIPMENT.barbellPlatesKg[0];
     assert.equal(weightValue(bar + plate45 * 2, imperial), 135);
     assert.equal(weightValue(bar + (plate45 + IMPERIAL_EQUIPMENT.barbellPlatesKg[2]) * 2, imperial), 185);
+  });
+});
+
+group("units — the ambient profile drives every read-only string", () => {
+  const imperial = { units: { weight: "lb", length: "in", distance: "mi" } };
+  // The formatters in model.js are imported by nearly every view and take no
+  // profile, so a units switch reaches them through the ambient registration
+  // that profile.js performs. If that link breaks, the app shows an imperial
+  // user metric numbers under a "lb" label — the exact bug this replaced.
+  const asImperial = (fn) => { setDisplayProfile(imperial); try { fn(); } finally { setDisplayProfile(null); } };
+
+  it("model.fmtWeight follows the registered profile", () => {
+    assert.equal(fmtWeightM(100), "100 kg");                    // unset = metric
+    asImperial(() => {
+      assert.equal(fmtWeightM(100), "220 lb");
+      assert.equal(fmtWeightM(100, { withUnit: false }), "220");
+    });
+    assert.equal(fmtWeightM(100), "100 kg", "the ambient must be resettable");
+  });
+  it("model.fmtPace follows it too", () => {
+    assert.equal(fmtPaceM(300), "5:00 /km");
+    asImperial(() => assert.equal(fmtPaceM(300), "8:03 /mi"));
+  });
+  it("a logged set reads in the user's unit", () => {
+    const set = { weightKg: 60, reps: 8 };
+    assert.equal(setDisplay("barbell", set), "60kg · 8");
+    asImperial(() => {
+      assert.equal(setDisplay("barbell", set), "132lb · 8");
+      assert.equal(setDisplay("dumbbell_pair", { weightKg: 20, reps: 10 }), "2×44lb · 10");
+      assert.equal(setDisplay("bodyweight", { weightKg: 0, reps: 12 }), "BW · 12");
+      assert.equal(setDisplay("barbell", { weightKg: 0, seconds: 45, reps: null }), "45s");
+    });
+  });
+  it("an untouched edit field never rewrites what it displays", () => {
+    // THE REGRESSION. 18 kg displays as "40 lb"; converting that back on save
+    // stores 18.1437, and the next open-and-save rounds it again. Opening the
+    // set editor and pressing Save without typing anything silently rewrote
+    // every set in the session. An unchanged field must return the stored value.
+    setDisplayProfile(imperial);
+    try {
+      const field = (kg) => { const i = { value: String(weightValue(kg)), dataset: {} }; i.dataset.shown = i.value; return i; };
+      for (const kg of [16, 17.5, 18, 20, 5, 62.5]) {
+        const i = field(kg);
+        assert.equal(readEdit(i, kg, (v) => weightToKg(Number(v))), kg, `${kg} kg must survive an untouched save`);
+      }
+      const edited = field(18);
+      edited.value = "45";                                   // the user really typed a new number
+      assert.ok(Math.abs(readEdit(edited, 18, (v) => weightToKg(Number(v))) - lbToKg(45)) < 1e-9);
+      const emptied = field(18);
+      emptied.value = "";                                    // unparseable → keep what was stored
+      assert.equal(readEdit(emptied, 18, (v) => (Number(v) ? weightToKg(Number(v)) : null)), 18);
+    } finally { setDisplayProfile(null); }
+  });
+  it("an explicit profile still beats the ambient", () => {
+    asImperial(() => {
+      assert.equal(fmtWeight(100, METRIC_PROFILE), "100 kg", "the vault export must stay metric");
+      assert.equal(fmtPaceU(300, METRIC_PROFILE), "5:00 /km");
+    });
   });
 });
 

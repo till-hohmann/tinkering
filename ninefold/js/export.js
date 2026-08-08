@@ -4,6 +4,9 @@
 // Both leave the device only as files the user saves via the share sheet / download.
 
 import * as M from "./model.js";
+// The export is the raw log: its columns are named `_kg` and `_km`, so the one
+// formatted number in it is pinned to metric rather than the user's display unit.
+import { fmtPace, METRIC_PROFILE } from "./units.js";
 
 const progName = (programs, id) => (programs.find((p) => p.id === id) || {}).name || id;
 
@@ -45,7 +48,7 @@ export function buildMarkdownLog(programs, sessions, iso) {
     if (s.type === "cardio" && s.cardioResult) {
       const c = s.cardioResult;
       const type = cardioType(programs, s);
-      L.push(`| ${s.date} | ${progName(programs, s.programId)} | ${s.weekNumber} | ${s.weekday} | ${type} | ${M.fmtDuration(c.timeSeconds)} | ${c.distanceKm} | ${c.avgHR} | ${M.fmtPace(M.paceSecPerKm(c))} | ${c.feltRPE} |`);
+      L.push(`| ${s.date} | ${progName(programs, s.programId)} | ${s.weekNumber} | ${s.weekday} | ${type} | ${M.fmtDuration(c.timeSeconds)} | ${c.distanceKm} | ${c.avgHR} | ${fmtPace(M.paceSecPerKm(c), METRIC_PROFILE)} | ${c.feltRPE} |`);
     }
   }
   L.push("");

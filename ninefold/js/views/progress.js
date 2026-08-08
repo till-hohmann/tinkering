@@ -5,6 +5,7 @@
 import { getActiveProgram, getAllSessions, getVO2maxLog, getNutritionLog, getBodyweight, getMeasurementsLog, getDexaLog, getWeightLog, equipmentForProgram } from "../store.js";
 import { strengthScore } from "../standards.js";
 import { getProfile } from "../profile.js";
+import { weightLabel, weightValue, lengthLabel, lengthValue, distanceLabel, distanceValue, paceLabel, paceValue } from "../units.js";
 import * as M from "../model.js";
 import { el, mount, go, countUp, locationBadge } from "../ui.js";
 import { illustration } from "../illustrations.js";
@@ -118,7 +119,7 @@ const bestE1 = (ex) => {
   return ws.length ? Math.max(...ws.map((s) => e1rm(s.weightKg, s.reps))) : 0;
 };
 
-function delta(value, { unit = "kg", goodIfPositive = true, fmt } = {}) {
+function delta(value, { unit = weightLabel(), goodIfPositive = true, fmt } = {}) {
   if (value == null || Math.abs(value) < 1e-6) return el("span.delta.flat", { text: "—" });
   const good = goodIfPositive ? value > 0 : value < 0;
   const sign = value > 0 ? "+" : "−";
@@ -245,9 +246,9 @@ async function fillRecomp(card, inRange, cutoff) {
       el("div.note", { text: detail }),
       el("div.statgrid.three", { style: "margin-top:16px" }, [
         waistDelta != null
-          ? stat((waistDelta > 0 ? "+" : "−") + Math.abs(waistDelta).toFixed(1),
-              wDown ? "var(--accent)" : wUp ? "var(--coral)" : "var(--text-dim)", "Waist Δ cm")
-          : stat(bwDelta != null && (wDown || wUp) ? (bwDelta > 0 ? "+" : "−") + Math.abs(bwDelta).toFixed(1) : (latestBw != null ? latestBw.toFixed(1) : "—"),
+          ? stat((waistDelta > 0 ? "+" : "−") + Math.abs(lengthValue(waistDelta)).toFixed(1),
+              wDown ? "var(--accent)" : wUp ? "var(--coral)" : "var(--text-dim)", `Waist Δ ${lengthLabel()}`)
+          : stat(bwDelta != null && (wDown || wUp) ? (bwDelta > 0 ? "+" : "−") + Math.abs(weightValue(bwDelta)).toFixed(1) : (latestBw != null ? M.fmtWeight(latestBw, { withUnit: false }) : "—"),
               wDown ? "var(--accent)" : wUp ? "var(--coral)" : "var(--text-dim)", bwDelta != null && (wDown || wUp) ? "Bodyweight Δ" : "Bodyweight"),
         stat(sIdx != null ? (sIdx > 0 ? "+" : "−") + Math.abs(sIdx * 100).toFixed(0) + "%" : "—",
           sUp ? "var(--accent)" : sDown ? "var(--coral)" : "var(--text-dim)", "Strength e1RM"),
@@ -292,7 +293,7 @@ async function fillStandards(card) {
     const rows = sc.lifts.map((l) => el("div", { style: "margin-top:12px" }, [
       el("div.row", { style: "align-items:baseline" }, [
         el("span", { style: "font-weight:700", text: l.label }),
-        el("span.dim", { style: "margin-left:8px;font-size:.8rem", text: Math.round(l.e1) + " kg e1RM" }),
+        el("span.dim", { style: "margin-left:8px;font-size:.8rem", text: `${M.fmtWeight(Math.round(l.e1))} e1RM` }),
         el("span.spacer"),
         el("span.dim", { style: "font-size:.8rem", text: l.level }),
       ]),
@@ -301,7 +302,7 @@ async function fillStandards(card) {
         ...TICKS.slice(0, 4).map((p) => el("div", { style: `position:absolute;left:${p}%;top:-2px;bottom:-2px;width:1px;background:var(--line)` })),
       ]),
       el("div", { style: "position:relative;height:12px;margin-top:3px" },
-        l.levelsKg.map((kg, i) => el("span.faint", { style: `position:absolute;${tickX(TICKS[i])};font-size:.62rem;font-variant-numeric:tabular-nums`, text: String(kg) }))),
+        l.levelsKg.map((kg, i) => el("span.faint", { style: `position:absolute;${tickX(TICKS[i])};font-size:.62rem;font-variant-numeric:tabular-nums`, text: String(Math.round(weightValue(kg))) }))),
     ]));
     card.replaceChildren(
       el("div.card-head", {}, [
@@ -311,7 +312,7 @@ async function fillStandards(card) {
         el("div.metric.sm", { text: String(sc.overall) }), el("span.unit", { text: "/ 100" })]),
       axis,
       ...rows,
-      el("div.note", { style: "margin-top:12px", text: `Numbers under each bar: the e1RM (kg) where that level starts at your ${bwKg} kg bodyweight — below Beginner counts as developing. Best lifts of the last 8 weeks, common ${prof.sex} standards.` }),
+      el("div.note", { style: "margin-top:12px", text: `Numbers under each bar: the e1RM (${weightLabel()}) where that level starts at your ${M.fmtWeight(bwKg)} bodyweight — below Beginner counts as developing. Best lifts of the last 8 weeks, common ${prof.sex} standards.` }),
     );
     card.style.display = "";
   } catch { /* hidden on error */ }
@@ -359,14 +360,16 @@ async function fillDexa(card) {
       ? el("span.volchip.over", { text: "retest due" })
       : el("span.note", { text: `next in ${Math.max(1, Math.round(daysToDue / 7))} wk` });
 
-    // one metric row, with a good/bad-coloured delta when a prior scan exists
-    const mrow = (label, k, unit, dec, goodDir) => {
+    // one metric row, with a good/bad-coloured delta when a prior scan exists.
+    // `conv` converts a stored metric value to the displayed unit — identity for
+    // the ratios and percentages, weightValue for the four masses.
+    const mrow = (label, k, unit, dec, goodDir, conv = (x) => x) => {
       if (!has(k)) return null;
-      const v = latest[k];
+      const v = conv(latest[k]);
       const f = (x) => (dec != null ? x.toFixed(dec) : String(x));
       let dEl = null;
       if (prev && prev[k] != null) {
-        const d = v - prev[k];
+        const d = v - conv(prev[k]);
         const eps = dec != null ? Math.pow(10, -dec) / 2 : 0.5;
         if (Math.abs(d) <= eps) dEl = el("span.delta.flat", { text: "—" });
         else {
@@ -406,17 +409,17 @@ async function fillDexa(card) {
       inner.push(
         el("div.row", { style: "align-items:baseline;padding:2px 2px 0" }, [
           el("div.label", { text: "Weight loss" }), el("span.spacer"),
-          el("span.note", { text: `goal ${goal.goalKg} kg` })]),
+          el("span.note", { text: `goal ${M.fmtWeight(goal.goalKg)}` })]),
         el("div.row", { style: "align-items:baseline;gap:6px;padding:1px 2px 6px" }, [
-          el("div.metric.sm", { text: lost > 0.1 ? lost.toFixed(1) : "0" }),
-          el("span.unit", { text: `kg lost since ${goal.startLabel}` }), el("span.spacer"),
-          el("span.dim", { style: "font-size:.85rem;font-variant-numeric:tabular-nums", text: toGo > 0.1 ? `${toGo.toFixed(1)} to go` : "reached ✓" })]),
+          el("div.metric.sm", { text: lost > 0.1 ? weightValue(lost).toFixed(1) : "0" }),
+          el("span.unit", { text: `${weightLabel()} lost since ${goal.startLabel}` }), el("span.spacer"),
+          el("span.dim", { style: "font-size:.85rem;font-variant-numeric:tabular-nums", text: toGo > 0.1 ? `${weightValue(toGo).toFixed(1)} to go` : "reached ✓" })]),
         el("div", { style: "position:relative;height:8px;border-radius:4px;background:var(--bg-elev2);margin-top:2px" }, [
           el("div", { style: `position:absolute;left:0;top:0;bottom:0;width:${pct}%;border-radius:4px;background:var(--grad-cta,var(--accent))` })]),
         el("div.row", { style: "margin-top:6px;font-size:.7rem;color:var(--text-dim)" }, [
-          el("span", { text: `${goal.startKg} kg · ${goal.startLabel}` }), el("span.spacer"), el("span", { text: `${goal.goalKg} kg` })]),
+          el("span", { text: `${M.fmtWeight(goal.startKg)} · ${goal.startLabel}` }), el("span.spacer"), el("span", { text: M.fmtWeight(goal.goalKg) })]),
         el("div.note", { style: "margin-top:8px", text:
-          `Reaching ${goal.goalKg} kg lands you at ~${Math.round(targetBF)}% body fat if you hold your ${latest.ffmKg.toFixed(0)} kg of lean mass.` }),
+          `Reaching ${M.fmtWeight(goal.goalKg)} lands you at ~${Math.round(targetBF)}% body fat if you hold your ${M.fmtWeight(Math.round(latest.ffmKg))} of lean mass.` }),
       );
     }
 
@@ -431,13 +434,14 @@ async function fillDexa(card) {
         el("div", { style: `width:${rem}%;background:var(--bg-elev2)` }),
       ]));
       inner.push(el("div.row", { style: "font-size:.72rem;color:var(--text-dim);margin-bottom:2px" }, [
-        el("span", { text: `Fat ${fat.toFixed(1)} kg` }), el("span.spacer"), el("span", { text: `Lean ${ffm.toFixed(1)} kg` })]));
+        el("span", { text: `Fat ${weightValue(fat).toFixed(1)} ${weightLabel()}` }), el("span.spacer"),
+        el("span", { text: `Lean ${weightValue(ffm).toFixed(1)} ${weightLabel()}` })]));
     }
 
     inner.push(group("Composition", [
-      mrow("Total mass", "totalMassKg", "kg", 1, "down"),
-      mrow("Fat mass", "totalFatKg", "kg", 1, "down"),
-      mrow("Fat-free mass", "ffmKg", "kg", 1, "up"),
+      mrow("Total mass", "totalMassKg", weightLabel(), 1, "down", weightValue),
+      mrow("Fat mass", "totalFatKg", weightLabel(), 1, "down", weightValue),
+      mrow("Fat-free mass", "ffmKg", weightLabel(), 1, "up", weightValue),
       mrow("Body fat", "bodyFatPct", "%", 1, "down"),
       mrow("BMI", "bmi", "", 1, "down"),
     ]));
@@ -576,9 +580,9 @@ export async function renderProgress() {
     const dists = cardio.map((s) => s.cardioResult.distanceKm || 0);
     const lastPace = paces[paces.length - 1];
     const inner = [sectionHead(paces.length ? "Running pace" : "Cardio",
-      paces.length > 1 ? delta(paces[paces.length - 1] - paces[0], { goodIfPositive: false, fmt: (v) => Math.round(v) + " s/km" }) : null)];
+      paces.length > 1 ? delta(paceValue(paces[paces.length - 1]) - paceValue(paces[0]), { goodIfPositive: false, fmt: (v) => `${Math.round(v)} s${paceLabel()}` }) : null)];
     if (lastPace != null) inner.push(el("div.row", { style: "align-items:baseline;gap:6px;padding:0 2px 6px" }, [
-      el("div.metric.sm", { text: M.fmtPace(lastPace).replace(" /km", "") }), el("span.unit", { text: "/km" })]));
+      el("div.metric.sm", { text: M.fmtPace(lastPace, { withUnit: false }) }), el("span.unit", { text: paceLabel() })]));
     if (paces.length > 1) inner.push(sparkline({ values: paces.map((p) => -p), color: "cyan", height: 70, dots: true,
       gridIdx: weekBoundaries(paceData.map((p) => p.date)),
       tipText: (i) => `${prettyShort(paceData[i].date)}: ${M.fmtPace(paces[i])}` }));
@@ -588,8 +592,8 @@ export async function renderProgress() {
       return { m, n: rs.length, km: rs.reduce((a, s) => a + (s.cardioResult.distanceKm || 0), 0) };
     }).filter((x) => x.n);
     if (byMod.length > 1) inner.push(el("div.row.wrap", { style: "gap:6px;margin-top:10px" },
-      byMod.map((x) => el("span.badge", { text: `${x.m.label} · ${x.n} · ${x.km.toFixed(1)} km` }))));
-    inner.push(el("div.note", { style: "margin-top:10px" }, [`${cardio.length} sessions · ${dists.reduce((a, b) => a + b, 0).toFixed(1)} km total`]));
+      byMod.map((x) => el("span.badge", { text: `${x.m.label} · ${x.n} · ${distanceValue(x.km).toFixed(1)} ${distanceLabel()}` }))));
+    inner.push(el("div.note", { style: "margin-top:10px" }, [`${cardio.length} sessions · ${distanceValue(dists.reduce((a, b) => a + b, 0)).toFixed(1)} ${distanceLabel()} total`]));
     children.push(el("div.card.flush", {}, inner));
   }
 
@@ -597,12 +601,12 @@ export async function renderProgress() {
   if (inRange.length) {
     const totalVol = strength.reduce((s, x) => s + M.sessionVolume(x), 0);
     const volNum = el("div.metric.sm", { text: "0" });
-    countUp(volNum, Math.round(totalVol), { dur: 900, fmt: (v) => Math.round(v).toLocaleString("en-GB") });
+    countUp(volNum, Math.round(weightValue(totalVol)), { dur: 900, fmt: (v) => Math.round(v).toLocaleString("en-GB") });
     const weeksActive = new Set(inRange.map((s) => s.weekNumber)).size;
     const liftedMini = el("div.card", {}, [
       el("div.label", { text: "Volume lifted" }),
       el("div.row", { style: "align-items:baseline;gap:4px;margin-top:8px" }, [
-        volNum, el("span.unit", { style: "font-size:.8rem;color:var(--text-dim);font-weight:700", text: "kg" })]),
+        volNum, el("span.unit", { style: "font-size:.8rem;color:var(--text-dim);font-weight:700", text: weightLabel() })]),
       el("div.note", { style: "margin-top:5px", text: rangeKey === "all" ? "all time" : "last " + rangeLabel() }),
       el("div.statgrid", { style: "margin-top:14px" }, [
         miniStat("Sessions", String(inRange.length)),
@@ -623,7 +627,7 @@ export async function renderProgress() {
       const lastInProgress = weeks[weeks.length - 1] === curWeek;
       trendMini = el("div.card", {}, [
         el("div.card-head", {}, [el("div.label", { text: "Weekly trend" }),
-          lastInProgress ? null : (prev != null ? delta(last - prev) : null)]),
+          lastInProgress ? null : (prev != null ? delta(weightValue(last) - weightValue(prev)) : null)]),
         barChart({ values: vals, labels, color: "accent", height: 104,
           tipText: (i) => `${labels[i]}: ${M.fmtWeight(Math.round(vals[i]))}` }),
       ]);
@@ -679,10 +683,10 @@ export async function renderProgress() {
           ]),
           l.stall
             ? el("span.badge", { style: "color:var(--amber);background:rgba(251,191,36,.1);border-color:rgba(251,191,36,.3)", text: "⚠ stall" })
-            : delta(l.change),
+            : delta(weightValue(l.change)),
         ]),
         el("div", { style: "margin-top:8px" }, [sparkline({ values: l.e1s, color: "accent", height: 46, dots: true,
-          tipText: (i) => `${prettyShort(l.occ[i].date)}: ${Math.round(l.e1s[i])} kg` })]),
+          tipText: (i) => `${prettyShort(l.occ[i].date)}: ${M.fmtWeight(Math.round(l.e1s[i]))}` })]),
         l.stall ? el("div.note", { style: "margin-top:6px;color:var(--amber)", text: l.stall.message }) : null,
       ])));
     children.push(list);
@@ -696,7 +700,7 @@ export async function renderProgress() {
   if (recent.length) { children.push(anchor("sec-sessions", "Sessions")); children.push(el("h2", { text: "Recent sessions" })); }
   children.push(el("div.list", {}, recent.map((s) => {
     const sub = s.type === "cardio" && s.cardioResult
-      ? `${s.cardioResult.distanceKm} km · ${M.fmtDuration(s.cardioResult.timeSeconds)}`
+      ? `${distanceValue(s.cardioResult.distanceKm)} ${distanceLabel()} · ${M.fmtDuration(s.cardioResult.timeSeconds)}`
       : `${(s.strengthResult || []).length} exercises · ${M.fmtWeight(Math.round(M.sessionVolume(s)))}`;
     return el("button.item", { onclick: () => go(`#/summary/${s.id}`), style: "text-align:left" }, [
       el("div.ico", {}, [illustration(s.type === "cardio" ? "run" : "barbell")]),
@@ -760,15 +764,16 @@ export async function renderComposition() {
     const lastB = vals[vals.length - 1], firstB = vals[0];
     const toGoal = bwGoal ? lastB - bwGoal.goalKg : null;
     children.push(el("div.card.flush", {}, [
-      sectionHead("Bodyweight", bw.length > 1 ? delta(lastB - firstB, { unit: "kg", goodIfPositive: false, fmt: (v) => v.toFixed(1) + " kg" }) : null),
+      sectionHead("Bodyweight", bw.length > 1
+        ? delta(weightValue(lastB) - weightValue(firstB), { goodIfPositive: false, fmt: (v) => `${v.toFixed(1)} ${weightLabel()}` }) : null),
       el("div.row", { style: "align-items:baseline;gap:5px;padding:0 2px 6px" }, [
-        el("div.metric.sm", { text: lastB.toFixed(1) }), el("span.unit", { text: "kg" }),
+        el("div.metric.sm", { text: M.fmtWeight(lastB, { withUnit: false }) }), el("span.unit", { text: weightLabel() }),
       ]),
       bw.length > 1 ? sparkline({ values: vals, color: "violet", height: 70, gridIdx: weekBoundaries(bw.map((b) => b.date)),
-        tipText: (i) => `${prettyShort(bw[i].date)}: ${vals[i]} kg` }) : null,
+        tipText: (i) => `${prettyShort(bw[i].date)}: ${M.fmtWeight(vals[i])}` }) : null,
       bwGoal ? el("div.row", { style: "margin-top:8px;align-items:baseline" }, [
-        el("span.note", { text: `Goal ${bwGoal.goalKg} kg` }), el("span.spacer"),
-        el("span.dim", { style: "font-size:.82rem;font-variant-numeric:tabular-nums", text: toGoal > 0.1 ? `${toGoal.toFixed(1)} kg to go` : "reached ✓" })]) : null,
+        el("span.note", { text: `Goal ${M.fmtWeight(bwGoal.goalKg)}` }), el("span.spacer"),
+        el("span.dim", { style: "font-size:.82rem;font-variant-numeric:tabular-nums", text: toGoal > 0.1 ? `${weightValue(toGoal).toFixed(1)} ${weightLabel()} to go` : "reached ✓" })]) : null,
       el("div.note", { style: "margin-top:6px", text: rangeKey === "all" && bwGoal
         ? `Since ${bwGoal.startLabel} · imported history + in-app weigh-ins.`
         : `Last ${rangeLabel()} · imported history + in-app weigh-ins.` }),
@@ -787,11 +792,12 @@ export async function renderComposition() {
     if (waist.length >= 1) {
       const wv = waist.map((e) => e.v), lastW = wv[wv.length - 1];
       children.push(el("div.card.flush", {}, [
-        sectionHead("Waist", waist.length > 1 ? delta(lastW - wv[0], { unit: "cm", goodIfPositive: false, fmt: (v) => v.toFixed(1) + " cm" }) : null),
+        sectionHead("Waist", waist.length > 1
+          ? delta(lengthValue(lastW) - lengthValue(wv[0]), { goodIfPositive: false, fmt: (v) => `${v.toFixed(1)} ${lengthLabel()}` }) : null),
         el("div.row", { style: "align-items:baseline;gap:5px;padding:0 2px 6px" }, [
-          el("div.metric.sm", { text: lastW.toFixed(1) }), el("span.unit", { text: "cm" })]),
+          el("div.metric.sm", { text: lengthValue(lastW).toFixed(1) }), el("span.unit", { text: lengthLabel() })]),
         waist.length > 1 ? sparkline({ values: wv, color: "cyan", height: 70, gridIdx: weekBoundaries(waist.map((e) => e.date)),
-          tipText: (i) => `${prettyShort(waist[i].date)}: ${wv[i]} cm` }) : null,
+          tipText: (i) => `${prettyShort(waist[i].date)}: ${lengthValue(wv[i])} ${lengthLabel()}` }) : null,
         el("div.note", { style: "margin-top:8px", text: "Waist down at steady weight = recomp working. Add readings in Profile → Measurements." }),
       ]));
     }
@@ -806,8 +812,8 @@ export async function renderComposition() {
           const d = x.s.length > 1 ? lastV - v[0] : null;
           return el("div.row", { style: "align-items:baseline;margin-top:9px" }, [
             el("span", { style: "font-weight:700", text: x.label }), el("span.spacer"),
-            el("span.dim", { style: "font-variant-numeric:tabular-nums;font-size:.9rem", text: `${lastV.toFixed(1)} cm` }),
-            d != null ? delta(d, { unit: "cm", goodIfPositive: true, fmt: (n) => n.toFixed(1) + " cm" }) : null,
+            el("span.dim", { style: "font-variant-numeric:tabular-nums;font-size:.9rem", text: `${lengthValue(lastV).toFixed(1)} ${lengthLabel()}` }),
+            d != null ? delta(lengthValue(d), { goodIfPositive: true, fmt: (n) => `${n.toFixed(1)} ${lengthLabel()}` }) : null,
           ]);
         }),
         el("div.note", { style: "margin-top:10px", text: "Holding or growing while the waist drops = you're keeping muscle through the cut." }),

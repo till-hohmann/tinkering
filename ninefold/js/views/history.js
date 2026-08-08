@@ -6,6 +6,7 @@
 
 import { getActiveProgram, getAllSessions } from "../store.js";
 import { sessionVolume, fmtDuration, fmtWeight } from "../model.js";
+import { distanceLabel, distanceValue } from "../units.js";
 import { el, mount, go, locationBadge, backBtn } from "../ui.js";
 import { illustration } from "../illustrations.js";
 
@@ -60,14 +61,14 @@ export async function renderHistory() {
       .reduce((a, s) => a + Number(s.cardioResult.distanceKm) || 0, 0);
     const bits = [`${sessions.length} session${sessions.length === 1 ? "" : "s"}`];
     if (vol) bits.push(fmtWeight(Math.round(vol)));
-    if (km) bits.push(`${Math.round(km * 10) / 10} km`);
+    if (km) bits.push(`${Math.round(distanceValue(km) * 10) / 10} ${distanceLabel()}`);
     children.push(el("div.card-head", { style: "margin-top:18px" }, [
       el("div.label", { text: `Week of ${prettyDayMonth(monday)}` }),
       el("span.note", { text: bits.join(" · ") }),
     ]));
     children.push(el("div.list", {}, sessions.map((s) => {
       const sub = s.type === "cardio" && s.cardioResult
-        ? `${s.cardioResult.distanceKm} km · ${fmtDuration(s.cardioResult.timeSeconds)} · HR ${s.cardioResult.avgHR}`
+        ? `${distanceValue(s.cardioResult.distanceKm)} ${distanceLabel()} · ${fmtDuration(s.cardioResult.timeSeconds)} · HR ${s.cardioResult.avgHR}`
         : `${(s.strengthResult || []).length} exercises · ${fmtWeight(Math.round(sessionVolume(s)))}`;
       return el("button.item", { onclick: () => go(`#/summary/${s.id}`), style: "text-align:left" }, [
         el("div.ico", {}, [illustration(sessionFigureId(s))]),

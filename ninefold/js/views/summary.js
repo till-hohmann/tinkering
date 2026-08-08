@@ -12,9 +12,12 @@ import { celebrate } from "../components/confetti.js";
 import { strengthExportText } from "../whoop.js";
 import { workoutsFor, provider, has, CAP } from "../health/index.js";
 import { modalityLabel } from "../cardio-intel.js";
+import { weightLabel, weightValue, weightToKg, distanceLabel, distanceValue, distanceToKm, readEdit } from "../units.js";
 
 function exName(program, id) { return metaFor(program, id).name; }
 
+// `kind` names the unit the value is STORED in (always metric); what gets
+// printed is that value in the profile's display unit.
 function deltaChip(value, kind = "kg", goodIfPositive = true) {
   if (value == null || Math.abs(value) < (kind === "km" ? 0.005 : 0.5))
     return el("span.delta.flat", { text: "=" });
@@ -23,7 +26,7 @@ function deltaChip(value, kind = "kg", goodIfPositive = true) {
   const mag = Math.abs(value);
   const body =
     kind === "kg" ? M.fmtWeight(mag) :
-    kind === "km" ? mag.toFixed(2) + " km" :
+    kind === "km" ? `${distanceValue(mag).toFixed(2)} ${distanceLabel()}` :
     kind === "sec" ? Math.round(mag) + " s" :
     Math.round(mag) + " bpm";
   return el("span.delta." + (good ? "up" : "down"), { text: `${sign}${body}` });
@@ -68,7 +71,8 @@ export async function renderSummary(sessionId) {
     const ff = `font-family="system-ui,-apple-system,Segoe UI,sans-serif"`;
     let headline, unit, typeLabel, stats = [], lifts = [];
     if (session.type === "strength") {
-      headline = Math.round(M.sessionVolume(session)).toLocaleString("en-GB"); unit = "kg lifted"; typeLabel = "STRENGTH";
+      headline = Math.round(Number(M.fmtWeight(M.sessionVolume(session), { withUnit: false }))).toLocaleString("en-GB");
+      unit = `${weightLabel()} lifted`; typeLabel = "STRENGTH";
       const setCount = (session.strengthResult || []).reduce((n, ex) => n + (ex.sets || []).length, 0);
       stats = [["Exercises", String((session.strengthResult || []).length)], ["Sets", String(setCount)], ["Week", String(session.weekNumber)]];
       lifts = (session.strengthResult || []).map((ex) => {
@@ -77,8 +81,8 @@ export async function renderSummary(sessionId) {
       }).sort((a, b) => b.top - a.top).slice(0, 4);
     } else {
       const c = session.cardioResult;
-      headline = (c.distanceKm || 0).toFixed(2); unit = "km"; typeLabel = "RUN";
-      stats = [["Time", M.fmtDuration(c.timeSeconds)], ["Pace", M.fmtPace(M.paceSecPerKm(c)).replace(" /km", "")], ["Avg HR", String(c.avgHR || "–")]];
+      headline = distanceValue(c.distanceKm || 0).toFixed(2); unit = distanceLabel(); typeLabel = "RUN";
+      stats = [["Time", M.fmtDuration(c.timeSeconds)], ["Pace", M.fmtPace(M.paceSecPerKm(c), { withUnit: false })], ["Avg HR", String(c.avgHR || "–")]];
     }
     const statCols = stats.map((s, i) => {
       const x = 120 + i * 290;
@@ -125,7 +129,8 @@ export async function renderSummary(sessionId) {
     const h = inp(Math.floor(c.timeSeconds / 3600), "numeric");
     const m = inp(Math.floor((c.timeSeconds % 3600) / 60), "numeric");
     const s = inp(c.timeSeconds % 60, "numeric");
-    const dist = inp(c.distanceKm, "decimal");
+    const dist = inp(distanceValue(c.distanceKm), "decimal");   // shown and re-read in the display unit
+    dist.dataset.shown = dist.value;
     const hr = inp(c.avgHR, "numeric");
     const rpe = inp(c.feltRPE, "numeric");
     cardioRefs = { h, m, s, dist, hr, rpe };
@@ -134,7 +139,7 @@ export async function renderSummary(sessionId) {
     return el("div.card", {}, [
       el("div.label", { style: "margin-bottom:4px", text: "Edit run" }),
       rowf("Time", h, el("span.dim", { text: ":" }), m, el("span.dim", { text: ":" }), s),
-      rowf("Distance", dist, el("span.dim", { text: "km" })),
+      rowf("Distance", dist, el("span.dim", { text: distanceLabel() })),
       rowf("Avg HR", hr, el("span.dim", { text: "bpm" })),
       rowf("RPE", rpe),
     ]);
@@ -186,14 +191,14 @@ export async function renderSummary(sessionId) {
     } else if (session.type === "cardio" && session.cardioResult) {
       const c = session.cardioResult;
       const distNum = el("div.metric", { text: "0" });
-      countUp(distNum, c.distanceKm, { fmt: (v) => v.toFixed(2) });
+      countUp(distNum, distanceValue(c.distanceKm), { fmt: (v) => v.toFixed(2) });
       children.push(el("div.card", {}, [
         el("div.row", {}, [el("div.label", { text: "Distance" }), el("span.spacer"),
           el("span.badge.cyan", { text: modalityLabel(c.modality) })]),
-        el("div.row", { style: "align-items:baseline;gap:6px;margin-top:8px" }, [distNum, el("span.unit", { text: "km" })]),
+        el("div.row", { style: "align-items:baseline;gap:6px;margin-top:8px" }, [distNum, el("span.unit", { text: distanceLabel() })]),
         el("div.statgrid.three", { style: "margin-top:18px" }, [
           miniStat("Time", M.fmtDuration(c.timeSeconds)),
-          miniStat("Pace", M.fmtPace(M.paceSecPerKm(c)).replace(" /km", "")),
+          miniStat("Pace", M.fmtPace(M.paceSecPerKm(c), { withUnit: false })),
           miniStat("Avg HR", `${c.avgHR}`),
         ]),
       ]));
@@ -228,16 +233,16 @@ export async function renderSummary(sessionId) {
       if (!editing && prevTotal != null && total > prevTotal) prs.push(`Session volume ${M.fmtWeight(Math.round(total))} (beat ${M.fmtWeight(Math.round(prevTotal))})`);
 
       const volNum = el("div.metric", { text: "0" });
-      countUp(volNum, Math.round(total), { dur: 700, fmt: (v) => Math.round(v).toLocaleString("en-GB") });
+      countUp(volNum, Math.round(weightValue(total)), { dur: 700, fmt: (v) => Math.round(v).toLocaleString("en-GB") });
       const setCount = (session.strengthResult || []).reduce((n, ex) => n + (ex.sets || []).length, 0);
       children.push(el("div.card", {}, [
         el("div.row", {}, [el("div.label", { text: "Total volume" }), el("span.spacer"),
           prevTotal != null ? deltaChip(total - prevTotal, "kg", true) : null]),
-        el("div.row", { style: "align-items:baseline;gap:6px;margin-top:8px" }, [volNum, el("span.unit", { text: "kg" })]),
+        el("div.row", { style: "align-items:baseline;gap:6px;margin-top:8px" }, [volNum, el("span.unit", { text: weightLabel() })]),
         el("div.statgrid.three", { style: "margin-top:18px" }, [
           miniStat("Exercises", String((session.strengthResult || []).length)),
           miniStat("Sets", String(setCount)),
-          prevTotal != null ? miniStat(`Last ${session.weekday}`, M.fmtWeight(Math.round(prevTotal)).replace(" kg", "")) : miniStat("Status", "Logged"),
+          prevTotal != null ? miniStat(`Last ${session.weekday}`, M.fmtWeight(Math.round(prevTotal), { withUnit: false })) : miniStat("Status", "Logged"),
         ]),
       ]));
 
@@ -287,11 +292,12 @@ export async function renderSummary(sessionId) {
           ? el("div.editsets", {}, [
               ...ex.sets.map((s, i) => {
                 const timed = s.reps == null;
-                const w = el("input", { type: "text", inputmode: "decimal", value: String(s.weightKg ?? 0), style: editIn() });
+                const w = el("input", { type: "text", inputmode: "decimal", value: String(weightValue(s.weightKg ?? 0)), style: editIn() });
+                w.dataset.shown = w.value;      // untouched fields keep their exact stored kg (see readEdit)
                 const r = el("input", { type: "number", inputmode: "numeric", value: String(timed ? (s.seconds ?? 0) : (s.reps ?? 0)), style: editIn() });
                 editRefs.push({ ex, i, w, r, timed });
                 return el("div.editrow", {}, [
-                  el("span.n", { text: "S" + (i + 1) }), w, el("span.dim", { text: "kg" }), r,
+                  el("span.n", { text: "S" + (i + 1) }), w, el("span.dim", { text: weightLabel() }), r,
                   el("span.dim", { text: timed ? "s" : "reps" }),
                   el("button.btn.ghost", { style: "padding:4px 9px;margin-left:auto", title: "Remove set", onclick: () => removeSet(ex, i) }, "✕"),
                 ]);
@@ -324,7 +330,7 @@ export async function renderSummary(sessionId) {
     if (!editing && (n.bodyweightKg || n.energySleep || n.niggles)) {
       children.push(el("div.card.tight", { style: "margin-top:14px" }, [
         el("div.label", { style: "margin-bottom:8px", text: "Notes" }),
-        n.bodyweightKg ? kv("Bodyweight", `${n.bodyweightKg} kg`) : null,
+        n.bodyweightKg ? kv("Bodyweight", M.fmtWeight(n.bodyweightKg)) : null,
         n.energySleep ? el("p.note", { text: n.energySleep }) : null,
         n.niggles ? el("p.note.warn", { text: "⚠ " + n.niggles }) : null,
       ]));
@@ -363,7 +369,7 @@ export async function renderSummary(sessionId) {
   function flushStrengthEdits() {
     for (const { ex, i, w, r, timed } of draw._editRefs || []) {
       if (!ex.sets[i]) continue;
-      ex.sets[i].weightKg = M.parseNum(w.value);
+      ex.sets[i].weightKg = readEdit(w, ex.sets[i].weightKg ?? 0, (v) => weightToKg(M.parseNum(v)));
       const val = Math.max(0, Math.round(M.parseNum(r.value)));
       if (timed) ex.sets[i].seconds = val; else ex.sets[i].reps = val;
     }
@@ -387,7 +393,7 @@ export async function renderSummary(sessionId) {
     if (session.type === "cardio" && cardioRefs) {
       const c = session.cardioResult || (session.cardioResult = {});
       c.timeSeconds = (Number(cardioRefs.h.value) || 0) * 3600 + (Number(cardioRefs.m.value) || 0) * 60 + (Number(cardioRefs.s.value) || 0);
-      c.distanceKm = M.parseNum(cardioRefs.dist.value);
+      c.distanceKm = readEdit(cardioRefs.dist, c.distanceKm ?? 0, (v) => distanceToKm(M.parseNum(v)));
       c.avgHR = Math.round(M.parseNum(cardioRefs.hr.value));
       c.feltRPE = Math.round(M.parseNum(cardioRefs.rpe.value));
     } else {
@@ -416,7 +422,7 @@ function labelled(k, node) {
 }
 function cardioBlurb(cmp) {
   const bits = [];
-  if (cmp.distanceDelta > 0.05) bits.push(`+${cmp.distanceDelta.toFixed(2)} km farther`);
+  if (cmp.distanceDelta > 0.05) bits.push(`+${distanceValue(cmp.distanceDelta).toFixed(2)} ${distanceLabel()} farther`);
   if (cmp.paceDelta != null && cmp.paceDelta < -1) bits.push("faster pace");
   if (cmp.hrDelta < -1) bits.push(`avg HR down ${Math.abs(Math.round(cmp.hrDelta))} bpm`);
   return bits.length ? "Nice — " + bits.join(", ") + "." : "Solid, steady session.";
