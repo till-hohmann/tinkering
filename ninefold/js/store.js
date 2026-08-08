@@ -262,6 +262,35 @@ export async function mobilityDoneDates() { return new Set((await getMobilityLog
 export async function getMobilityProg() { return (await db.getPref("mobilityProg")) || {}; }
 export async function setMobilityProg(state) { await db.setPref("mobilityProg", state || {}); pushCloud(); }
 
+// --- Apple Health, imported locally ---------------------------------------
+// The Shortcuts bridge posts to the backup Worker; this is the same shape held
+// on-device, for history imported from an export.zip. Kept LOCAL and unsynced:
+// it can be a few hundred KB, it is losslessly re-derivable from the export file
+// the user still has, and pushing it through the training-log backup would bloat
+// every snapshot for data the provider merges anyway.
+export async function getAppleHealthLog() {
+  const v = await db.getPref("appleHealthLog");
+  return (v && v.byDate) ? v : { byDate: {} };
+}
+// Merge by date, field by field: a later import fills gaps without discarding
+// anything the Shortcut has since pushed for the same day.
+export async function mergeAppleHealthLog(byDate) {
+  const cur = await getAppleHealthLog();
+  const out = { ...cur.byDate };
+  let added = 0, updated = 0;
+  for (const [d, rec] of Object.entries(byDate || {})) {
+    if (out[d]) { out[d] = { ...out[d], ...rec }; updated++; }
+    else { out[d] = rec; added++; }
+  }
+  // Bound it the same way the Worker does — two years is far more than any view
+  // reads, and an unbounded pref is how IndexedDB quota errors start.
+  const dates = Object.keys(out).sort();
+  for (const stale of dates.slice(0, Math.max(0, dates.length - 800))) delete out[stale];
+  await db.setPref("appleHealthLog", { byDate: out, importedAt: todayISO() });
+  return { added, updated, total: Object.keys(out).length };
+}
+export async function clearAppleHealthLog() { await db.setPref("appleHealthLog", { byDate: {} }); }
+
 export const setLastExport = (iso) => db.setPref("lastExport", iso);
 export const getLastExport = () => db.getPref("lastExport");
 

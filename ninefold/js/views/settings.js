@@ -14,6 +14,7 @@ import { isSoundEnabled, setSoundEnabled, getAudioMode, setAudioMode, testAudio 
 import { zonesFromBounds, DEFAULT_ZONE_BOUNDS } from "../cardio-intel.js";
 import { provider, has, resetProviderCache, PROVIDERS, CAP,
   recoveryToday, bestWorkoutFor, body as trackerBody, vo2max as healthVO2max } from "../health/index.js";
+import { resetAppleCache } from "../health/apple.js";
 import { getProfile, patchProfile } from "../profile.js";
 import { THEMES, DEFAULT_THEME, applyTheme } from "../theme.js";
 import { resolvedConfig, setRuntimeConfig, hasBackup } from "../config.js";
@@ -411,6 +412,7 @@ export async function renderSettings() {
     trkBlurb,
     el("div", { style: "margin-top:12px" }, [trkLine, trkBtnRow, trkLatest]),
     trk.id === "apple" ? appleSetup() : null,
+    trk.id === "apple" ? appleImport() : null,
     el("p.note", { style: "margin-top:12px;font-size:.74rem", text: privacyNote }),
   ].filter(Boolean));
 
@@ -738,6 +740,84 @@ function appleSetup() {
     step(4, "Run it once by hand", "Then come back here — the card above should show the last push date."),
     el("p.note", { style: "margin-top:12px;font-size:.73rem", text:
       "Prefer not to build it yourself? The Health Auto Export app does the same thing with a REST destination and no scripting." }),
+  ]);
+}
+
+// Import the Health app's own export archive — everything from BEFORE the
+// Shortcut existed. Separate from the bridge above because it needs no backend
+// at all: the parsed history is stored on-device and merged with whatever the
+// Shortcut has pushed.
+function appleImport() {
+  const status = el("p.note", { style: "margin-top:10px;min-height:1.2em" });
+  const bar = el("div", { style: "display:none;height:5px;border-radius:3px;background:var(--bg-elev3);margin-top:10px;overflow:hidden" },
+    [el("div", { style: "width:0;height:100%;background:var(--grad-cta);transition:width .2s" })]);
+  const fill = bar.firstChild;
+  const summary = el("div", { style: "margin-top:10px" });
+
+  const input = el("input", { type: "file", accept: ".zip,.xml,application/zip,text/xml", style: "display:none" });
+  const pick = el("button.btn.block", { style: "margin-top:10px", onclick: () => input.click() }, "Choose export.zip…");
+
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    summary.replaceChildren();
+    pick.disabled = true;
+    bar.style.display = "";
+    const mb = (n) => (n / 1048576).toFixed(0);
+    status.textContent = `Reading ${file.name} (${mb(file.size)} MB)…`;
+    try {
+      const { parseAppleExport, summarise, applyImport } = await import("../health/apple-import.js");
+      const result = await parseAppleExport(file, {
+        onProgress: ({ bytes, records, days }) => {
+          // A zip decompresses to roughly 3x its size, so the bar is an estimate
+          // — but a moving bar is the point, not precision.
+          const est = /\.zip$/i.test(file.name) ? file.size * 3 : file.size;
+          fill.style.width = Math.min(97, (bytes / Math.max(1, est)) * 100) + "%";
+          status.textContent = `${records.toLocaleString("en-GB")} records · ${days} days…`;
+        },
+      });
+      fill.style.width = "100%";
+      const s = summarise(result);
+      if (!s.days) {
+        status.textContent = "No usable health data found in that file.";
+        return;
+      }
+      status.textContent = "Saving…";
+      const written = await applyImport(result, { onStep: (m) => { status.textContent = m; } });
+      resetAppleCache();
+
+      const row = (label, n) => (n ? el("div.row", { style: "margin:5px 0;font-size:.84rem" }, [
+        el("span", { style: "flex:1", text: label }), el("span.dim.tnum", { text: n.toLocaleString("en-GB") })]) : null);
+      summary.replaceChildren(...[
+        el("div.label", { style: "margin-bottom:6px", text: "Imported" }),
+        el("p.note", { style: "margin:0 0 8px", text: `${s.days} days, ${s.from} to ${s.to}.` }),
+        row("Weigh-ins", s.weight), row("Resting HR", s.restingHR), row("HRV", s.hrv),
+        row("Sleep", s.sleep), row("Energy", s.energy), row("VO₂max", s.vo2max),
+        row("Waist", s.waist), row("Workouts", s.workouts),
+        written.updated ? el("p.note", { style: "margin-top:8px", text: `${written.added} new days, ${written.updated} updated.` }) : null,
+        ...result.warnings.map((w) => el("p.note", { style: "margin-top:8px;font-size:.73rem", text: w })),
+      ].filter(Boolean));
+      status.textContent = "Done. Re-importing the same file later is safe — days merge by date.";
+    } catch (e) {
+      status.textContent = "Couldn't read it: " + (e.message || "unknown error");
+    } finally {
+      pick.disabled = false;
+      input.value = "";
+      setTimeout(() => { bar.style.display = "none"; fill.style.width = "0"; }, 1200);
+    }
+  });
+
+  return el("details", { style: "margin-top:10px" }, [
+    el("summary", { style: "cursor:pointer;font-weight:700;font-size:.88rem", text: "Import your Health history" }),
+    el("p.note", { style: "margin-top:8px", text:
+      "The Shortcut only knows about days after you set it up. This loads everything before it — weight, resting heart rate, HRV, sleep, energy and VO₂max, going back as far as your Health app does." }),
+    el("p.note", { style: "margin-top:8px", text:
+      "On your iPhone: Health app → your photo → Export All Health Data. It produces an export.zip. AirDrop or save it, then pick it here — no need to unzip it." }),
+    // The one genuinely awkward bit, and worth stating plainly rather than
+    // letting someone discover a dead button in the gym.
+    el("p.note.warn", { style: "margin-top:8px", text:
+      "If you added Ninefold to your Home Screen, do this in Safari instead — iOS blocks file pickers inside installed web apps. Same URL, same data." }),
+    pick, input, bar, status, summary,
   ]);
 }
 

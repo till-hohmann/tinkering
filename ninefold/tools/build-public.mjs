@@ -67,7 +67,20 @@ const FORBIDDEN = [
   // Shape-based catches for credentials nobody thought to list: a 32-hex id
   // (KV namespace, Cloudflare account) and a long base64-ish string literal.
   { re: /[0-9a-f]{32}/i, why: "a 32-hex id (KV namespace / account?)", allow: /PUT_YOUR/i },
-  { re: /["'][A-Za-z0-9+/]{28,}={0,2}["']/, why: "a long base64-ish literal (credential?)" },
+  // Base64-ish secret, by ENTROPY rather than by shape alone. Long CamelCase API
+  // constants defeat every purely structural version of this rule:
+  // "HKQuantityTypeIdentifierRestingHeartRate" is 40 letters, and
+  // "HKQuantityTypeIdentifierVO2Max" even carries a digit. What actually
+  // separates a generated key is that its digits are SCATTERED — three or more,
+  // mixed through both cases — where an identifier has at most one.
+  { test: (line) => {
+      for (const m of line.matchAll(/["']([A-Za-z0-9+/]{28,}={0,2})["']/g)) {
+        const s = m[1];
+        const digits = (s.match(/\d/g) || []).length;
+        if (digits >= 3 && /[a-z]/.test(s) && /[A-Z]/.test(s)) return true;
+      }
+      return false;
+    }, why: "a long high-entropy literal (credential?)" },
 ];
 
 // Optional private additions: one regex per line, `#` for comments. Absent from
@@ -131,11 +144,12 @@ for (const rel of copied) {
   if (!TEXT_EXT.has(extname(rel))) continue;
   const src = readFileSync(join(TARGET, rel), "utf8");
   const lines = src.split("\n");
-  for (const { re, why, allow } of FORBIDDEN) {
+  for (const { re, test, why, allow } of FORBIDDEN) {
     lines.forEach((line, i) => {
       // `allow` exempts the documented placeholder forms ("your-app.pages.dev"),
       // which must survive — they're how a self-hoster knows what to replace.
-      if (re.test(line) && !(allow && allow.test(line))) {
+      const hit = test ? test(line) : re.test(line);
+      if (hit && !(allow && allow.test(line))) {
         hits.push({ rel, line: i + 1, why, text: line.trim().slice(0, 110) });
       }
     });

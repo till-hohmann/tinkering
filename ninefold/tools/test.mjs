@@ -29,6 +29,7 @@ import { generateProgram, spreadDays } from "../js/builder/generate.js";
 import { THEMES, themeById, DEFAULT_THEME } from "../js/theme.js";
 import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT, METRIC_EQUIPMENT,
   defaultEquipmentFor, plateLabel, weightLabel, isImperialWeight } from "../js/units.js";
+import { parseAppleExport, summarise, appleTime } from "../js/health/apple-import.js";
 
 let passed = 0, failed = 0;
 const groups = [];
@@ -585,6 +586,92 @@ group("units — display only, storage stays metric", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Apple import. These are async, so they run before the synchronous groups are
+// printed and push their own results in.
+const appleXml = (rows) =>
+  '<?xml version="1.0" encoding="UTF-8"?>\n<HealthData locale="en_GB">\n' + rows.join("\n") + "\n</HealthData>";
+const asFile = (text, name = "export.xml") => new File([text], name);
+
+async function appleTests() {
+  console.log("\napple import — export.xml");
+  const R = (t, extra) => `<Record type="${t}" ${extra}/>`;
+
+  it("parses dates with an offset (the sleep-dropping bug)", () => {
+    // replace(" ","T") only replaces the FIRST space, leaving "…T09:00:00 +0100",
+    // which parses as NaN and silently dropped every sleep record.
+    assert.ok(Number.isFinite(appleTime("2025-01-01 23:00:00 +0100")));
+    assert.equal(new Date(appleTime("2025-01-01 23:00:00 +0100")).toISOString(), "2025-01-01T22:00:00.000Z");
+    assert.ok(Number.isFinite(appleTime("2025-01-01 23:00:00 -0500")));
+  });
+
+  const xml = appleXml([
+    R("HKQuantityTypeIdentifierBodyMass", 'unit="lb" startDate="2025-03-01 07:00:00 +0000" endDate="2025-03-01 07:00:00 +0000" value="200"'),
+    R("HKQuantityTypeIdentifierActiveEnergyBurned", 'unit="Cal" startDate="2025-03-01 09:00:00 +0000" endDate="2025-03-01 09:00:00 +0000" value="300"'),
+    R("HKQuantityTypeIdentifierActiveEnergyBurned", 'unit="Cal" startDate="2025-03-01 10:00:00 +0000" endDate="2025-03-01 10:00:00 +0000" value="250"'),
+    R("HKQuantityTypeIdentifierBodyFatPercentage", 'unit="%" startDate="2025-03-01 07:00:00 +0000" endDate="2025-03-01 07:00:00 +0000" value="0.223"'),
+    R("HKQuantityTypeIdentifierWaistCircumference", 'unit="in" startDate="2025-03-01 07:00:00 +0000" endDate="2025-03-01 07:00:00 +0000" value="36"'),
+    R("HKCategoryTypeIdentifierSleepAnalysis", 'startDate="2025-03-01 23:00:00 +0000" endDate="2025-03-02 06:00:00 +0000" value="HKCategoryValueSleepAnalysisAsleepCore"'),
+    R("HKCategoryTypeIdentifierSleepAnalysis", 'startDate="2025-03-01 22:00:00 +0000" endDate="2025-03-01 23:00:00 +0000" value="HKCategoryValueSleepAnalysisInBed"'),
+    R("HKQuantityTypeIdentifierStepCount", 'unit="count" startDate="2025-03-01 09:00:00 +0000" endDate="2025-03-01 09:00:00 +0000" value="500"'),
+    '<Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="30" totalDistance="5" totalDistanceUnit="km" startDate="2025-03-02 18:00:00 +0000" endDate="2025-03-02 18:30:00 +0000"/>',
+    '<Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="30" totalDistance="5" totalDistanceUnit="km" startDate="2025-03-02 18:00:00 +0000" endDate="2025-03-02 18:30:00 +0000"/>',
+    '<Workout workoutActivityType="HKWorkoutActivityTypeTraditionalStrengthTraining" duration="60" startDate="2025-03-03 18:00:00 +0000" endDate="2025-03-03 19:00:00 +0000"/>',
+  ]);
+  const r = await parseAppleExport(asFile(xml));
+  const d1 = r.byDate["2025-03-01"], d2 = r.byDate["2025-03-02"];
+
+  it("converts imperial weight to kg", () => assert.equal(d1.weightKg, 90.7));
+  it("converts inches to cm", () => assert.equal(d1.waistCm, 91.4));
+  it("reads body fat as a fraction", () => assert.equal(d1.bodyFatPct, 22.3));
+  it("SUMS energy and treats Cal as kilocalories", () => {
+    // Lowercasing the unit made "Cal" match "cal" and divided by 1000: 550 -> 1.
+    assert.equal(d1.activeKcal, 550);
+  });
+  it("counts only asleep stages, attributed to the wake date", () => {
+    assert.equal(d1.sleepHours, undefined, "sleep belongs to the morning you wake");
+    assert.equal(d2.sleepHours, 7, "InBed must not inflate it");
+  });
+  it("ignores record types it doesn't want", () => {
+    assert.equal(r.counts.HKQuantityTypeIdentifierStepCount, undefined);
+  });
+  it("keeps cardio workouts, drops strength, dedupes duplicates", () => {
+    assert.equal(r.workouts.length, 1);
+    assert.equal(r.workouts[0].sport, "Running");
+    assert.equal(r.workouts[0].distanceKm, 5);
+    assert.equal(r.workouts[0].timeSeconds, 1800);
+  });
+  it("warns that Apple HRV is a different statistic", async () => {
+    const hrv = await parseAppleExport(asFile(appleXml([
+      R("HKQuantityTypeIdentifierHeartRateVariabilitySDNN", 'unit="ms" startDate="2025-03-01 07:00:00 +0000" endDate="2025-03-01 07:00:00 +0000" value="45"')])));
+    assert.ok(hrv.warnings.some((w) => /SDNN/.test(w)));
+  });
+  it("survives a tag split across stream chunks", async () => {
+    // 3 MB forces multiple reads; a naive scanner loses the record on the seam.
+    const many = [];
+    for (let i = 0; i < 12000; i++) {
+      const day = String((i % 28) + 1).padStart(2, "0");
+      many.push(R("HKQuantityTypeIdentifierRestingHeartRate",
+        `unit="count/min" startDate="2025-04-${day} 07:00:00 +0000" endDate="2025-04-${day} 07:00:00 +0000" value="55"`));
+    }
+    const big = await parseAppleExport(asFile(appleXml(many)));
+    assert.equal(big.counts.HKQuantityTypeIdentifierRestingHeartRate, 12000, "records lost at a chunk boundary");
+    assert.equal(Object.keys(big.byDate).length, 28);
+  });
+  it("reports nothing rather than throwing on a non-export file", async () => {
+    const junk = await parseAppleExport(asFile("just some text, not xml at all"));
+    assert.equal(junk.records, 0);
+    assert.ok(junk.warnings.some((w) => /No health records/i.test(w)));
+  });
+  it("summarise counts each metric", () => {
+    const s = summarise(r);
+    assert.equal(s.weight, 1);
+    assert.equal(s.workouts, 1);
+    assert.equal(s.from, "2025-03-01");
+  });
+}
+
+await appleTests();
+
 for (const [name, fn] of groups) { console.log("\n" + name); fn(); }
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

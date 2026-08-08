@@ -31,23 +31,48 @@ import { getProfile, resolveZoneBounds } from "../profile.js";
 const CACHE_MS = 120000;                 // the phone pushes at most a few times a day
 let cache = { at: 0, store: null };
 
+// TWO SOURCES, ONE VIEW.
+//   - the LOCAL store, populated by importing an export.zip (history)
+//   - the REMOTE store on the backup Worker, populated by the Shortcut (current)
+// Merged per date with the remote winning on conflict, because the Shortcut is
+// the live feed and an import is a one-off snapshot of the past. Crucially the
+// local half works with NO backup configured at all, so someone who just wants
+// their history in doesn't have to deploy anything first.
 async function fetchStore() {
   if (cache.store && Date.now() - cache.at < CACHE_MS) return cache.store;
+
+  const { getAppleHealthLog } = await import("../store.js");
+  let local = {};
+  try { local = (await getAppleHealthLog()).byDate || {}; } catch (_) {}
+
+  let remote = {}, lastPush = null;
   const cfg = await resolvedConfig(db);
-  if (!hasBackup(cfg)) return null;
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 6000);
-    const res = await fetch(cfg.backup.endpoint.replace(/\/+$/, "") + "/health", {
-      headers: { Authorization: "Bearer " + cfg.backup.token }, signal: ctrl.signal });
-    clearTimeout(t);
-    if (!res.ok) return null;
-    const txt = await res.text();
-    if (!txt || txt.trim() === "null") return null;
-    const store = JSON.parse(txt);
-    cache = { at: Date.now(), store };
-    return store;
-  } catch (_) { return null; }
+  if (hasBackup(cfg)) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 6000);
+      const res = await fetch(cfg.backup.endpoint.replace(/\/+$/, "") + "/health", {
+        headers: { Authorization: "Bearer " + cfg.backup.token }, signal: ctrl.signal });
+      clearTimeout(t);
+      if (res.ok) {
+        const txt = await res.text();
+        if (txt && txt.trim() !== "null") {
+          const parsed = JSON.parse(txt);
+          remote = (parsed && parsed.byDate) || {};
+          lastPush = parsed && parsed.updatedAt;
+        }
+      }
+    } catch (_) { /* offline — the local half still answers */ }
+  }
+
+  const dates = new Set([...Object.keys(local), ...Object.keys(remote)]);
+  if (!dates.size) return null;
+  const byDate = {};
+  for (const d of dates) byDate[d] = { ...(local[d] || {}), ...(remote[d] || {}) };
+  const store = { byDate, updatedAt: lastPush, hasRemote: !!Object.keys(remote).length,
+    hasLocal: !!Object.keys(local).length };
+  cache = { at: Date.now(), store };
+  return store;
 }
 
 export function resetAppleCache() { cache = { at: 0, store: null }; }
@@ -108,24 +133,36 @@ const provider = {
   caps: [CAP.recovery, CAP.sleep, CAP.burn, CAP.workouts, CAP.body, CAP.load, CAP.vo2max, CAP.zoneMinutes],
 
   async status() {
-    const cfg = await resolvedConfig(db);
-    if (!hasBackup(cfg)) {
-      return { connected: false, unconfigured: true,
-        detail: "Apple Health pushes into your backup Worker, so set that up first." };
-    }
     const store = await fetchStore();
-    if (!store) return { connected: false, offline: true };
-    const dates = Object.keys(daysOf(store)).sort();
-    const last = dates[dates.length - 1] || null;
-    const staleDays = last ? Math.round((Date.parse(todayISO()) - Date.parse(last)) / 86400000) : null;
+    const cfg = await resolvedConfig(db);
+    const dates = store ? Object.keys(daysOf(store)).sort() : [];
+
+    if (!dates.length) {
+      // Nothing at all yet. Which advice to give depends on whether the live
+      // bridge is even possible — importing history works with no backend, so
+      // "set up a Worker first" would be wrong for someone who only wants that.
+      return { connected: false, unconfigured: true,
+        detail: hasBackup(cfg)
+          ? "No data yet. Import your Health export for history, or install the Shortcut to stay current."
+          : "Import your Health export to load your history. For a live daily feed you'll also need the Cloud backup below." };
+    }
+
+    const last = dates[dates.length - 1];
+    const staleDays = Math.round((Date.parse(todayISO()) - Date.parse(last)) / 86400000);
+    // "Stale" only means anything when a LIVE feed is expected. History imported
+    // from an export is old by definition, and flagging it as stale would be
+    // telling the user something is broken when nothing is.
+    const expectsLive = !!store.hasRemote;
     return {
-      connected: !!dates.length,
-      lastPush: last,
+      connected: true,
       days: dates.length,
-      // A Shortcut that stopped firing is the main failure mode here, and it is
-      // silent — so say so rather than serving three-week-old numbers as today's.
-      stale: staleDays != null && staleDays > 2,
-      staleDays,
+      lastPush: expectsLive ? last : null,
+      importedThrough: store.hasLocal ? last : null,
+      sources: [store.hasLocal ? "import" : null, store.hasRemote ? "shortcut" : null].filter(Boolean),
+      // A Shortcut that stopped firing is the main failure mode, and it's silent,
+      // so say so rather than serving three-week-old numbers as today's.
+      stale: expectsLive && staleDays > 2,
+      staleDays: expectsLive ? staleDays : null,
     };
   },
 
