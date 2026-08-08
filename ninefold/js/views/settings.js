@@ -27,7 +27,7 @@ import { cloudPull, cloudCheck } from "../cloudsync.js";
 // Running build version — baked into the code so it always reflects the
 // installed version (iOS standalone PWAs don't reliably expose caches.keys()
 // or SW messaging to the page). BUMP THIS together with CACHE in sw.js.
-const APP_VERSION = "v139";
+const APP_VERSION = "v140";
 
 function daysSince(iso) {
   if (!iso) return null;

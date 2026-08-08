@@ -178,13 +178,20 @@ export const defaultEquipmentFor = (profile) =>
 const PLATE_COLORS_KG = { 25: "#ef4444", 20: "#3b82f6", 15: "#eab308", 10: "#22c55e", 5: "#e5e7eb", 2.5: "#f97316", 1.25: "#9ca3af" };
 const PLATE_COLORS_LB = { 45: "#3b82f6", 35: "#eab308", 25: "#22c55e", 10: "#e5e7eb", 5: "#f97316", 2.5: "#9ca3af" };
 
+// A plate face shows the DENOMINATION STAMPED ON THE DISC, which is not quite
+// the same thing as a displayed weight. `weightValue` rounds metric to one
+// decimal, so the 1.25 kg plate — a real disc on every European rack — came out
+// as "1.3", and then missed its entry in the colour table below and rendered in
+// the fallback blue. Imperial denominations survive `weightValue` intact (it
+// keeps halves below 20 lb, exactly so the 2.5 lb plate stays 2.5), so only the
+// metric side needs the raw number. The loaded TOTAL is unaffected either way —
+// it is computed from exact kg and was always right.
+const plateDenom = (kg, profile) =>
+  (isImperialWeight(profile) ? weightValue(kg, profile) : Math.round(kg * 100) / 100);
+
 export function plateColor(kg, profile) {
-  const v = weightValue(kg, profile);
   const table = isImperialWeight(profile) ? PLATE_COLORS_LB : PLATE_COLORS_KG;
-  return table[v] || "#60a5fa";
+  return table[plateDenom(kg, profile)] || "#60a5fa";
 }
-// Face label for a plate — the displayed number, no unit (it's on a disc).
-export const plateLabel = (kg, profile) => {
-  const v = weightValue(kg, profile);
-  return Number.isInteger(v) ? String(v) : String(v);
-};
+// Face label for a plate — the denomination, no unit (it's on a disc).
+export const plateLabel = (kg, profile) => String(plateDenom(kg, profile));

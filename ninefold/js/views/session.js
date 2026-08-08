@@ -381,13 +381,14 @@ async function notes(stage, draft) {
     clear(stage);
     const bw = el("input", { type: "text", inputmode: "decimal", placeholder: weightLabel(),
       style: inStyle(), value: draft.sessionNotes.bodyweightKg ? String(weightValue(draft.sessionNotes.bodyweightKg)) : "" });
+    bw.dataset.shown = bw.value;    // redoing a session must not re-round its weigh-in (see readEdit)
     const energy = el("input", { type: "text", placeholder: "energy / sleep", style: inStyle(true) });
     const niggles = el("input", { type: "text", placeholder: "anything to watch", style: inStyle(true) });
     const bwPull = el("button.btn", { style: "padding:7px 12px", onclick: async () => {
       bwPull.disabled = true; const old = bwPull.textContent; bwPull.textContent = "…";
       try {
         const m = await trackerBody();
-        if (m && m.weightKg != null) { bw.value = String(weightValue(m.weightKg)); bwPull.textContent = "✓"; }
+        if (m && m.weightKg != null) { bw.value = String(weightValue(m.weightKg)); bw.dataset.shown = ""; bwPull.textContent = "✓"; }
         else bwPull.textContent = "none";
       } catch (e) { bwPull.textContent = /401|not_linked/.test(e.message || "") ? "link first" : "offline"; }
       finally { setTimeout(() => { bwPull.disabled = false; bwPull.textContent = old; }, 1400); }
@@ -402,7 +403,7 @@ async function notes(stage, draft) {
     ]));
     const bar = addActionBar(el("button.btn.primary.big.block", { onclick: () => {
       if (bw.value) {
-        const kg = weightToKg(M.parseNum(bw.value)) ?? 0;      // typed in the display unit
+        const kg = readEdit(bw, draft.sessionNotes.bodyweightKg ?? 0, (v) => weightToKg(M.parseNum(v)));
         draft.sessionNotes.bodyweightKg = kg; setBodyweight(kg);
       }
       if (energy.value) draft.sessionNotes.energySleep = energy.value;

@@ -28,7 +28,7 @@ import { compatibility, interference, analysePriorities, blockShape } from "../j
 import { generateProgram, spreadDays } from "../js/builder/generate.js";
 import { THEMES, themeById, DEFAULT_THEME } from "../js/theme.js";
 import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT, METRIC_EQUIPMENT,
-  defaultEquipmentFor, plateLabel, weightLabel, isImperialWeight, setDisplayProfile,
+  defaultEquipmentFor, plateLabel, plateColor, weightLabel, isImperialWeight, setDisplayProfile,
   distanceValue, distanceToKm, lengthValue, lengthToCm, fmtPace as fmtPaceU, paceLabel,
   METRIC_PROFILE, readEdit } from "../js/units.js";
 import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay } from "../js/model.js";
@@ -576,6 +576,18 @@ group("units — display only, storage stays metric", () => {
     assert.equal(fmtWeight(100, metric), "100 kg");
     assert.equal(fmtWeight(100, imperial), "220 lb");     // not 220.5
     assert.equal(fmtWeight(null, metric), "–");
+  });
+  it("a plate face shows the denomination stamped on the disc", () => {
+    // Regression: the 1.25 kg plate went through the 1-decimal display rounding
+    // and came out "1.3" — a disc that exists on no rack — and then missed its
+    // entry in the colour table and rendered in the fallback blue.
+    assert.equal(plateLabel(1.25, metric), "1.25");
+    assert.equal(plateColor(1.25, metric), "#9ca3af");
+    assert.deepEqual(METRIC_EQUIPMENT.barbellPlatesKg.map((k) => plateLabel(k, metric)),
+      ["25", "20", "15", "10", "5", "2.5", "1.25"]);
+    // and every metric denomination still has a colour of its own
+    const cols = METRIC_EQUIPMENT.barbellPlatesKg.map((k) => plateColor(k, metric));
+    assert.equal(new Set(cols).size, cols.length, "each plate needs a distinct face colour");
   });
   it("keeps fractional plates intact", () => {
     // Regression: rounding every pound value to a whole number turned the real
