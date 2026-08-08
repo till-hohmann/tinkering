@@ -28,7 +28,7 @@ const FILES = [
   "index.html", "manifest.webmanifest", "sw.js",
   "backup-worker/wrangler.toml", "whoop-worker/wrangler.toml", "whoop-worker/README.md",
   "tools/check.mjs", "tools/test.mjs", "tools/build-public.mjs",
-  "tools/deploy.ps1", "tools/make-icons.py", "tools/build-exercise-images.py",
+  "tools/deploy.ps1", "tools/make-icons.py", "tools/make-mark-nine.py", "tools/build-exercise-images.py",
   "tools/illustration-prompts.md",
   "THIRD-PARTY.md",
 ];
@@ -36,7 +36,9 @@ const FILES = [
 // tree gets the one written for strangers.
 const RENAMES = { "README.public.md": "README.md", "GETTING_STARTED.public.md": "GETTING_STARTED.md" };
 // Never copied even from inside an allowed directory.
-const EXCLUDE_RE = /(^|[\\/])(\.wrangler|node_modules|__pycache__|\.deploy|overlay)([\\/]|$)|\.pyc$/;
+// `concepts` is design scratch — rejected icon directions, before/after sheets.
+// Useful history in the dev repo, noise in a release someone is cloning.
+const EXCLUDE_RE = /(^|[\\/])(\.wrangler|node_modules|__pycache__|\.deploy|overlay|concepts)([\\/]|$)|\.pyc$/;
 
 // --- what must never appear --------------------------------------------------
 //

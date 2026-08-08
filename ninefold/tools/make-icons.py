@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""make-icons.py — dev tool. Renders the Strong app icons (PNG + SVG) from the
-chosen logo mark (the collegiate "S" inside a 45-plate timer ring), cropped from
-Till's approved design into icons/mark-source.png. The mark is composited onto a
+"""make-icons.py — dev tool. Renders the Ninefold app icons (PNG + SVG) from the
+chosen logo mark (the collegiate "9" inside a 45-plate timer ring; the 9 is
+drawn by tools/make-mark-nine.py into icons/mark-source.png). The mark is composited onto a
 near-black tile and scaled to fill almost the whole square (small margins).
 Re-run if the mark or fill changes:  python tools/make-icons.py
 """
