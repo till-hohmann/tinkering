@@ -184,6 +184,40 @@ const MAP = {
   adductors: "ninety",   // cool-down butterfly → seated hips-open figure
   // Block 2+ rotation + dead hangs
   dead_hang: "deadhang", barbell_hip_thrust: "hipthrust", db_step_up: "stepup",
+  // --- library expansion -----------------------------------------------------
+  // New dedicated poses.
+  deadlift: "deadlift", front_squat: "frontsquat", dip: "dip",
+  leg_press: "legpress", leg_extension: "legext", leg_curl: "legcurl",
+  seated_cable_row: "seatedrow", db_shrug: "shrug", barbell_shrug: "shrug",
+  farmers_carry: "carry", db_chest_fly: "chestfly", cable_fly: "chestfly",
+  preacher_curl: "preacher", skullcrusher: "skullcrusher",
+  hanging_knee_raise: "hangraise", ab_wheel: "abwheel",
+  back_extension: "backext", seated_calf_raise: "seatedcalf",
+  machine_chest_press: "machinepress",
+  // Reused where the movement genuinely shares a silhouette. Anything that would
+  // have been a MISLEADING reuse got its own pose above instead — the v136 audit
+  // is the precedent for taking that seriously.
+  chin_up: "pull_up",                       // same hang, grip differs
+  incline_barbell_press: "incline",
+  close_grip_bench: "bench",
+  db_floor_press: "bench",
+  pendlay_row: "row_bent", t_bar_row: "row_bent", chest_supported_row: "row_bent",
+  machine_row: "seatedrow",
+  cable_lateral_raise: "lateral",
+  cable_curl: "curl", incline_db_curl: "curl", concentration_curl: "curl",
+  cable_overhead_ext: "overhead_ext", db_skullcrusher: "skullcrusher",
+  machine_shoulder_press: "overhead", arnold_press: "overhead", push_press: "overhead",
+  goblet_curtsy_lunge: "lunge", front_rack_lunge: "lunge",
+  hack_squat: "legpress", smith_squat: "squat_bar", box_squat: "squat_bar",
+  sumo_deadlift: "deadlift", trap_bar_deadlift: "deadlift", rack_pull: "deadlift",
+  good_morning: "hinge_bar", cable_pull_through: "hinge_bar",
+  single_leg_rdl: "hinge_bar",
+  standing_calf_raise_machine: "calf", donkey_calf_raise: "calf",
+  cable_woodchop: "twist", russian_twist: "twist",
+  plank: "plank", hollow_hold: "deadbug",
+  reverse_curl: "curl", wrist_curl: "curl",
+  face_pull_band: "facepull", band_pull_apart: "rearfly",
+  landmine_press: "overhead", z_press: "overhead",
 };
 
 // direct pose keys (e.g. workoutFigure's "squat_bw"/"overhead") resolve to

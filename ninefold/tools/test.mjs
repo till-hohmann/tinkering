@@ -311,6 +311,32 @@ group("exercise library — integrity", () => {
     const problems = checkLibrary({ muscleMap: MUSCLE_MAP, anatomy: EXERCISE_ANATOMY, figures });
     assert.deepEqual(problems, [], problems.join("; "));
   });
+  it("covers a commercial gym", () => {
+    // The library exists so the builder can program for a real gym, not just a
+    // rack. Under ~100 entries it starts refusing patterns people expect.
+    assert.ok(EXERCISE_LIBRARY.length >= 100, `library is only ${EXERCISE_LIBRARY.length}`);
+    const gym = availableAt(["barbell", "ez_bar", "cable", "dumbbell_pair", "dumbbell_single", "machine"]);
+    assert.equal(gym.length, EXERCISE_LIBRARY.length, "a full gym should reach every entry");
+    for (const p of ["squat", "hinge", "lunge", "push_h", "push_v", "pull_h", "pull_v",
+                     "knee_iso", "ham_iso", "chest_iso", "calf", "arm", "delt", "core", "carry", "trap"]) {
+      assert.ok(pickForPattern(p, gym), `no gym option for ${p}`);
+    }
+  });
+  it("machines are only offered when the place has them", () => {
+    const noMachines = availableAt(["barbell", "dumbbell_pair", "dumbbell_single"]);
+    assert.ok(!noMachines.some((e) => e.implement === "machine"));
+    assert.equal(pickForPattern("knee_iso", noMachines), null, "leg extension needs a machine");
+  });
+  it("prefers a fresh lift over one already used this week", () => {
+    // Regression: with a large library the generator still picked the same bench
+    // and row on both upper days, because nothing penalised repetition.
+    const gym = availableAt(["barbell", "ez_bar", "cable", "dumbbell_pair", "dumbbell_single", "machine"]);
+    const first = pickForPattern("push_h", gym);
+    const second = pickForPattern("push_h", gym, { usedThisWeek: [first.id] });
+    assert.notEqual(second.id, first.id, "should reach for a variant");
+    // …but a compound must still beat an accessory even when repeated.
+    assert.equal(second.role, "compound");
+  });
   it("a bodyweight-only setup can still train every major pattern", () => {
     // Regression: with no push-up, inverted row or pull-up in the library, a
     // bodyweight-only install got a plan of wall sits and calf raises.

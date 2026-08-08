@@ -36,17 +36,17 @@ const SPLITS = {
     { label: "Full body C", patterns: ["lunge", "push_h", "pull_h", "arm", "core"] },
   ],
   4: [
-    { label: "Lower A", patterns: ["squat", "hinge", "lunge", "calf", "core"] },
+    { label: "Lower A", patterns: ["squat", "hinge", "lunge", "knee_iso", "calf", "core"] },
     { label: "Upper A", patterns: ["push_h", "pull_h", "push_v", "arm", "delt"] },
-    { label: "Lower B", patterns: ["hinge", "squat", "lunge", "calf", "core"] },
+    { label: "Lower B", patterns: ["hinge", "squat", "ham_iso", "calf", "core"] },
     { label: "Upper B", patterns: ["pull_v", "push_h", "pull_h", "delt", "arm"] },
   ],
   5: [
-    { label: "Lower A", patterns: ["squat", "hinge", "lunge", "calf", "core"] },
+    { label: "Lower A", patterns: ["squat", "hinge", "lunge", "knee_iso", "calf"] },
     { label: "Upper A", patterns: ["push_h", "pull_h", "push_v", "arm"] },
-    { label: "Lower B", patterns: ["hinge", "lunge", "squat", "calf"] },
-    { label: "Upper B", patterns: ["pull_v", "push_h", "delt", "arm"] },
-    { label: "Full body", patterns: ["squat", "push_v", "pull_h", "core"] },
+    { label: "Lower B", patterns: ["hinge", "lunge", "ham_iso", "calf", "core"] },
+    { label: "Upper B", patterns: ["pull_v", "push_h", "chest_iso", "delt", "arm"] },
+    { label: "Full body", patterns: ["squat", "push_v", "pull_h", "trap", "core"] },
   ],
 };
 const splitFor = (n) => SPLITS[Math.max(1, Math.min(5, n))] || SPLITS[3];
@@ -265,15 +265,17 @@ export function generateProgram(input) {
   const exercises = {};
   const dayTemplates = {};
   const missingPatterns = new Set();
+  const weekUsed = new Set();      // soft variety bias across the whole week
 
   strengthWeekdays.forEach((weekday, i) => {
     const dayPlan = split[i % split.length];
     const chosen = [];
     const used = [];
     for (const pattern of dayPlan.patterns) {
-      const pick = pickForPattern(pattern, pool, { exclude: used });
+      const pick = pickForPattern(pattern, pool, { exclude: used, usedThisWeek: [...weekUsed] });
       if (!pick) { missingPatterns.add(pattern); continue; }
       used.push(pick.id);
+      weekUsed.add(pick.id);
       exercises[pick.id] = { name: pick.name, cue: pick.cue, implement: pick.implement };
       chosen.push({ exerciseId: pick.id, role: pick.role, restSeconds: restFor(strengthAdaptation, pick.role) });
     }

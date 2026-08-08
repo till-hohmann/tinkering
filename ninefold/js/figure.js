@@ -355,6 +355,257 @@ export const POSES = {
       `<path d="M52 26 L52 62 M148 26 L148 62" stroke="${C.gearLine}" stroke-width="5" stroke-linecap="round" opacity=".55"/>`],
   },
 
+  // --- library expansion: gym machines, barbell variants, carries -------------
+  // Authored so the builder can cover a commercial gym, not just a rack and a
+  // pair of dumbbells. Each one earns a distinct silhouette; anything that would
+  // have looked identical to an existing pose reuses it through illustrations.js
+  // MAP instead, which is the honest choice — a mislabelled figure is worse than
+  // a shared one (see the v136 audit).
+
+  // Deadlift from the floor: hips LOWER than a hinge, shins near-vertical, bar
+  // over mid-foot. Deliberately distinct from hinge_bar (the RDL), which is a
+  // high-hip pattern that never touches the ground.
+  deadlift: {
+    ground: G, shadowX: 106, shadowR: 52,
+    head: { x: 140, y: 68, r: 10.5 },
+    torso: { sh: pt(128, 78), hip: pt(80, 116) },
+    legs: [leg(pt(80, 116), pt(112, 140), pt(108, 172), pt(132, 176), pt(96, 176))],
+    farLegs: [leg(pt(72, 118), pt(104, 143), pt(100, 174), pt(124, 178))],
+    arms: [{ sh: pt(128, 80), elbow: pt(126, 112), hand: pt(124, 146) }],
+    m: { hams: "p", glutes: "p", erectors: "p", quads: "s", traps: "s", forearms: "s" },
+    gearBack: [plateBack(pt(124, 150), 24)],
+    gearFront: [barCap(pt(124, 150))],
+  },
+
+  // Front squat: bar racked across the front delts, torso far more upright than
+  // a back squat — which is the whole point of the variation.
+  frontsquat: {
+    ground: G, shadowX: 108, shadowR: 50,
+    head: { x: 106, y: 36, r: 11 },
+    torso: { sh: pt(102, 58), hip: pt(88, 120) },
+    legs: [leg(pt(88, 120), pt(134, 128), pt(126, 172), pt(152, 176), pt(112, 176))],
+    farLegs: [leg(pt(80, 122), pt(126, 131), pt(118, 174), pt(144, 178))],
+    arms: [{ sh: pt(102, 60), elbow: pt(114, 78), hand: pt(120, 56) }],
+    m: { quads: "p", glutes: "s", core: "p", erectors: "s", delts: "s" },
+    gearBack: [plateBack(pt(114, 52), 32)],
+    gearFront: [barCap(pt(114, 52))],
+  },
+
+  // Dip: parallel bars, torso pitched forward, elbows driving back past the ribs.
+  // Bars drawn as two SHORT grips flanking the figure at hand height, not one
+  // long rail with posts — the first version read as a table the figure was
+  // sitting behind. Torso pitched forward, elbows folded back past the ribs,
+  // legs tucked and crossed, which is what a dip actually looks like.
+  dip: {
+    ground: G, shadowX: 100, shadowR: 34,
+    head: { x: 116, y: 46, r: 10.5 },
+    torso: { sh: pt(106, 64), hip: pt(92, 114) },
+    legs: [leg(pt(92, 114), pt(114, 136), pt(96, 150), pt(86, 154), pt(104, 156))],
+    farLegs: [leg(pt(86, 116), pt(108, 139), pt(90, 153), pt(80, 157))],
+    arms: [{ sh: pt(106, 64), elbow: pt(98, 92), hand: pt(112, 96) }],
+    farArms: [{ sh: pt(108, 66), elbow: pt(118, 92), hand: pt(112, 96) }],
+    m: { chest: "p", triceps: "p", delts: "s", core: "c" },
+    gearBack: [
+      `<path d="M86 96 L138 96" stroke="${C.gearLine}" stroke-width="6" stroke-linecap="round"/>`,
+      `<path d="M92 96 L92 176" stroke="${C.gearLine}" stroke-width="5" opacity=".38"/>`,
+      `<path d="M132 96 L132 176" stroke="${C.gearLine}" stroke-width="5" opacity=".38"/>`,
+    ],
+  },
+
+  // Leg press: reclined in the sled, knees driving a loaded platform away.
+  legpress: {
+    ground: G, shadowX: 96, shadowR: 58,
+    head: { x: 44, y: 118, r: 10.5 },
+    torso: { sh: pt(62, 126), hip: pt(104, 140) },
+    legs: [leg(pt(104, 140), pt(146, 116), pt(160, 92), pt(170, 84), pt(152, 86))],
+    farLegs: [leg(pt(100, 144), pt(142, 120), pt(156, 96), pt(166, 88))],
+    arms: [{ sh: pt(62, 126), elbow: pt(74, 148), hand: pt(90, 156) }],
+    m: { quads: "p", glutes: "s", hams: "s" },
+    gearBack: [benchPad(pt(30, 150), pt(104, 150)),
+      `<path d="M164 60 L186 96" stroke="${C.cap}" stroke-width="9" stroke-linecap="round"/>`,
+      plateBack(pt(180, 70), 20)],
+  },
+
+  // Seated leg extension: knee opening against a shin pad.
+  legext: {
+    ground: G, shadowX: 96, shadowR: 52,
+    head: { x: 74, y: 68, r: 10.5 },
+    torso: { sh: pt(80, 88), hip: pt(84, 132) },
+    legs: [leg(pt(84, 132), pt(126, 134), pt(160, 122), pt(170, 128), pt(158, 114))],
+    farLegs: [leg(pt(80, 136), pt(122, 138), pt(156, 126), pt(166, 132))],
+    arms: [{ sh: pt(80, 90), elbow: pt(70, 112), hand: pt(78, 132) }],
+    m: { quads: "p" },
+    gearBack: [benchPad(pt(56, 146), pt(92, 146)),
+      `<path d="M56 146 L56 176 M88 146 L88 176" stroke="${C.benchLeg}" stroke-width="6"/>`,
+      `<path d="M154 118 L166 126" stroke="${C.cap}" stroke-width="8" stroke-linecap="round"/>`],
+  },
+
+  // Lying leg curl: prone, heel drawn toward the glute against a pad.
+  legcurl: {
+    ground: G, shadowX: 104, shadowR: 60,
+    head: { x: 48, y: 132, r: 10.5 },
+    torso: { sh: pt(68, 138), hip: pt(118, 146) },
+    legs: [leg(pt(118, 146), pt(152, 148), pt(146, 112), pt(138, 104), pt(154, 112))],
+    farLegs: [leg(pt(114, 150), pt(148, 152), pt(142, 116), pt(134, 108))],
+    arms: [{ sh: pt(68, 138), elbow: pt(58, 156), hand: pt(74, 162) }],
+    m: { hams: "p", glutes: "s", calves: "s" },
+    gearBack: [benchPad(pt(40, 158), pt(130, 158)),
+      `<path d="M140 104 L152 110" stroke="${C.cap}" stroke-width="8" stroke-linecap="round"/>`],
+  },
+
+  // Seated cable row: upright torso, elbows driven back to the ribs.
+  seatedrow: {
+    ground: G, shadowX: 100, shadowR: 50,
+    head: { x: 86, y: 66, r: 10.5 },
+    torso: { sh: pt(92, 86), hip: pt(90, 134) },
+    legs: [leg(pt(90, 134), pt(134, 138), pt(160, 150), pt(172, 146), pt(158, 160))],
+    farLegs: [leg(pt(86, 138), pt(130, 142), pt(156, 154), pt(168, 150))],
+    arms: [{ sh: pt(92, 88), elbow: pt(76, 106), hand: pt(120, 110) }],
+    m: { back: "p", biceps: "s", erectors: "s", traps: "s" },
+    gearBack: [`<path d="M120 110 L180 110" stroke="${C.gearLine}" stroke-width="2.5"/>`,
+      `<circle cx="180" cy="110" r="4" fill="${C.gearHub}"/>`,
+      benchPad(pt(72, 148), pt(112, 148))],
+  },
+
+  // Shrug: standing tall, weights hanging, the movement is entirely at the traps.
+  shrug: {
+    ground: G, shadowX: 100, shadowR: 40,
+    head: { x: 100, y: 40, r: 11 },
+    torso: { sh: pt(100, 62), hip: pt(100, 122) },
+    legs: [leg(pt(100, 122), pt(104, 148), pt(102, 172), pt(120, 176), pt(92, 176))],
+    farLegs: [leg(pt(94, 124), pt(98, 150), pt(96, 174), pt(114, 178))],
+    arms: [{ sh: pt(100, 62), elbow: pt(84, 92), hand: pt(80, 122) }],
+    farArms: [{ sh: pt(102, 64), elbow: pt(118, 94), hand: pt(122, 124) }],
+    m: { traps: "p", forearms: "s", delts: "s" },
+    gearFront: [dbAt(pt(78, 126), 90, 8), dbAt(pt(124, 128), 90, 8)],
+  },
+
+  // Farmer's carry: loaded, walking, everything bracing.
+  carry: {
+    ground: G, shadowX: 104, shadowR: 46,
+    head: { x: 104, y: 40, r: 11 },
+    torso: { sh: pt(102, 62), hip: pt(100, 120) },
+    legs: [leg(pt(100, 120), pt(124, 144), pt(134, 170), pt(150, 176), pt(126, 174))],
+    farLegs: [leg(pt(94, 122), pt(78, 146), pt(70, 170), pt(58, 176))],
+    arms: [{ sh: pt(102, 62), elbow: pt(88, 92), hand: pt(84, 122) }],
+    farArms: [{ sh: pt(104, 64), elbow: pt(120, 94), hand: pt(124, 124) }],
+    m: { traps: "p", forearms: "p", core: "p", glutes: "s", calves: "s" },
+    gearFront: [dbAt(pt(82, 128), 90, 8), dbAt(pt(126, 130), 90, 8)],
+  },
+
+  // Chest fly: lying, arms opening in a wide arc — distinct from a press, where
+  // the elbows stay bent and travel vertically.
+  chestfly: {
+    ground: G, shadowX: 100, shadowR: 62,
+    head: { x: 52, y: 124, r: 10.5 },
+    torso: { sh: pt(74, 130), hip: pt(120, 132) },
+    legs: [leg(pt(120, 132), pt(148, 148), pt(150, 172), pt(166, 176), pt(140, 176))],
+    farLegs: [leg(pt(114, 134), pt(140, 152), pt(142, 174), pt(158, 178))],
+    arms: [{ sh: pt(74, 130), elbow: pt(64, 104), hand: pt(50, 84) }],
+    farArms: [{ sh: pt(76, 132), elbow: pt(92, 106), hand: pt(104, 84) }],
+    m: { chest: "p", delts: "s", biceps: "c" },
+    gearBack: [benchPad(pt(36, 150), pt(120, 150))],
+    gearFront: [dbAt(pt(48, 82), 20, 7), dbAt(pt(106, 82), -20, 7)],
+  },
+
+  // Preacher curl: upper arm fixed on the pad, so the elbow can't cheat.
+  preacher: {
+    ground: G, shadowX: 100, shadowR: 46,
+    head: { x: 84, y: 60, r: 10.5 },
+    torso: { sh: pt(90, 80), hip: pt(88, 132) },
+    legs: [leg(pt(88, 132), pt(122, 142), pt(120, 170), pt(138, 176), pt(110, 176))],
+    farLegs: [leg(pt(82, 134), pt(116, 145), pt(114, 172), pt(132, 178))],
+    arms: [{ sh: pt(90, 82), elbow: pt(122, 104), hand: pt(126, 74) }],
+    m: { biceps: "p", forearms: "s" },
+    gearBack: [`<path d="M104 118 L140 96" stroke="${C.bench}" stroke-width="13" stroke-linecap="round"/>`,
+      `<path d="M118 112 L118 176" stroke="${C.benchLeg}" stroke-width="6"/>`],
+    gearFront: [dbAt(pt(128, 70), 100, 8)],
+  },
+
+  // Skullcrusher: lying, elbows fixed, forearms folding to the forehead.
+  skullcrusher: {
+    ground: G, shadowX: 100, shadowR: 62,
+    head: { x: 52, y: 124, r: 10.5 },
+    torso: { sh: pt(74, 130), hip: pt(120, 132) },
+    legs: [leg(pt(120, 132), pt(148, 148), pt(150, 172), pt(166, 176), pt(140, 176))],
+    farLegs: [leg(pt(114, 134), pt(140, 152), pt(142, 174), pt(158, 178))],
+    arms: [{ sh: pt(74, 130), elbow: pt(74, 96), hand: pt(56, 106) }],
+    m: { triceps: "p", core: "c" },
+    gearBack: [benchPad(pt(36, 150), pt(120, 150)), plateBack(pt(54, 106), 15)],
+    gearFront: [barCap(pt(54, 106))],
+  },
+
+  // Hanging knee raise: dead-hang position with the hips flexing.
+  hangraise: {
+    ground: G, shadowX: 100, shadowR: 30,
+    head: { x: 100, y: 56, r: 10.5 },
+    torso: { sh: pt(100, 74), hip: pt(100, 124) },
+    legs: [leg(pt(100, 124), pt(134, 118), pt(140, 146), pt(150, 150), pt(132, 152))],
+    farLegs: [leg(pt(96, 126), pt(130, 121), pt(136, 149), pt(146, 153))],
+    arms: [{ sh: pt(100, 74), elbow: pt(96, 50), hand: pt(94, 30) }],
+    farArms: [{ sh: pt(102, 76), elbow: pt(106, 50), hand: pt(108, 30) }],
+    m: { core: "p", lats: "s", forearms: "s" },
+    gearBack: [`<path d="M46 26 L154 26" stroke="${C.gearLine}" stroke-width="7" stroke-linecap="round"/>`,
+      `<path d="M52 26 L52 62 M148 26 L148 62" stroke="${C.gearLine}" stroke-width="5" opacity=".55"/>`],
+  },
+
+  // Ab wheel: extended near the bottom of the roll-out.
+  abwheel: {
+    ground: G, shadowX: 112, shadowR: 62,
+    head: { x: 70, y: 118, r: 10.5 },
+    torso: { sh: pt(88, 126), hip: pt(132, 140) },
+    legs: [leg(pt(132, 140), pt(152, 158), pt(166, 170), pt(174, 176), pt(170, 164))],
+    farLegs: [leg(pt(126, 142), pt(146, 160), pt(160, 172), pt(168, 178))],
+    arms: [{ sh: pt(88, 126), elbow: pt(70, 132), hand: pt(48, 140) }],
+    m: { core: "p", lats: "s", delts: "s" },
+    gearFront: [`<circle cx="42" cy="152" r="14" fill="${C.gear}" stroke="${C.gearLine}" stroke-width="2"/>`,
+      `<circle cx="42" cy="152" r="4" fill="${C.gearHub}"/>`,
+      `<path d="M28 152 L56 152" stroke="${C.cap}" stroke-width="4" stroke-linecap="round"/>`],
+  },
+
+  // Back extension on a 45° bench: hips fixed, spine extending.
+  backext: {
+    ground: G, shadowX: 104, shadowR: 52,
+    head: { x: 62, y: 92, r: 10.5 },
+    torso: { sh: pt(78, 100), hip: pt(120, 128) },
+    legs: [leg(pt(120, 128), pt(142, 152), pt(150, 172), pt(164, 176), pt(142, 176))],
+    farLegs: [leg(pt(114, 130), pt(136, 155), pt(144, 174), pt(158, 178))],
+    arms: [{ sh: pt(78, 100), elbow: pt(72, 84), hand: pt(66, 96) }],
+    m: { erectors: "p", glutes: "p", hams: "s" },
+    gearBack: [`<path d="M110 122 L138 142" stroke="${C.bench}" stroke-width="13" stroke-linecap="round"/>`,
+      `<path d="M124 132 L124 176" stroke="${C.benchLeg}" stroke-width="6"/>`,
+      `<path d="M146 158 L162 168" stroke="${C.cap}" stroke-width="7" stroke-linecap="round"/>`],
+  },
+
+  // Seated calf raise: knee bent under a thigh pad — the soleus variant.
+  seatedcalf: {
+    ground: G, shadowX: 96, shadowR: 48,
+    head: { x: 74, y: 70, r: 10.5 },
+    torso: { sh: pt(80, 90), hip: pt(84, 134) },
+    legs: [leg(pt(84, 134), pt(126, 138), pt(126, 168), pt(146, 170), pt(120, 176))],
+    farLegs: [leg(pt(80, 138), pt(122, 142), pt(122, 172), pt(142, 174))],
+    arms: [{ sh: pt(80, 92), elbow: pt(94, 112), hand: pt(112, 122) }],
+    m: { calves: "p" },
+    gearBack: [benchPad(pt(56, 148), pt(92, 148)),
+      `<path d="M108 124 L142 124" stroke="${C.bench}" stroke-width="11" stroke-linecap="round"/>`,
+      `<path d="M118 168 L150 168" stroke="${C.gearLine}" stroke-width="6" stroke-linecap="round"/>`],
+  },
+
+  // Machine chest press: seated, pressing horizontally.
+  machinepress: {
+    ground: G, shadowX: 96, shadowR: 50,
+    head: { x: 78, y: 66, r: 10.5 },
+    torso: { sh: pt(84, 86), hip: pt(84, 134) },
+    legs: [leg(pt(84, 134), pt(124, 140), pt(126, 170), pt(146, 176), pt(118, 176))],
+    farLegs: [leg(pt(80, 138), pt(120, 144), pt(122, 174), pt(142, 178))],
+    arms: [{ sh: pt(84, 88), elbow: pt(110, 94), hand: pt(140, 98) }],
+    farArms: [{ sh: pt(86, 90), elbow: pt(112, 98), hand: pt(142, 102) }],
+    m: { chest: "p", triceps: "s", delts: "s" },
+    gearBack: [benchPad(pt(66, 148), pt(96, 148)),
+      `<path d="M70 100 L70 60" stroke="${C.bench}" stroke-width="12" stroke-linecap="round"/>`,
+      `<path d="M144 84 L144 116" stroke="${C.cap}" stroke-width="7" stroke-linecap="round"/>`],
+  },
+
   bench: {
     ground: G, shadowX: 100, shadowR: 64,
     head: { x: 52, y: 124, r: 10.5 },

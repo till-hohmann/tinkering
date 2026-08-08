@@ -250,6 +250,7 @@ const IMPLEMENT_OPTIONS = [
   ["dumbbell_pair", "Dumbbells", "Fixed rack or adjustables"],
   ["cable", "Cable machine", "Pulldowns, pushdowns, face pulls"],
   ["ez_bar", "EZ bar", "Curls and extensions"],
+  ["machine", "Machines", "Leg press, chest press, rows, leg curl/extension"],
 ];
 
 function stepEquipment(body) {

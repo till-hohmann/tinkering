@@ -80,6 +80,74 @@ export const MUSCLE_MAP = {
   dead_bug:                 { Core: 1.0 },
   side_plank:               { Core: 1.0 },
   bird_dog:                 { Core: 0.5 },                           // low-load motor control
+
+  // --- library expansion -----------------------------------------------------
+  // Same fractional convention: 1.0 prime mover, 0.5 a meaningfully loaded
+  // contributor, 0.25 a minor/stabilising one that gets stimulus but must not
+  // count as a full set.
+  deadlift:                 { Hamstrings: 1.0, Glutes: 1.0, Back: 0.5, Quads: 0.25 },
+  sumo_deadlift:            { Glutes: 1.0, Quads: 0.5, Hamstrings: 0.5, Back: 0.5 },
+  trap_bar_deadlift:        { Quads: 1.0, Glutes: 0.75, Hamstrings: 0.5, Back: 0.5 },
+  rack_pull:                { Back: 1.0, Hamstrings: 0.5, Glutes: 0.5 },
+  good_morning:             { Hamstrings: 1.0, Glutes: 0.5, Back: 0.5 },
+  cable_pull_through:       { Glutes: 1.0, Hamstrings: 0.5 },
+  single_leg_rdl:           { Hamstrings: 1.0, Glutes: 0.5 },
+  front_squat:              { Quads: 1.0, Glutes: 0.25, Core: 0.5 },
+  box_squat:                { Quads: 1.0, Glutes: 0.5 },
+  smith_squat:              { Quads: 1.0, Glutes: 0.25 },
+  hack_squat:               { Quads: 1.0, Glutes: 0.25 },
+  leg_press:                { Quads: 1.0, Glutes: 0.5 },
+  leg_extension:            { Quads: 1.0 },
+  leg_curl:                 { Hamstrings: 1.0, Calves: 0.25 },
+  goblet_curtsy_lunge:      { Quads: 0.75, Glutes: 0.5 },
+  front_rack_lunge:         { Quads: 1.0, Glutes: 0.5 },
+  seated_calf_raise:        { Calves: 1.0 },
+  standing_calf_raise_machine: { Calves: 1.0 },
+  donkey_calf_raise:        { Calves: 1.0 },
+  back_extension:           { Back: 0.5, Glutes: 1.0, Hamstrings: 0.5 },
+
+  dip:                      { Chest: 1.0, Triceps: 0.5, Shoulders: 0.25 },
+  chin_up:                  { Back: 1.0, Biceps: 0.5 },
+  incline_barbell_press:    { Chest: 1.0, Shoulders: 0.5, Triceps: 0.25 },
+  close_grip_bench:         { Triceps: 1.0, Chest: 0.5, Shoulders: 0.25 },
+  db_floor_press:           { Chest: 1.0, Triceps: 0.5 },
+  machine_chest_press:      { Chest: 1.0, Triceps: 0.25, Shoulders: 0.25 },
+  db_chest_fly:             { Chest: 1.0, Shoulders: 0.25 },
+  cable_fly:                { Chest: 1.0, Shoulders: 0.25 },
+  machine_shoulder_press:   { Shoulders: 1.0, Triceps: 0.5 },
+  arnold_press:             { Shoulders: 1.0, Triceps: 0.5 },
+  push_press:               { Shoulders: 1.0, Triceps: 0.5, Quads: 0.25 },
+  landmine_press:           { Shoulders: 1.0, Chest: 0.5, Triceps: 0.25 },
+  z_press:                  { Shoulders: 1.0, Triceps: 0.5, Core: 0.5 },
+
+  seated_cable_row:         { Back: 1.0, Biceps: 0.5 },
+  machine_row:              { Back: 1.0, Biceps: 0.5 },
+  pendlay_row:              { Back: 1.0, Biceps: 0.5 },
+  t_bar_row:                { Back: 1.0, Biceps: 0.5 },
+  chest_supported_row:      { Back: 1.0, Biceps: 0.5 },
+  band_pull_apart:          { Shoulders: 0.5, Back: 0.5 },
+  face_pull_band:           { Shoulders: 0.5, Back: 0.5 },
+
+  db_shrug:                 { Back: 1.0 },                            // traps
+  barbell_shrug:            { Back: 1.0 },
+  farmers_carry:            { Back: 0.5, Core: 1.0 },
+  cable_lateral_raise:      { Shoulders: 1.0 },
+  preacher_curl:            { Biceps: 1.0 },
+  cable_curl:               { Biceps: 1.0 },
+  incline_db_curl:          { Biceps: 1.0 },
+  concentration_curl:       { Biceps: 1.0 },
+  reverse_curl:             { Biceps: 1.0 },
+  wrist_curl:               { Biceps: 0.25 },
+  skullcrusher:             { Triceps: 1.0 },
+  db_skullcrusher:          { Triceps: 1.0 },
+  cable_overhead_ext:       { Triceps: 1.0 },
+
+  hanging_knee_raise:       { Core: 1.0 },
+  ab_wheel:                 { Core: 1.0, Back: 0.25 },
+  cable_woodchop:           { Core: 1.0 },
+  russian_twist:            { Core: 1.0 },
+  plank:                    { Core: 1.0 },
+  hollow_hold:              { Core: 1.0 },
 };
 
 // Muscles that count as "legs" for the 2×/week leg-frequency check (Gap A in the

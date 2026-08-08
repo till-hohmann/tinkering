@@ -353,6 +353,282 @@ export const EXERCISE_ANATOMY = {
     m("Transversus abdominis", "synergist", "Core"),
     m("Posterior deltoid", "stabilizer", "Shoulders"),
   ],
+
+  // --- library expansion ------------------------------------------------------
+  deadlift: [
+    m("Gluteus maximus", "primary", "Glutes"),
+    m("Hamstrings", "primary", "Hamstrings"),
+    m("Erector spinae", "synergist", "Back"),
+    m("Quadriceps femoris", "synergist", "Quads"),
+    m("Trapezius", "stabilizer", "Back"),
+    m("Forearm flexors", "stabilizer", "Biceps"),
+  ],
+  sumo_deadlift: [
+    m("Gluteus maximus", "primary", "Glutes"),
+    m("Adductor magnus", "synergist", "Glutes"),
+    m("Quadriceps femoris", "synergist", "Quads"),
+    m("Erector spinae", "synergist", "Back"),
+  ],
+  trap_bar_deadlift: [
+    m("Quadriceps femoris", "primary", "Quads"),
+    m("Gluteus maximus", "synergist", "Glutes"),
+    m("Erector spinae", "synergist", "Back"),
+    m("Trapezius", "stabilizer", "Back"),
+  ],
+  rack_pull: [
+    m("Erector spinae", "primary", "Back"),
+    m("Trapezius", "synergist", "Back"),
+    m("Gluteus maximus", "synergist", "Glutes"),
+  ],
+  good_morning: [
+    m("Hamstrings", "primary", "Hamstrings"),
+    m("Erector spinae", "synergist", "Back"),
+    m("Gluteus maximus", "synergist", "Glutes"),
+  ],
+  cable_pull_through: [
+    m("Gluteus maximus", "primary", "Glutes"),
+    m("Hamstrings", "synergist", "Hamstrings"),
+  ],
+  single_leg_rdl: [
+    m("Hamstrings", "primary", "Hamstrings"),
+    m("Gluteus maximus", "synergist", "Glutes"),
+    m("Gluteus medius", "stabilizer", "Glutes"),
+  ],
+  front_squat: [
+    m("Quadriceps femoris", "primary", "Quads"),
+    m("Gluteus maximus", "synergist", "Glutes"),
+    m("Rectus abdominis", "synergist", "Core"),
+    m("Erector spinae", "stabilizer", "Back"),
+  ],
+  box_squat: [
+    m("Quadriceps femoris", "primary", "Quads"),
+    m("Gluteus maximus", "synergist", "Glutes"),
+  ],
+  smith_squat: [
+    m("Quadriceps femoris", "primary", "Quads"),
+    m("Gluteus maximus", "synergist", "Glutes"),
+  ],
+  hack_squat: [
+    m("Quadriceps femoris", "primary", "Quads"),
+    m("Gluteus maximus", "synergist", "Glutes"),
+  ],
+  leg_press: [
+    m("Quadriceps femoris", "primary", "Quads"),
+    m("Gluteus maximus", "synergist", "Glutes"),
+    m("Adductor magnus", "stabilizer", "Glutes"),
+  ],
+  leg_extension: [
+    m("Quadriceps femoris", "primary", "Quads"),
+    m("Rectus femoris", "primary", "Quads"),
+  ],
+  leg_curl: [
+    m("Hamstrings", "primary", "Hamstrings"),
+    m("Gastrocnemius", "synergist", "Calves"),
+  ],
+  goblet_curtsy_lunge: [
+    m("Gluteus medius", "primary", "Glutes"),
+    m("Quadriceps femoris", "synergist", "Quads"),
+  ],
+  front_rack_lunge: [
+    m("Quadriceps femoris", "primary", "Quads"),
+    m("Gluteus maximus", "synergist", "Glutes"),
+    m("Rectus abdominis", "stabilizer", "Core"),
+  ],
+  seated_calf_raise: [
+    m("Soleus", "primary", "Calves"),
+    m("Gastrocnemius", "synergist", "Calves"),
+  ],
+  standing_calf_raise_machine: [
+    m("Gastrocnemius", "primary", "Calves"),
+    m("Soleus", "synergist", "Calves"),
+  ],
+  donkey_calf_raise: [
+    m("Gastrocnemius", "primary", "Calves"),
+    m("Soleus", "synergist", "Calves"),
+  ],
+  back_extension: [
+    m("Gluteus maximus", "primary", "Glutes"),
+    m("Erector spinae", "primary", "Back"),
+    m("Hamstrings", "synergist", "Hamstrings"),
+  ],
+  dip: [
+    m("Pectoralis major (sternal head)", "primary", "Chest"),
+    m("Triceps brachii", "primary", "Triceps"),
+    m("Anterior deltoid", "synergist", "Shoulders"),
+    m("Rectus abdominis", "stabilizer", "Core"),
+  ],
+  incline_barbell_press: [
+    m("Pectoralis major (clavicular head)", "primary", "Chest"),
+    m("Anterior deltoid", "synergist", "Shoulders"),
+    m("Triceps brachii", "synergist", "Triceps"),
+  ],
+  close_grip_bench: [
+    m("Triceps brachii", "primary", "Triceps"),
+    m("Pectoralis major", "synergist", "Chest"),
+    m("Anterior deltoid", "synergist", "Shoulders"),
+  ],
+  db_floor_press: [
+    m("Pectoralis major", "primary", "Chest"),
+    m("Triceps brachii", "synergist", "Triceps"),
+  ],
+  machine_chest_press: [
+    m("Pectoralis major", "primary", "Chest"),
+    m("Triceps brachii", "synergist", "Triceps"),
+    m("Anterior deltoid", "synergist", "Shoulders"),
+  ],
+  db_chest_fly: [
+    m("Pectoralis major", "primary", "Chest"),
+    m("Anterior deltoid", "stabilizer", "Shoulders"),
+  ],
+  cable_fly: [
+    m("Pectoralis major", "primary", "Chest"),
+    m("Anterior deltoid", "stabilizer", "Shoulders"),
+  ],
+  machine_shoulder_press: [
+    m("Deltoid (anterior & lateral)", "primary", "Shoulders"),
+    m("Triceps brachii", "synergist", "Triceps"),
+  ],
+  arnold_press: [
+    m("Deltoid (all heads)", "primary", "Shoulders"),
+    m("Triceps brachii", "synergist", "Triceps"),
+    m("Rotator cuff", "stabilizer", "Shoulders"),
+  ],
+  push_press: [
+    m("Deltoid (anterior & lateral)", "primary", "Shoulders"),
+    m("Triceps brachii", "synergist", "Triceps"),
+    m("Quadriceps femoris", "synergist", "Quads"),
+    m("Rectus abdominis", "stabilizer", "Core"),
+  ],
+  landmine_press: [
+    m("Anterior deltoid", "primary", "Shoulders"),
+    m("Pectoralis major (clavicular head)", "synergist", "Chest"),
+    m("Serratus anterior", "synergist", "Chest"),
+  ],
+  z_press: [
+    m("Deltoid (anterior & lateral)", "primary", "Shoulders"),
+    m("Triceps brachii", "synergist", "Triceps"),
+    m("Rectus abdominis", "synergist", "Core"),
+  ],
+  chin_up: [
+    m("Latissimus dorsi", "primary", "Back"),
+    m("Biceps brachii", "primary", "Biceps"),
+    m("Teres major", "synergist", "Back"),
+    m("Lower trapezius", "synergist", "Back"),
+  ],
+  seated_cable_row: [
+    m("Latissimus dorsi", "primary", "Back"),
+    m("Rhomboids & mid-trapezius", "synergist", "Back"),
+    m("Biceps brachii", "synergist", "Biceps"),
+    m("Erector spinae", "stabilizer", "Back"),
+  ],
+  machine_row: [
+    m("Latissimus dorsi", "primary", "Back"),
+    m("Rhomboids", "synergist", "Back"),
+    m("Biceps brachii", "synergist", "Biceps"),
+  ],
+  pendlay_row: [
+    m("Latissimus dorsi", "primary", "Back"),
+    m("Rhomboids", "synergist", "Back"),
+    m("Biceps brachii", "synergist", "Biceps"),
+    m("Erector spinae", "stabilizer", "Back"),
+  ],
+  t_bar_row: [
+    m("Latissimus dorsi", "primary", "Back"),
+    m("Rhomboids & mid-trapezius", "synergist", "Back"),
+    m("Biceps brachii", "synergist", "Biceps"),
+  ],
+  chest_supported_row: [
+    m("Rhomboids & mid-trapezius", "primary", "Back"),
+    m("Latissimus dorsi", "synergist", "Back"),
+    m("Posterior deltoid", "synergist", "Shoulders"),
+  ],
+  band_pull_apart: [
+    m("Posterior deltoid", "primary", "Shoulders"),
+    m("Rhomboids", "synergist", "Back"),
+  ],
+  face_pull_band: [
+    m("Posterior deltoid", "primary", "Shoulders"),
+    m("External rotators", "synergist", "Shoulders"),
+    m("Mid-trapezius", "synergist", "Back"),
+  ],
+  db_shrug: [
+    m("Upper trapezius", "primary", "Back"),
+    m("Levator scapulae", "synergist", "Back"),
+  ],
+  barbell_shrug: [
+    m("Upper trapezius", "primary", "Back"),
+    m("Levator scapulae", "synergist", "Back"),
+  ],
+  farmers_carry: [
+    m("Upper trapezius", "primary", "Back"),
+    m("Forearm flexors", "primary", "Biceps"),
+    m("Obliques", "synergist", "Core"),
+    m("Gluteus medius", "stabilizer", "Glutes"),
+  ],
+  cable_lateral_raise: [
+    m("Lateral deltoid", "primary", "Shoulders"),
+    m("Supraspinatus", "synergist", "Shoulders"),
+  ],
+  preacher_curl: [
+    m("Biceps brachii (short head)", "primary", "Biceps"),
+    m("Brachialis", "synergist", "Biceps"),
+  ],
+  cable_curl: [
+    m("Biceps brachii", "primary", "Biceps"),
+    m("Brachialis", "synergist", "Biceps"),
+  ],
+  incline_db_curl: [
+    m("Biceps brachii (long head)", "primary", "Biceps"),
+    m("Brachialis", "synergist", "Biceps"),
+  ],
+  concentration_curl: [
+    m("Biceps brachii", "primary", "Biceps"),
+    m("Brachialis", "synergist", "Biceps"),
+  ],
+  reverse_curl: [
+    m("Brachioradialis", "primary", "Biceps"),
+    m("Brachialis", "synergist", "Biceps"),
+  ],
+  wrist_curl: [
+    m("Forearm flexors", "primary", "Biceps"),
+  ],
+  skullcrusher: [
+    m("Triceps brachii (long head)", "primary", "Triceps"),
+    m("Triceps brachii (lateral head)", "synergist", "Triceps"),
+  ],
+  db_skullcrusher: [
+    m("Triceps brachii (long head)", "primary", "Triceps"),
+  ],
+  cable_overhead_ext: [
+    m("Triceps brachii (long head)", "primary", "Triceps"),
+  ],
+  hanging_knee_raise: [
+    m("Rectus abdominis (lower)", "primary", "Core"),
+    m("Hip flexors", "synergist", "Quads"),
+    m("Latissimus dorsi", "stabilizer", "Back"),
+  ],
+  ab_wheel: [
+    m("Rectus abdominis", "primary", "Core"),
+    m("Latissimus dorsi", "synergist", "Back"),
+    m("Erector spinae", "stabilizer", "Back"),
+  ],
+  cable_woodchop: [
+    m("Obliques", "primary", "Core"),
+    m("Rectus abdominis", "synergist", "Core"),
+  ],
+  russian_twist: [
+    m("Obliques", "primary", "Core"),
+    m("Rectus abdominis", "synergist", "Core"),
+  ],
+  plank: [
+    m("Rectus abdominis", "primary", "Core"),
+    m("Transverse abdominis", "synergist", "Core"),
+    m("Anterior deltoid", "stabilizer", "Shoulders"),
+  ],
+  hollow_hold: [
+    m("Rectus abdominis", "primary", "Core"),
+    m("Hip flexors", "synergist", "Quads"),
+  ],
 };
 
 // Aliases → an exercise that shares the same muscle picture.
