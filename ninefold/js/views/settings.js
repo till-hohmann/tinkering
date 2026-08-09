@@ -352,6 +352,27 @@ export async function renderSettings() {
   const trkBlurb = el("p.note", { style: "margin:2px 0 0;font-size:.76rem",
     text: (PROVIDERS.find((p) => p.id === trk.id) || {}).blurb || "" });
 
+  // Paste-a-URL row for the WHOOP broker, shown exactly where you hit the wall.
+  // Stored as runtime config, device-local like the backup credentials — it is the
+  // address of a service holding OAuth tokens, so it does not belong in a synced
+  // blob either.
+  function whoopEndpointRow() {
+    const inp = el("input", { type: "text", inputmode: "url",
+      placeholder: "https://your-whoop-worker.workers.dev",
+      style: "flex:1;min-width:0;padding:9px 11px;background:var(--bg-elev2);border:1px solid var(--line);"
+        + "border-radius:10px;color:var(--text);font-size:.82rem" });
+    const save = el("button.btn.primary", { onclick: async () => {
+      const url = inp.value.trim().replace(/\/+$/, "");
+      if (!/^https:\/\//i.test(url)) { trkLine.textContent = "The URL must start with https://"; return; }
+      save.disabled = true;
+      await setRuntimeConfig(db, { whoop: { endpoint: url } });
+      resetProviderCache();            // the provider caches its endpoint at load
+      trkLine.textContent = "Saved. Checking…";
+      refreshTracker();
+    } }, "Save");
+    return el("div", { style: "display:flex;gap:8px;width:100%;margin-top:8px" }, [inp, save]);
+  }
+
   async function refreshTracker() {
     trkBtnRow.replaceChildren();
     trkLatest.replaceChildren();
@@ -360,9 +381,17 @@ export async function renderSettings() {
     const st = await trk.status();
 
     if (st.unconfigured) {
-      trkLine.textContent = trk.id === "whoop"
-        ? "No WHOOP broker configured. Deploy whoop-worker/ and add its URL under Cloud backup below."
-        : (st.detail || "Not configured yet.");
+      if (trk.id === "whoop") {
+        // The WHOOP broker URL used to exist ONLY as a build-time value, so an
+        // install that didn't carry one had no way to supply it — and the message
+        // here pointed at the Cloud backup card, which has no such field. That was
+        // fine while every install was built with its owner's config baked in; it
+        // stranded the tracker the moment a build stopped carrying one.
+        trkLine.textContent = "Not connected to a WHOOP broker yet. Paste the URL of the whoop-worker you deployed.";
+        trkBtnRow.appendChild(whoopEndpointRow());
+        return;
+      }
+      trkLine.textContent = st.detail || "Not configured yet.";
       return;
     }
     if (st.offline) {
