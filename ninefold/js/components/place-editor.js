@@ -15,7 +15,8 @@
 
 import { el } from "../ui.js";
 import { IMPLEMENTS, STATIONS, MACHINES, PRESETS, SURVEYED, MACHINE_IMPLEMENT } from "../equipment.js";
-import { defaultEquipmentFor, weightValue, weightToKg, weightLabel } from "../units.js";
+import { defaultEquipmentFor, weightValue, weightToKg, weightLabel,
+  IMPERIAL_EQUIPMENT, METRIC_EQUIPMENT, rackFields } from "../units.js";
 
 const FIELD = "width:100%;padding:11px 13px;background:var(--bg-elev2);border:1px solid var(--line);" +
   "border-radius:11px;color:var(--text);font-size:.95rem";
@@ -110,6 +111,27 @@ export function placeEditor(place, profile, { onChange = () => {}, compact = fal
             el("div.meta", {}, [el("div.t", { text: label }), el("div.s", { text: sub })]),
           ]))));
     }
+
+    // WHICH PLATES ARE ON THE BAR HERE — a per-place fact, not a display setting.
+    //
+    // Units are chosen once for the whole app, and the stock rack followed them.
+    // That is right until you travel: a gym in the US has 45/25/10/5 lb plates
+    // whether or not you read in kilos, and prescribing 62.5 kg there asks for a
+    // weight the bar cannot make. Your logged numbers and every screen stay in
+    // your own units — only what this rack can physically load changes.
+    const imperialRack = Math.abs((place.barWeightKg || 0) - IMPERIAL_EQUIPMENT.barWeightKg) < 0.5;
+    kids.push(el("div.label", { style: "margin-top:16px", text: "Plates on the bar" }));
+    kids.push(el("p.note", { style: "margin-top:4px", text:
+      "Only matters if this gym's kit is from the other system — a US gym on a metric profile, or the reverse." }));
+    kids.push(el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:9px" },
+      [["metric", "Metric (20 kg bar)"], ["imperial", "Pounds (45 lb bar)"]].map(([sys, label]) =>
+        el("button.progchip" + ((sys === "imperial") === imperialRack ? ".on" : ""), {
+          "aria-pressed": ((sys === "imperial") === imperialRack) ? "true" : "false",
+          onclick: () => {
+            Object.assign(place, rackFields(sys === "imperial" ? IMPERIAL_EQUIPMENT : METRIC_EQUIPMENT));
+            render(); onChange();
+          },
+        }, label))));
 
     kids.push(el("div.label", { style: "margin-top:16px", text: "What can you load?" }));
     kids.push(el("p.note", { style: "margin-top:4px", text: "What you pick up and press. Bodyweight is always assumed." }));

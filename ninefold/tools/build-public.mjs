@@ -30,6 +30,7 @@ const FILES = [
   "tools/check.mjs", "tools/test.mjs", "tools/build-public.mjs",
   "tools/deploy.ps1", "tools/make-icons.py", "tools/make-mark-nine.py", "tools/build-exercise-images.py",
   "tools/illustration-prompts.md",
+  "docs/apple-health.md",
   "THIRD-PARTY.md",
 ];
 // Files renamed on the way out: the dev repo keeps its own README, the public

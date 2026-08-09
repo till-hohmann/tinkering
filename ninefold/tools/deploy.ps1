@@ -144,9 +144,13 @@ if (-not $prodUrl) {
   return
 }
 Write-Host "Verifying $prodUrl serves $expected ..."
+# Patient on purpose. The edge routinely needs 20-40s to pick up a new build, and
+# the first version of this loop gave it 16s and cried wolf on its own first run.
+# A deploy is infrequent; a minute of certainty is cheap, and a warning nobody
+# trusts is worse than no warning at all.
 $agree = 0
-foreach ($i in 1..8) {
-  Start-Sleep -Seconds 2
+foreach ($i in 1..15) {
+  Start-Sleep -Seconds 4
   try {
     $bust = [Guid]::NewGuid().ToString("N")
     $js = (Invoke-WebRequest -Uri "$prodUrl/js/version.js?cb=$bust" -UseBasicParsing -TimeoutSec 15).Content

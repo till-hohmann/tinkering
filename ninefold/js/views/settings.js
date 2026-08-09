@@ -174,6 +174,7 @@ export async function renderSettings() {
   const perKg0 = await getProteinPerKg();
   const def0 = await getDeficitTarget();
   const nutStatus = el("p.note", { style: "margin-top:8px;min-height:1em" });
+  const bwStatus  = el("p.note", { style: "margin-top:8px;min-height:1em" });
   const numStyle = "width:96px;text-align:center;font-size:1.05rem;font-weight:700;padding:8px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)";
   const bwIn = el("input", { type: "text", inputmode: "decimal", placeholder: weightLabel(),
     value: bw0 != null ? String(weightValue(bw0)) : "", style: numStyle });
@@ -194,17 +195,15 @@ export async function renderSettings() {
   showTarget();
   [bwIn, perKgIn].forEach((i) => i.addEventListener("input", showTarget));
   async function saveNutrition() {
-    const bw = bwKgNow(), pk = M.parseNum(perKgIn.value), def = M.parseNum(defIn.value);
-    if (bw && (bw < 30 || bw > 250)) { nutStatus.textContent = "Bodyweight looks off."; return; }
+    const pk = M.parseNum(perKgIn.value), def = M.parseNum(defIn.value);
     if (pk && (pk < 1 || pk > 4)) { nutStatus.textContent = "Protein g/kg should be ~1.4–2.5."; return; }
     if (def && (def < 0 || def > 1500)) { nutStatus.textContent = "Deficit target should be ~0–1000 kcal."; return; }
-    if (bw) await setBodyweight(bw);
     if (pk) await setProteinPerKg(pk);
     await setDeficitTarget(def);
     showTarget(); nutStatus.textContent = "Saved.";
   }
   async function bwFromWhoop() {
-    nutStatus.textContent = `Checking ${trk.label}…`;
+    bwStatus.textContent = `Checking ${trk.label}…`;
     try {
       const m = await trackerBody();
       if (m && m.weightKg != null) {
@@ -212,16 +211,40 @@ export async function renderSettings() {
         // later Save doesn't round-trip it back through the display unit.
         bwIn.value = String(weightValue(m.weightKg)); bwIn.dataset.shown = bwIn.value; bw0 = m.weightKg;
         await setBodyweight(m.weightKg); showTarget();
-        nutStatus.textContent = `Bodyweight ${M.fmtWeight(m.weightKg)} from ${trk.label}.`;
+        bwStatus.textContent = `Bodyweight ${M.fmtWeight(m.weightKg)} from ${trk.label}.`;
       }
-      else nutStatus.textContent = `${trk.label} didn't return a weight.`;
-    } catch (e) { nutStatus.textContent = /401|not_linked/.test(e.message || "") ? "Connect your tracker first." : `Couldn't reach ${trk.label}.`; }
+      else bwStatus.textContent = `${trk.label} didn't return a weight.`;
+    } catch (e) { bwStatus.textContent = /401|not_linked/.test(e.message || "") ? "Connect your tracker first." : `Couldn't reach ${trk.label}.`; }
   }
+  // BODYWEIGHT GETS ITS OWN CARD, because it is not a nutrition setting.
+  //
+  // It used to live inside the Nutrition card, which is gated on the food-tracking
+  // toggle — so anyone who left that off (the default, and the right default) had
+  // nowhere in Settings to enter it. The strength benchmark is computed from
+  // bodyweight, so it silently never appeared, with nothing on screen to say why.
+  async function saveBodyweight() {
+    const bw = bwKgNow();
+    if (!bw) { bwStatus.textContent = "Enter your weight."; return; }
+    if (bw < 30 || bw > 250) { bwStatus.textContent = "That looks off — check the units."; return; }
+    await setBodyweight(bw);
+    showTarget();
+    bwStatus.textContent = `Saved ${M.fmtWeight(bw)}.`;
+  }
+  const bodyweightCard = el("div.card", {}, [
+    el("div.label", { text: "Bodyweight" }),
+    el("p.note", { style: "margin-top:4px", text:
+      "Used for your strength benchmark and, if you track food, your protein target. One number — the trend comes from your weigh-ins." }),
+    el("div.row", { style: "margin-top:10px;align-items:center" }, [
+      el("div", { style: "flex:1", text: "Current" }), el("span.spacer"), bwIn,
+      canPullBody ? el("button.btn", { style: "margin-left:6px;padding:8px 10px", onclick: bwFromWhoop }, `⟲ ${trk.label}`) : null,
+    ].filter(Boolean)),
+    el("button.btn.block", { style: "margin-top:12px", onclick: saveBodyweight }, "Save"),
+    bwStatus,
+  ]);
+
   const nutritionCard = el("div.card", {}, [
     el("div.label", { text: "Nutrition" }),
-    el("p.note", { style: "margin-top:4px", text: "Bodyweight sets your daily protein target; log food on the Today screen." }),
-    el("div.row", { style: "margin-top:10px;align-items:center" }, [el("div", { style: "flex:1", text: "Bodyweight" }), el("span.spacer"),
-      bwIn, canPullBody ? el("button.btn", { style: "margin-left:6px;padding:8px 10px", onclick: bwFromWhoop }, `⟲ ${trk.label}`) : null].filter(Boolean)),
+    el("p.note", { style: "margin-top:4px", text: "Your protein target is set from your bodyweight above; log food on the Today screen." }),
     el("div.row", { style: "margin-top:10px;align-items:center" }, [el("div", { style: "flex:1" }, [el("div", { text: "Protein" }), el("div.faint", { style: "font-size:.78rem", text: "g per kg bodyweight" })]), el("span.spacer"), perKgIn]),
     el("div.row", { style: "margin-top:10px;align-items:center" }, [el("div", { style: "flex:1" }, [el("div", { text: "Deficit target" }), el("div.faint", { style: "font-size:.78rem", text: "kcal/day under your tracked burn (recomp ~300–500)" })]), el("span.spacer"), defIn]),
     targetLine,
@@ -1019,7 +1042,9 @@ export async function renderSettings() {
 
     // Each of these is gated on its own toggle in "What you track" below. A
     // feature that is off keeps its data — it just stops asking about it.
-    ...(feats.nutrition || feats.measurements || feats.dexa || feats.vo2max ? [sectionH("Health & body")] : []),
+    ...(feats.weight || feats.nutrition || feats.measurements || feats.dexa || feats.vo2max ? [sectionH("Health & body")] : []),
+    // Shown for EITHER toggle: the benchmark needs it as much as the protein target does.
+    (feats.weight || feats.nutrition) ? bodyweightCard : null,
     feats.nutrition ? nutritionCard : null,
     feats.measurements ? measureCard : null,
     feats.dexa ? dexaCard : null,

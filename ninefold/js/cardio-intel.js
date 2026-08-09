@@ -256,7 +256,10 @@ export function nextCardioTarget({ prescription = "", history = [], bounds = DEF
       }
     } else if (last && last.avgHR) {
       // avg HR blends hard reps with easy recoveries — informative, never a verdict
-      target.lastVerdict = `Last hard day averaged ${last.avgHR} bpm overall — that blends the recoveries in, so it can't judge the hard reps. Pull the run from WHOOP for real time in Zone 4-5.`;
+      // "your tracker", not a vendor: this module is pure and has no idea which
+      // one is connected, and naming WHOOP told every Apple user to go and use a
+      // device they don't own.
+      target.lastVerdict = `Last hard day averaged ${last.avgHR} bpm overall — that blends the recoveries in, so it can't judge the hard reps. Pull the run from your tracker for real time in Zone 4-5.`;
       target.verdictCls = "info";
     }
     return target;

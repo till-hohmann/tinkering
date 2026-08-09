@@ -280,7 +280,23 @@ async function fillStandards(card) {
     // Sex drives which ratio table applies; without it the benchmark would be a
     // guess dressed up as a score, so the card stays hidden until it's set.
     const prof = await getProfile();
-    if (!prof || !prof.sex || !prof.features.strengthStandards) return;
+    if (!prof || !prof.features.strengthStandards) return;
+    // SAY WHY IT'S EMPTY rather than vanishing. Both inputs are things the user
+    // can supply in one tap, and a card that silently never appears reads as a
+    // feature that doesn't work — the benchmark needs a bodyweight to divide by
+    // and a sex to pick the ratio table, and neither is guessable.
+    const missing = [!bwKg ? "your bodyweight" : null, !prof.sex ? "your sex" : null].filter(Boolean);
+    if (missing.length) {
+      card.style.display = "";
+      card.replaceChildren(
+        el("div.label", { text: "Strength standard" }),
+        el("p.note", { style: "margin-top:6px", text:
+          `Scores your big lifts against bodyweight-relative benchmarks. Needs ${missing.join(" and ")} — `
+          + `${missing.length > 1 ? "they're" : "it's"} in Profile, and nothing else uses ${missing.length > 1 ? "them" : "it"} for scoring.` }),
+        el("button.btn.block", { style: "margin-top:10px", onclick: () => go("#/settings") }, "Open Profile"),
+      );
+      return;
+    }
     const sc = strengthScore(best, bwKg, prof.sex);
     if (!sc) return;
     // each level starts at a fixed score position; the per-lift kg demarcations
