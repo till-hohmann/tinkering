@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageEnhance
 except ImportError:
     sys.exit("Pillow is required:  pip install pillow")
 
@@ -38,6 +38,56 @@ def expected_ids():
     body = body.split("\n};", 1)[0]
     # top-level keys only (two-space indent); nested m(...) calls are deeper
     return [m.group(1) for m in re.finditer(r"^  ([a-z0-9_]+):", body, re.M)]
+
+
+THUMB = 512
+
+
+def find_divider(im):
+    """x of the gutter between the demo photo and the muscle panel.
+
+    The renders are two-panel composites and the split is NOT in a fixed place —
+    measured across the set it wanders between 0.60 and 0.69 of the width. So it
+    is found per image: the gutter is the darkest full-height column in the band
+    where it could plausibly sit. A fixed crop clipped the lifter's head on some
+    and left a slice of muscle chart on others.
+    """
+    w, h = im.size
+    rows = range(0, h, 40)
+    best_x, best_v = None, None
+    for x in range(int(w * 0.52), int(w * 0.78)):
+        v = sum(sum(im.getpixel((x, y))) for y in rows)
+        if best_v is None or v < best_v:
+            best_v, best_x = v, x
+    return best_x
+
+
+def convert_thumb(png: Path) -> Path:
+    """The DEMO half alone, square, for tiles and list rows.
+
+    The full composite is right for the anatomy card, where it's read at 340px+.
+    At the 40-74px an exercise row gives it, the two panels together are mush —
+    so lists get the photograph only, cropped square around the lifter.
+    """
+    out = png.with_name(png.stem + ".thumb.webp")
+    with Image.open(png) as im:
+        im = im.convert("RGB")
+        w, h = im.size
+        # step inside the gutter: cropping exactly on it leaves a bright seam
+        # from the muscle panel's edge along the right of the thumbnail
+        demo = im.crop((0, 0, max(1, find_divider(im) - int(w * 0.012)), h))
+        dw, dh = demo.size
+        side = min(dw, dh)
+        left = (dw - side) // 2
+        demo = demo.crop((left, 0, left + side, side)).resize((THUMB, THUMB), Image.LANCZOS)
+        # The renders are dark gym scenes and the app's surfaces are near-black,
+        # so at the 40-70px a list row gives them they sink into the background.
+        # A modest lift is the difference between "a photo" and "a dark smudge";
+        # the full-size composite is left alone, where the contrast is correct.
+        demo = ImageEnhance.Brightness(demo).enhance(1.18)
+        demo = ImageEnhance.Contrast(demo).enhance(1.06)
+        demo.save(out, "WEBP", quality=80, method=6)
+    return out
 
 
 def convert(png: Path) -> Path:
@@ -65,10 +115,10 @@ def main():
     pngs = sorted(IMG_DIR.glob("*.png"))
     for png in pngs:
         out = convert(png)
-        kb = out.stat().st_size / 1024
-        print(f"  {png.name:34s} -> {out.name:34s} {kb:6.0f} KB")
+        th = convert_thumb(png)
+        print(f"  {png.name:30s} -> {out.stat().st_size/1024:5.0f} KB  + thumb {th.stat().st_size/1024:4.0f} KB")
 
-    ids = sorted(p.stem for p in IMG_DIR.glob("*.webp"))
+    ids = sorted(p.stem for p in IMG_DIR.glob("*.webp") if not p.stem.endswith(".thumb"))
     (IMG_DIR / "manifest.json").write_text(
         json.dumps({"ids": ids}, indent=2) + "\n", encoding="utf-8"
     )

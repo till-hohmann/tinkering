@@ -3,6 +3,7 @@
 import { seedIfNeeded, mergeRestore, snapshot, getActiveProgram } from "./store.js";
 import { cloudPull, cloudPush } from "./cloudsync.js";
 import { migrateIfNeeded, getProfile } from "./profile.js";
+import { loadPhotoManifest } from "./exercise-photo.js";
 import { applyTheme, DEFAULT_THEME } from "./theme.js";
 import { mountAurora } from "./components/aurora.js";
 import { mount, el, showTabs, hideTabs } from "./ui.js";
@@ -91,6 +92,10 @@ async function boot() {
     applyTheme((prof && prof.theme) || DEFAULT_THEME);
   } catch (_) { applyTheme(DEFAULT_THEME); }
   mountAurora();   // living gradient backdrop, behind everything
+  // Exercise renders resolve synchronously inside illustration(), which every
+  // tile in the app calls inline — so the manifest has to be in hand before the
+  // first screen paints. Never throws: no manifest just means "no photos yet".
+  try { await loadPhotoManifest(); } catch (_) {}
   try {
     await seedIfNeeded();
   } catch (err) {

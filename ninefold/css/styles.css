@@ -320,6 +320,12 @@ svg.illo { display: block; width: 100%; height: 100%; }
    the retired Everkinetic image-card CSS was removed 2026-07-24, all figures are
    custom in-app art now) */
 .exfig { width: 100%; height: 100%; display: block; }
+/* photo thumbnails stand in for the drawn figure wherever one exists — same box,
+   so every tile/row/ico rule keeps working. object-fit is what stops a square
+   crop being squashed into a non-square container. */
+img.exphoto { object-fit: cover; border-radius: inherit; background: var(--bg-elev2);
+  box-shadow: inset 0 0 0 1px var(--line); }   /* an edge, or a dark photo on a dark card has none */
+.ico > img.exphoto, .illotile > img.exphoto { border-radius: 12px; }
 
 /* anatomical muscle map (anatomy.js) — front + back body, worked muscles lit */
 .musclebody { display: flex; gap: 12px; justify-content: center; align-items: flex-start; }

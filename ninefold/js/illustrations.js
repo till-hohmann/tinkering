@@ -8,6 +8,8 @@
 
 import { POSES, hasPose, renderFigure } from "./figure.js";
 
+import { thumbURL } from "./exercise-photo.js";
+
 const NS = "http://www.w3.org/2000/svg";
 const SPL = "0.42 0 0.58 1;0.42 0 0.58 1";
 
@@ -307,6 +309,38 @@ export function workoutFigure(template, day) {
 }
 
 export function illustration(id, cls = "illo") {
+  // A REAL PHOTOGRAPH BEATS A DRAWING OF ONE, wherever it is legible.
+  //
+  // The renders were originally wired only into the exercise anatomy card, which
+  // turns out to be reachable from exactly one place — tapping a row inside a day
+  // preview — so in practice they were invisible. Everything else in the app draws
+  // its exercise tiles through THIS function, so this is the one edit that lights
+  // them up everywhere at once: day rows, the jump list, the session head, the
+  // summary, records, the exercise picker.
+  //
+  // The thumbnail is the DEMO HALF only, cropped square. The full composite is
+  // right at 340px on the card and mush at 40px in a list.
+  //
+  // Synchronous by necessity — every caller renders inline — so the manifest is
+  // loaded once at boot. Before it resolves, or for a movement with no render,
+  // this falls through to the hand-authored figure, which is also what keeps the
+  // 40 exercises that have no photo looking deliberate rather than broken.
+  const photo = thumbURL(id);
+  if (photo) {
+    const img = document.createElement("img");
+    img.className = "exfig exphoto " + cls;
+    img.src = photo;
+    img.alt = "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    // a 404 (manifest out of step with disk) must not leave a hole in a list
+    img.onerror = () => { const fb = illustrationSVG(id, cls); if (img.parentNode) img.parentNode.replaceChild(fb, img); };
+    return img;
+  }
+  return illustrationSVG(id, cls);
+}
+
+function illustrationSVG(id, cls = "illo") {
   const key = illustrationKey(id) || "generic";
   const t = themeFor(id);
   const u = "x" + (gidc++);

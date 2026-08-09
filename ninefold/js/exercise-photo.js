@@ -56,3 +56,13 @@ export function photoURL(exerciseId) {
 }
 
 export const hasPhoto = (exerciseId) => !!photoURL(exerciseId);
+
+// The DEMO-half thumbnail, for tiles and list rows. The full composite carries a
+// muscle panel that is unreadable below ~200px, so anything small gets the
+// photograph alone — see tools/build-exercise-images.py convert_thumb().
+export function thumbURL(exerciseId) {
+  if (!manifest) return null;
+  if (manifest.has(exerciseId)) return `${DIR}${exerciseId}.thumb.webp`;
+  const alt = SHARES[exerciseId];
+  return alt && manifest.has(alt) ? `${DIR}${alt}.thumb.webp` : null;
+}
