@@ -34,7 +34,7 @@ import { getProfile, patchProfile } from "../profile.js";
 import { defaultEquipmentFor, weightValue, weightToKg, weightLabel, distanceValue, distanceLabel } from "../units.js";
 import { FULL_GYM } from "../equipment.js";
 import { placeEditor, blankPlace, tidyPlace } from "../components/place-editor.js";
-import { importProgram } from "../store.js";
+import { importProgram, getAllPrograms } from "../store.js";
 import { todayISO } from "../model.js";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -50,11 +50,15 @@ function freshState(profile) {
     defender: { work: 3, people: 3, fitness: 2, recovery: 2 },
     lengthWeeks: 6,
     blockShapeId: "classic",
-    availableDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    daysPerWeek: 3,
-    chaos: "",
+    mandatoryDays: 3,
+    scheduleTouched: false,
+    optionalDays: 1,
+    cardioPerWeek: 1,
+    mobility: false,
     places: null,
     startDate: nextMonday(),
+    startMode: "after",          // resolved in renderBuilder once the blocks are known
+    afterLastBlock: null,
     profile,
     result: null,
   };
@@ -71,7 +75,23 @@ function nextMonday() {
 export async function renderBuilder() {
   const profile = await getProfile();
   if (!S || S.profile !== profile) S = freshState(profile);
+  // The day after everything already planned. A new block is normally the NEXT
+  // block, not one that starts tomorrow on top of the one you're mid-way through.
+  try {
+    const programs = await getAllPrograms();
+    const ends = programs.map((p) => addDaysISO(p.startDate, (p.lengthWeeks || 0) * 7)).filter(Boolean);
+    S.afterLastBlock = ends.length ? ends.sort().pop() : null;
+    if (S.startMode === "after") S.startDate = S.afterLastBlock || nextMonday();
+  } catch (_) { S.startMode = "next"; S.startDate = nextMonday(); }
   draw();
+}
+
+function addDaysISO(iso, n) {
+  if (!iso) return null;
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  const p = (x) => String(x).padStart(2, "0");
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
 }
 
 const STEPS = [
@@ -79,7 +99,7 @@ const STEPS = [
   { key: "priorities", title: "Which adaptations?" },
   { key: "defender", title: "What does life actually allow?" },
   { key: "equipment", title: "What do you train with?" },
-  { key: "schedule", title: "When can you train?" },
+  { key: "schedule", title: "How much can you train?" },
   { key: "shape", title: "How long, and what shape?" },
   { key: "review", title: "Your block" },
 ];
@@ -227,8 +247,11 @@ function stepDefender(body) {
     // can only give training 1 point should not be handed a 5-day split — that
     // plan doesn't fail on week 6, it fails on week 2.
     const suggested = Math.max(2, Math.min(6, 1 + S.defender.fitness));
-    S.daysPerWeek = suggested;
-    bar(`Continue with ${suggested} days a week`, next, { disabled: t > 10 });
+    // Seeds the MANDATORY count on the next step, which the user can then move.
+    // Only while untouched — once they've set it themselves, walking back and
+    // forth through this step must not silently overwrite their answer.
+    if (!S.scheduleTouched) S.mandatoryDays = suggested;
+    bar(`Continue with ${suggested} day${suggested === 1 ? "" : "s"} a week`, next, { disabled: t > 10 });
   }
 
   body.append(
@@ -292,38 +315,62 @@ function stepEquipment(body) {
 
 // --- 5. schedule -------------------------------------------------------------
 function stepSchedule(body) {
-  const dayRow = el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:12px" });
-  const countLine = el("div.note", { style: "margin-top:14px" });
-  const freq = el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:8px" });
+  const summary = el("div.note", { style: "margin-top:16px" });
+
+  // Counts, not a weekday grid. "Which days are free" sounds like the useful
+  // question and isn't: it changes week to week, and the generator only ever
+  // needed HOW MANY sessions to place. Asking for a count and spreading them
+  // is both easier to answer and harder to answer wrongly.
+  const chips = (value, max, onPick, from = 0) =>
+    el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:9px" },
+      Array.from({ length: max - from + 1 }, (_, i) => i + from).map((n) =>
+        el("button.progchip" + (value === n ? ".on" : ""), { onclick: () => onPick(n) }, String(n))));
 
   function render() {
-    dayRow.replaceChildren(...WEEKDAYS.map((d) => {
-      const on = S.availableDays.includes(d);
-      return el("button.progchip" + (on ? ".on" : ""), {
-        onclick: () => {
-          S.availableDays = on ? S.availableDays.filter((x) => x !== d) : [...S.availableDays, d];
-          render();
-        },
-      }, d);
-    }));
-    const max = S.availableDays.length;
-    S.daysPerWeek = Math.min(S.daysPerWeek, Math.max(1, max));
-    freq.replaceChildren(...Array.from({ length: Math.max(1, Math.min(6, max)) }, (_, i) => i + 1).map((n) =>
-      el("button.progchip" + (S.daysPerWeek === n ? ".on" : ""), {
-        onclick: () => { S.daysPerWeek = n; render(); },
-      }, String(n))));
-    countLine.textContent = max
-      ? `${S.daysPerWeek} session${S.daysPerWeek > 1 ? "s" : ""} a week across ${max} available day${max > 1 ? "s" : ""}.`
-      : "Pick at least one day you can train.";
-    bar("Build my block", next, { disabled: !max });
+    const total = S.mandatoryDays + S.optionalDays;
+    S.cardioPerWeek = Math.min(S.cardioPerWeek, total);
+    const strength = total - S.cardioPerWeek;
+    summary.replaceChildren(...[
+      el("div", { text: `${total} session${total === 1 ? "" : "s"} a week: `
+        + `${strength} lifting, ${S.cardioPerWeek} cardio.` }),
+      S.optionalDays
+        ? el("div", { style: "margin-top:4px", text: `${S.optionalDays} of them marked optional — the week still counts as complete without ${S.optionalDays === 1 ? "it" : "them"}.` })
+        : null,
+      strength < 2
+        ? el("div.note.warn", { style: "margin-top:6px", text: "Under two lifting sessions a week is below the muscle-retention floor." })
+        : null,
+      S.mobility
+        ? el("div", { style: "margin-top:6px", text: "Mobility & stability runs alongside, on its own short schedule." })
+        : null,
+    ].filter(Boolean));
+    body.replaceChildren(...content());
+    bar("Build my block", next, { disabled: S.mandatoryDays < 1 });
   }
 
-  body.append(
-    el("p.dim", { text: "Which days are realistically free? The plan spreads your sessions across them so hard days don't stack." }),
-    el("div.label", { style: "margin-top:6px", text: "Days available" }), dayRow,
-    el("div.label", { style: "margin-top:18px", text: "Sessions per week" }), freq,
-    countLine,
-  );
+  const content = () => [
+    el("p.dim", { text: "How much training does a normal week hold? Mandatory sessions are the plan; optional ones are there when the week is kind, and their absence never counts as a miss." }),
+
+    el("div.label", { style: "margin-top:16px", text: "Mandatory sessions" }),
+    chips(S.mandatoryDays, 6, (n) => { S.mandatoryDays = n; render(); }, 1),
+
+    el("div.label", { style: "margin-top:18px", text: "Optional sessions" }),
+    el("p.note", { style: "margin-top:4px", text: "Extra work when time allows. Skipping one doesn't break the week." }),
+    chips(S.optionalDays, 3, (n) => { S.optionalDays = n; render(); }),
+
+    el("div.label", { style: "margin-top:18px", text: "Cardio sessions a week" }),
+    el("p.note", { style: "margin-top:4px", text: "Taken out of the total above — the rest become lifting days." }),
+    chips(S.cardioPerWeek, Math.min(5, S.mandatoryDays + S.optionalDays), (n) => { S.cardioPerWeek = n; render(); }),
+
+    el("div.label", { style: "margin-top:18px", text: "Mobility & stability" }),
+    el("p.note", { style: "margin-top:4px", text: "A short supplemental routine — hips, ankles, trunk control — on days it won't compete with training." }),
+    el("div", { style: "display:flex;gap:8px;margin-top:9px" }, [
+      el("button.progchip" + (S.mobility ? ".on" : ""), { onclick: () => { S.mobility = true; render(); } }, "Yes, add it"),
+      el("button.progchip" + (!S.mobility ? ".on" : ""), { onclick: () => { S.mobility = false; render(); } }, "No thanks"),
+    ]),
+
+    summary,
+  ];
+
   render();
 }
 
@@ -331,8 +378,12 @@ function stepSchedule(body) {
 function stepShape(body) {
   const lenRow = el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:10px" });
   const shapeList = el("div.list", { style: "margin-top:14px" });
-  const chaosIn = textarea("What usually derails you?",
-    "Travel weeks, deadlines, kids' holidays. Naming it now means the plan has an answer ready.", S.chaos);
+  const startRow = el("div", { style: "margin-top:10px" });
+  const startNote = el("p.note", { style: "margin-top:8px" });
+
+  // "What usually derails you?" was removed: the answer was appended to the goal
+  // text and read by nothing. A question that changes no output is a question
+  // that shouldn't be asked.
 
   function render() {
     lenRow.replaceChildren(...[4, 6, 8, 10, 12].map((n) =>
@@ -347,27 +398,61 @@ function stepShape(body) {
         el("div.meta", {}, [el("div.t", { text: sh.name }), el("div.s", { text: sh.blurb })]),
         S.blockShapeId === sh.id ? el("span.badge.accent", { text: "✓" }) : null,
       ].filter(Boolean))));
-    bar("Generate", () => { S.chaos = chaosIn.el.value.trim(); buildAndReview(); });
+
+    // START DATE. Default is AFTER everything already planned, which is what a
+    // new block almost always is — the previous default slotted it in starting
+    // tomorrow, quietly overlapping and superseding a block that was still
+    // running. Overlap remains available, it just has to be chosen.
+    const afterAll = S.afterLastBlock;
+    startRow.replaceChildren(
+      el("div", { style: "display:flex;flex-wrap:wrap;gap:8px" }, [
+        afterAll ? el("button.progchip" + (S.startMode === "after" ? ".on" : ""), {
+          onclick: () => { S.startMode = "after"; S.startDate = afterAll; render(); } }, "After my last block") : null,
+        el("button.progchip" + (S.startMode === "next" ? ".on" : ""), {
+          onclick: () => { S.startMode = "next"; S.startDate = nextMonday(); render(); } }, "Next Monday"),
+        el("button.progchip" + (S.startMode === "custom" ? ".on" : ""), {
+          onclick: () => { S.startMode = "custom"; render(); } }, "Pick a date"),
+      ].filter(Boolean)),
+      S.startMode === "custom"
+        ? el("input", { type: "date", value: S.startDate, style: FIELD + ";margin-top:10px",
+            onchange: (e) => { if (e.target.value) { S.startDate = e.target.value; render(); } } })
+        : null,
+    );
+    startNote.textContent = `Starts ${prettyDate(S.startDate)} and runs ${S.lengthWeeks} weeks.`
+      + (afterAll && S.startDate < afterAll ? " That overlaps a block you already have — the app runs whichever block covers each date." : "");
+
+    bar("Generate", () => buildAndReview());
   }
 
   body.append(
     el("div.label", { text: "Block length" }), lenRow,
     el("div.label", { style: "margin-top:20px", text: "Recovery cadence" }), shapeList,
-    el("div", { style: "margin-top:20px" }, [chaosIn.wrap]),
+    el("div.label", { style: "margin-top:20px", text: "When does it start?" }), startRow, startNote,
   );
   render();
 }
 
+function prettyDate(iso) {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+}
+
 function buildAndReview() {
+  // The mobility answer is a PROFILE setting, not part of the block: the routine
+  // runs on its own short schedule alongside whatever block is current, and the
+  // "What you track" toggle is the same switch. Saying yes here turns it on.
+  patchProfile({ features: { mobility: !!S.mobility } }).catch(() => {});
   // The wizard's own answers win: the profile copy may be a step behind, since
   // patchProfile is fire-and-forget.
   const places = S.places && S.places.length ? S.places : ((S.profile && S.profile.places) || []);
   S.result = generateProgram({
     name: S.name, startDate: S.startDate, lengthWeeks: S.lengthWeeks,
-    priorities: S.priorities, daysPerWeek: S.daysPerWeek,
-    availableDays: S.availableDays, places,
+    priorities: S.priorities,
+    mandatoryDays: S.mandatoryDays, optionalDays: S.optionalDays, cardioPerWeek: S.cardioPerWeek,
+    places,
     blockShapeId: S.blockShapeId,
-    goalText: [S.goalText, S.chaos ? `When it goes sideways: ${S.chaos}` : ""].filter(Boolean).join("\n\n"),
+    goalText: S.goalText,
   });
   next();
 }

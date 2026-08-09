@@ -220,6 +220,12 @@ export function generateProgram(input) {
     priorities = ["hypertrophy"],
     daysPerWeek = 3,
     availableDays = WEEKDAYS,
+    // The wizard asks in these terms now: how many sessions are the plan, how
+    // many are bonus, and how much of the total is cardio. daysPerWeek/
+    // allocateDays remain the fallback for a program built the old way.
+    mandatoryDays = null,
+    optionalDays = 0,
+    cardioPerWeek = null,
     places = [],
     blockShapeId = "classic",
     goalText = "",
@@ -237,11 +243,27 @@ export function generateProgram(input) {
 
   // Step 4: frequency from real availability.
   const usableDays = (availableDays || WEEKDAYS).filter((d) => WEEKDAYS.includes(d));
-  const perWeek = Math.min(daysPerWeek, usableDays.length);
-  if (perWeek < daysPerWeek) {
-    warnings.push(`You asked for ${daysPerWeek} sessions but marked only ${usableDays.length} days available, so the plan uses ${perWeek}.`);
+  const asked = mandatoryDays == null ? daysPerWeek : mandatoryDays + optionalDays;
+  const perWeek = Math.min(asked, usableDays.length);
+  if (perWeek < asked) {
+    warnings.push(`You asked for ${asked} sessions but only ${usableDays.length} days are available, so the plan uses ${perWeek}.`);
   }
-  const { strengthDays, cardioDays } = allocateDays(priorities, perWeek);
+  // An explicit cardio count beats inferring one from the priority ranking: the
+  // user just told us, and a derived number that contradicts the answer they
+  // gave two screens ago reads as a bug.
+  let strengthDays, cardioDays;
+  if (cardioPerWeek == null) {
+    ({ strengthDays, cardioDays } = allocateDays(priorities, perWeek));
+  } else {
+    cardioDays = Math.max(0, Math.min(cardioPerWeek, perWeek));
+    strengthDays = perWeek - cardioDays;
+    if (strengthDays < 2 && perWeek >= 2) {
+      warnings.push(`${strengthDays} lifting session${strengthDays === 1 ? "" : "s"} a week is below the two-a-week floor for holding muscle.`);
+    }
+  }
+  // The LAST sessions of the week are the optional ones — the week's mandatory
+  // work should be banked before the bonus, not after it.
+  const optionalCount = mandatoryDays == null ? 0 : Math.min(optionalDays, perWeek);
 
   // Equipment: the union of every place, so the plan doesn't refuse to program a
   // barbell lift just because one of your places lacks a rack. Substitution
@@ -264,6 +286,11 @@ export function generateProgram(input) {
 
   const exercises = {};
   const dayTemplates = {};
+  // Which weekdays carry the optional sessions: the last ones scheduled, in
+  // week order, so a skipped optional day never leaves a hole mid-week.
+  const orderOf = (wd) => WEEKDAYS.indexOf(wd);
+  const scheduled = [...strengthWeekdays, ...cardioWeekdays].sort((a, b) => orderOf(a) - orderOf(b));
+  const optionalSet = new Set(scheduled.slice(Math.max(0, scheduled.length - optionalCount)));
   const missingPatterns = new Set();
   const weekUsed = new Set();      // soft variety bias across the whole week
 
@@ -287,7 +314,7 @@ export function generateProgram(input) {
     dayTemplates[weekday] = {
       weekday, location: primaryPlace, type: "strength",
       label: dayPlan.label, preRoutine: "warmupStrength", postRoutine: "cooldownStrength",
-      exercises: chosen, supersets: [],
+      optional: optionalSet.has(weekday), exercises: chosen, supersets: [],
     };
   });
 
@@ -297,7 +324,7 @@ export function generateProgram(input) {
     dayTemplates[weekday] = {
       weekday, location: primaryPlace, type: "cardio",
       label: p.label, preRoutine: "warmupCardio", postRoutine: "cooldownCardio",
-      adaptation, exercises: [], supersets: [],
+      optional: optionalSet.has(weekday), adaptation, exercises: [], supersets: [],
     };
   });
 

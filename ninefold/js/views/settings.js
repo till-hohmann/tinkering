@@ -6,7 +6,7 @@ import { getActiveProgram, getAllPrograms, getAllSessions, importProgram, restor
   getZoneBounds, setZoneBounds, syncedPrefs, getVO2maxLog, addVO2max,
   getBodyweight, setBodyweight, getProteinPerKg, setProteinPerKg,
   getDeficitTarget, setDeficitTarget, getMeasurementsLog, addMeasurement,
-  getDexaLog, addDexaScan } from "../store.js";
+  getDexaLog, addDexaScan, deleteProgram } from "../store.js";
 import { todayISO } from "../model.js";
 import * as M from "../model.js";
 import { buildBackup, buildMarkdownLog, shareOrDownload } from "../export.js";
@@ -524,12 +524,36 @@ export async function renderSettings() {
       const isPinned = !sel.auto && sel.activeId === p.id;
       pseg.appendChild(mkProg(isPinned, `Block ${i + 1}`, () => setActiveProgramManual(p.id)));
     });
+    // Deleting a block. Needed the moment the builder existed: a trial block you
+    // no longer want otherwise sits in the calendar forever. Sessions are kept —
+    // they record training that actually happened.
+    const delStatus = el("p.note", { style: "margin-top:8px;min-height:1em" });
+    const delRow = el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:10px" },
+      ordered.map((p, i) => el("button.btn.ghost", { style: "padding:6px 11px;font-size:.8rem",
+        onclick: async () => {
+          if (delRow.dataset.arm !== p.id) {
+            delRow.dataset.arm = p.id;
+            delStatus.textContent = `Delete “${p.name}”? Tap again to confirm. Logged sessions are kept.`;
+            return;
+          }
+          try {
+            await deleteProgram(p.id);
+            redraw();
+          } catch (e) {
+            delStatus.textContent = e.message === "last_program"
+              ? "That's your only block — build another one first."
+              : "Couldn't delete that block.";
+          }
+        } }, `✕ Block ${i + 1}`)));
+
     programCard = el("div.card", {}, [
       el("div.label", { style: "margin-bottom:8px", text: "Program selection" }),
       pseg,
       el("p.note", { style: "margin-top:10px", text: sel.auto
         ? "Automatic: the app switches to each block on its start date."
         : `Pinned to “${program ? program.name : "?"}”. Switch back to Auto to follow the calendar.` }),
+      el("div.label", { style: "margin:18px 2px 0", text: "Delete a block" }),
+      delRow, delStatus,
     ]);
   }
 

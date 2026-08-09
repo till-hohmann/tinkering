@@ -209,6 +209,27 @@ export async function equipmentForProgram(program) {
   return equipmentFor(await getProfile(), program);
 }
 
+// Delete a block, and only a block. Sessions are NOT touched: they are the log
+// of what you actually did, and a session whose program is gone still counts as
+// training that happened. Refuses when it would leave you with none — an app
+// with zero programs is the first-run state, and dropping into it by accident
+// from a delete button is a nasty surprise.
+export async function deleteProgram(programId) {
+  const all = await db.getAll("programs");
+  if (all.length <= 1) throw new Error("last_program");
+  const gone = all.find((p) => p.id === programId);
+  if (!gone) throw new Error("not_found");
+  await db.del("programs", programId);
+  // If it was the pinned active one, fall back to whichever block covers today.
+  const activeId = await db.getPref("activeProgramId");
+  if (activeId === programId) {
+    await db.setPref("activeProgramId", undefined);
+    await db.setPref("autoSelectProgram", true);
+  }
+  pushCloud();
+  return (await db.getAll("programs")).length;
+}
+
 export async function importProgram(program, makeActive = true) {
   await db.put("programs", program);
   if (makeActive) {

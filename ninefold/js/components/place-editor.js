@@ -14,7 +14,7 @@
 // checkboxes — you pick the closest and correct it.
 
 import { el } from "../ui.js";
-import { IMPLEMENTS, STATIONS, PRESETS, SURVEYED } from "../equipment.js";
+import { IMPLEMENTS, STATIONS, MACHINES, PRESETS, SURVEYED, MACHINE_IMPLEMENT } from "../equipment.js";
 import { defaultEquipmentFor, weightValue, weightToKg, weightLabel } from "../units.js";
 
 const FIELD = "width:100%;padding:11px 13px;background:var(--bg-elev2);border:1px solid var(--line);" +
@@ -43,6 +43,8 @@ export function tidyPlace(place, profile, fallbackName = "Gym") {
   // One bell out of a pair rack is always available, and several lifts need
   // exactly that — so it rides along rather than being a question of its own.
   if (imps.has("dumbbell_pair")) imps.add("dumbbell_single"); else imps.delete("dumbbell_single");
+  // Any individual machine implies the machine implement the library gates on.
+  if (MACHINES.some(([id]) => imps.has(id))) imps.add(MACHINE_IMPLEMENT); else imps.delete(MACHINE_IMPLEMENT);
   return {
     barWeightKg: kit.barWeightKg, ezBarWeightKg: kit.ezBarWeightKg,
     barbellPlatesKg: [...kit.barbellPlatesKg], ezBarPlatesKg: [...kit.ezBarPlatesKg],
@@ -70,6 +72,9 @@ export function placeEditor(place, profile, { onChange = () => {}, compact = fal
       place.implements = place.implements.filter((x) => x !== "dumbbell_single");
       if (!on) place.implements.push("dumbbell_single");
     }
+    // keep the implied machine implement in step with the individual ticks
+    place.implements = place.implements.filter((x) => x !== MACHINE_IMPLEMENT);
+    if (MACHINES.some(([m]) => place.implements.includes(m))) place.implements.push(MACHINE_IMPLEMENT);
     render();
     onChange();
   };
@@ -96,19 +101,29 @@ export function placeEditor(place, profile, { onChange = () => {}, compact = fal
     // beats building the answer from nothing
     if (!compact) {
       kids.push(el("div.label", { style: "margin-top:16px", text: "Start from" }));
-      kids.push(el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:9px" },
+      kids.push(el("p.note", { style: "margin-top:4px", text:
+        "Pick the closest, then correct it below. Each one says exactly what it ticks." }));
+      kids.push(el("div.list", { style: "margin-top:9px" },
         PRESETS.map(([label, sub, ids]) =>
-          el("button.progchip", { title: sub, onclick: () => { place.implements = [...ids]; render(); onChange(); } }, label))));
+          el("button.item", { style: "text-align:left",
+            onclick: () => { place.implements = [...ids]; render(); onChange(); } }, [
+            el("div.meta", {}, [el("div.t", { text: label }), el("div.s", { text: sub })]),
+          ]))));
     }
 
     kids.push(el("div.label", { style: "margin-top:16px", text: "What can you load?" }));
     kids.push(el("p.note", { style: "margin-top:4px", text: "What you pick up and press. Bodyweight is always assumed." }));
     kids.push(chipRow(IMPLEMENTS.map(([id, label]) => [id, label])));
 
-    kids.push(el("div.label", { style: "margin-top:16px", text: "What can you use?" }));
+    kids.push(el("div.label", { style: "margin-top:16px", text: "Benches, racks & bars" }));
     kids.push(el("p.note", { style: "margin-top:4px", text:
       "The things you rack out of, lie on or hang from. Without a bench there's no bench press; without a bar overhead there are no pull-ups." }));
     kids.push(chipRow(STATIONS.map(([id, label]) => [id, label])));
+
+    kids.push(el("div.label", { style: "margin-top:16px", text: "Machines" }));
+    kids.push(el("p.note", { style: "margin-top:4px", text:
+      "Tick only the ones you've actually got. Each unlocks its own exercises — nothing here is implied by the others." }));
+    kids.push(chipRow(MACHINES.map(([id, label]) => [id, label])));
 
     // Only worth asking once there are dumbbells, and it's the single most
     // load-limiting fact about a home gym.
@@ -131,7 +146,7 @@ export function placeEditor(place, profile, { onChange = () => {}, compact = fal
     }
 
     const loadable = (place.implements || []).filter((x) => x !== "bodyweight" && x !== "dumbbell_single"
-      && x !== SURVEYED && !STATIONS.some(([s]) => s === x));
+      && x !== SURVEYED && !STATIONS.some(([s]) => s === x) && !MACHINES.some(([m]) => m === x));
     if (!loadable.length) {
       kids.push(el("p.note", { style: "margin-top:14px", text:
         "Bodyweight only — the plan will use holds, jumps and bodyweight movements here. That's a real program, not a downgrade." }));
