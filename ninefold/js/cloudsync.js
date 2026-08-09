@@ -41,6 +41,35 @@ export async function cloudPull(timeoutMs = 3500) {
   } catch (_) { return null; }
 }
 
+// --- push health -------------------------------------------------------------
+// A PUSH USED TO BE FIRE-AND-FORGET, AND THAT WAS THE WORST BUG IN THIS FILE.
+// The response was never examined, so a rotated token (401), a refusal (409), a
+// snapshot grown past the Worker's size limit (413) and the Worker simply being
+// down all looked exactly like success. The only way to notice was to open
+// Settings and press a button, which nobody does until the day they need the
+// backup — the one day it is too late to find out.
+//
+// Recorded device-locally, deliberately NOT in SYNCED_PREFS: it describes THIS
+// device's link to the service, and pushing it through the service it describes
+// would be circular.
+const HEALTH_KEY = "cloudHealth";
+
+/** { at, ok, reason, status, consecutiveFailures } — or null if never attempted. */
+export async function getCloudHealth() {
+  try { return (await db.getPref(HEALTH_KEY)) || null; } catch (_) { return null; }
+}
+
+async function recordPush(ok, reason, status) {
+  try {
+    const prev = (await db.getPref(HEALTH_KEY)) || {};
+    await db.setPref(HEALTH_KEY, {
+      at: new Date().toISOString(), ok, reason: reason || null, status: status || null,
+      consecutiveFailures: ok ? 0 : ((prev.consecutiveFailures || 0) + 1),
+      lastOkAt: ok ? new Date().toISOString() : (prev.lastOkAt || null),
+    });
+  } catch (_) { /* diagnostics must never break the thing they diagnose */ }
+}
+
 let timer = null, inflight = false;
 // Debounced push — coalesces a burst of saves into one upload.
 export function cloudPushDebounced(buildState, delay = 2500) {
@@ -55,10 +84,24 @@ export async function cloudPush(buildState) {
   try {
     const state = await buildState();
     if (!state || !Array.isArray(state.sessions)) return;
-    await fetch(t.endpoint, { method: "PUT",
+    const res = await fetch(t.endpoint, { method: "PUT",
       headers: { ...authHeaders(t), "Content-Type": "application/json" },
       body: JSON.stringify(state) });
-  } catch (_) { /* offline — next change retries */ } finally { inflight = false; }
+    if (res.ok) { await recordPush(true); return; }
+    // Name the failures that mean different things, because the fix differs:
+    // a wrong token needs re-entering, a refusal means the Worker protected
+    // something, and a size failure needs the log trimming.
+    const reason = res.status === 401 || res.status === 403 ? "unauthorized"
+      : res.status === 409 ? "refused"
+      : res.status === 413 ? "too_large"
+      : "error";
+    await recordPush(false, reason, res.status);
+  } catch (_) {
+    // Offline is the ONE benign failure: the next change retries, and flagging it
+    // would cry wolf every time a phone goes through a tunnel. Still recorded, so
+    // a device that has been "offline" for a fortnight can be spotted.
+    await recordPush(false, "offline");
+  } finally { inflight = false; }
 }
 
 // Reachability probe for the Settings screen, so a self-hoster can verify their

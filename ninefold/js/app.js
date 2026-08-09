@@ -1,6 +1,6 @@
 // app.js — bootstrap, service-worker registration, and a tiny hash router.
 
-import { seedIfNeeded, mergeRestore, snapshot, getActiveProgram, initMobilityRoutine } from "./store.js";
+import { seedIfNeeded, mergeRestore, snapshot, getActiveProgram, initMobilityRoutine, initAudioPrefs } from "./store.js";
 import { cloudPull, cloudPush } from "./cloudsync.js";
 import { migrateIfNeeded, getProfile } from "./profile.js";
 import { loadPhotoManifest } from "./exercise-photo.js";
@@ -121,6 +121,9 @@ async function boot() {
   // merge so a restored device gets its own routine back rather than capturing
   // the build's default over the top of it.
   try { await initMobilityRoutine(); } catch (err) { console.warn("mobility routine init skipped", err); }
+  // Same reasoning for the audio settings: they live in localStorage for speed,
+  // which no backup carries, so the restored copy is applied here.
+  try { await initAudioPrefs(); } catch (err) { console.warn("audio prefs init skipped", err); }
   window.addEventListener("hashchange", router);
   // First run: onboarding, then the builder. Both only when landing on the
   // default route, so a deep link (a shared summary URL, a bookmark) still wins

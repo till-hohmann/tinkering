@@ -25,7 +25,7 @@ import { weightLabel, weightValue, weightToKg, lengthLabel, lengthValue, lengthT
 import { resolvedConfig, setRuntimeConfig, hasBackup } from "../config.js";
 import * as db from "../db.js";
 import { el, mount, go } from "../ui.js";
-import { cloudPull, cloudCheck } from "../cloudsync.js";
+import { cloudPull, cloudCheck, getCloudHealth } from "../cloudsync.js";
 // Baked in rather than read at runtime: an iOS standalone PWA exposes neither
 // caches.keys() nor SW messaging to the page, so the code reports its own version.
 import { APP_VERSION } from "../version.js";
@@ -618,6 +618,29 @@ export async function renderSettings() {
     cloudStatus.textContent = ep ? "Saved. Testing…" : "Cleared — the app is now local-only.";
     if (ep) await testCloud();
   }
+  // Whether the last push actually landed. Without this the card could only tell
+  // you the endpoint is reachable RIGHT NOW, which is not the same question as
+  // "has your data been getting through".
+  const health = await getCloudHealth();
+  const healthLine = (() => {
+    if (!hasBackup(cfg0) || !health) return null;
+    const when = health.at ? new Date(health.at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "";
+    if (health.ok) return el("p.note", { style: "margin-top:8px", text: `Last backed up ${when}.` });
+    const fails = health.consecutiveFailures || 1;
+    const why = {
+      unauthorized: "the token was rejected — it no longer matches the Worker. Re-enter it below.",
+      too_large: "the backup is too big for the Worker to accept.",
+      refused: "the Worker refused the write to protect what's already stored.",
+      offline: "no connection. If this persists, something else is wrong.",
+    }[health.reason] || `the Worker returned ${health.status || "an error"}.`;
+    // Amber for a blip, red once it's a pattern — a single failed push in a
+    // tunnel is not the same as a backup that stopped working a fortnight ago.
+    const bad = fails >= 3 || health.reason === "unauthorized" || health.reason === "too_large";
+    return el("p.note", { style: `margin-top:8px;color:var(--${bad ? "red" : "amber"})`, text:
+      `${bad ? "Not backing up" : "Last backup failed"} (${fails}× since ${when}) — ${why}`
+      + (health.lastOkAt ? ` Last success: ${new Date(health.lastOkAt).toLocaleDateString("en-GB", { dateStyle: "medium" })}.` : "") });
+  })();
+
   const cloudCard = el("div.card", {}, [
     el("div.label", { style: "margin-bottom:4px", text: "Cloud backup" }),
     el("p.note", { style: "margin-top:0", text: hasBackup(cfg0)
@@ -630,6 +653,7 @@ export async function renderSettings() {
       el("button.btn", { onclick: testCloud }, "Test connection"),
     ]),
     cloudStatus,
+    healthLine,
     el("p.note", { style: "margin-top:10px;font-size:.73rem", text:
       "This token can read and overwrite your whole training log, so treat it like a password. It stays on this device and is never included in exports or synced anywhere." }),
   ]);

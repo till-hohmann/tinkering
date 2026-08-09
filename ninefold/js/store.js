@@ -12,7 +12,12 @@ import { DEFAULT_ZONE_BOUNDS, maxHRof } from "./cardio-intel.js";
 // and its bearer token, i.e. a credential for this very sync channel — syncing
 // it through the service it unlocks would be circular, and it would put a
 // working key into every export file. It stays device-local, always.
-export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine"];
+// `activeProgramId` + `autoSelectProgram` ride along because pinning a block is a
+// CHOICE, not device bookkeeping. Left unsynced, a restored device silently
+// reverted to picking by date — so someone deliberately running an older block
+// would come back from a wipe running a different one, with nothing to indicate
+// it had changed. The ids they reference are themselves in the backup.
+export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "activeProgramId", "autoSelectProgram", "audioPrefs"];
 export async function syncedPrefs() {
   const out = {};
   for (const k of SYNCED_PREFS) { const v = await db.getPref(k); if (v !== undefined) out[k] = v; }
@@ -268,6 +273,10 @@ export async function restoreBackup(data) {
     await db.setPref("activeProgramId", active.id);
     await db.setPref("autoSelectProgram", false);   // restored state pins the active program
   }
+  // AFTER the two lines above, deliberately. Both keys are synced now, so a
+  // backup that carries them overwrites the guess just made from the program
+  // list — the saved choice beats an inference. Older backups predate the keys,
+  // and for those the guess above stands.
   await restorePrefs(data.prefs, { overwrite: true });   // explicit restore adopts saved settings
   pushCloud();
 }
@@ -297,6 +306,22 @@ export async function mobilityDoneDates() { return new Set((await getMobilityLog
 // consumed/advanced by mobility.js applyHoldResults after each tracked session.
 export async function getMobilityProg() { return (await db.getPref("mobilityProg")) || {}; }
 export async function setMobilityProg(state) { await db.setPref("mobilityProg", state || {}); pushCloud(); }
+
+// Audio cue settings. The live copy is localStorage (sound.js reads it before any
+// database is open); this is the durable one that rides the backup.
+export async function getAudioPrefs() { return (await db.getPref("audioPrefs")) || null; }
+export async function setAudioPrefs(p) { await db.setPref("audioPrefs", p || null); pushCloud(); }
+
+// Restore the audio settings into the running sound module. Called at boot, after
+// the cloud merge, so a wiped device gets its own answer back rather than the
+// defaults it started the session with.
+export async function initAudioPrefs() {
+  const p = await getAudioPrefs();
+  if (!p) return null;
+  const { applyAudioPrefs } = await import("./components/sound.js");
+  applyAudioPrefs(p);
+  return p;
+}
 
 // The routine ITSELF — which sessions exist and what's in them. Synced, because
 // a routine written around one person's knees is personal data and belongs in

@@ -86,16 +86,44 @@ try {
   document.addEventListener("visibilitychange", () => { if (!document.hidden) resumeAudio(); });
 } catch {}
 
+// These live in localStorage because they're read SYNCHRONOUSLY at import, before
+// any database is open — but localStorage is in no backup, so a wipe silently
+// reset them and a run started playing cues out loud over someone's music. They
+// are now mirrored into a synced pref as well: localStorage stays the fast local
+// copy, the pref is the durable one, and boot reconciles the two.
+function persistAudio() {
+  try {
+    localStorage.setItem("fit-sound", enabled ? "1" : "0");
+    localStorage.setItem("fit-audiomode", mode);
+  } catch {}
+  // Fire-and-forget: these setters are synchronous by contract and a settings
+  // toggle must never wait on a database write.
+  import("../store.js").then((s) => s.setAudioPrefs({ enabled, mode })).catch(() => {});
+}
+
+/** Adopt restored settings. Does NOT re-persist — the caller is the backup. */
+export function applyAudioPrefs(p) {
+  if (!p || typeof p !== "object") return false;
+  if (typeof p.enabled === "boolean") enabled = p.enabled;
+  if (p.mode === "loud" || p.mode === "mix") mode = p.mode;
+  try {
+    localStorage.setItem("fit-sound", enabled ? "1" : "0");
+    localStorage.setItem("fit-audiomode", mode);
+  } catch {}
+  try { applySession(); } catch {}
+  return true;
+}
+
 export function setSoundEnabled(on) {
   enabled = !!on;
-  try { localStorage.setItem("fit-sound", on ? "1" : "0"); } catch {}
+  persistAudio();
 }
 export function isSoundEnabled() { return enabled; }
 
 export function getAudioMode() { return mode; }
 export function setAudioMode(m) {
   mode = m === "loud" ? "loud" : "mix";
-  try { localStorage.setItem("fit-audiomode", mode); } catch {}
+  persistAudio();
   applySession();
 }
 

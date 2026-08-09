@@ -13,9 +13,16 @@ ICONS = os.path.join(ROOT, "icons")
 
 # Dark background + bright subject stays legible under iOS Light/Dark/Tinted icon
 # modes. The mark's own crop is on this exact tone, so compositing is seamless.
-TILE = (10, 10, 10, 255)        # #0a0a0a — matches the source mark's background
-REGULAR_FILL = 0.95             # mark spans ~95% of the tile — small margins
-MASKABLE_FILL = 0.74            # tucked inside the maskable safe zone
+TILE = (13, 13, 15, 255)        # #0d0d0f — the supplied artwork's own tile tone
+# The source is now a FINISHED, full-bleed icon rather than a bare mark, so it is
+# used at full size: scaling it to 95% would ring it with 5% of tile that doesn't
+# quite match, and the artwork already carries its own margin. Its rounded corners
+# were squared off first — iOS masks its own, and baked-in corners get rounded
+# twice, which reads as a dark rim.
+REGULAR_FILL = 1.0
+# The glyph occupies ~84% of the source, so the whole square is inset to keep it
+# inside the maskable safe circle.
+MASKABLE_FILL = 0.80
 
 MARK = Image.open(os.path.join(ICONS, "mark-source.png")).convert("RGBA")
 
@@ -37,8 +44,15 @@ def main():
 
     # icon.svg — the manifest/link SVG. Embeds the same mark as a data-URI so it
     # renders the exact raster on a matching tile at any size.
-    with open(os.path.join(ICONS, "mark-source.png"), "rb") as f:
-        b64 = base64.b64encode(f.read()).decode("ascii")
+    #
+    # Downscaled to 512 first. The source is a 1254px master and embedding it whole
+    # made a 1.4 MB SVG — which sits in the service worker's precache, so every
+    # install paid for it on first load to render an icon nothing displays above
+    # 512. Re-encoded through an in-memory buffer so no intermediate file is left.
+    import io as _io
+    _buf = _io.BytesIO()
+    MARK.resize((512, 512), Image.LANCZOS).save(_buf, format="PNG", optimize=True)
+    b64 = base64.b64encode(_buf.getvalue()).decode("ascii")
     w = round(512 * REGULAR_FILL, 1)
     off = round((512 - w) / 2, 1)
     svg = (

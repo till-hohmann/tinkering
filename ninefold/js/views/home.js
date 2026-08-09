@@ -331,6 +331,15 @@ export async function renderHome() {
   }
   const children = [orbHero];
 
+  // ===== backup is broken =====
+  // FIRST, above everything, and the only card here that isn't about training.
+  // A backup that has stopped working is invisible by nature — the app carries on
+  // perfectly, and you find out on the day the phone is wiped, which is the one
+  // day it cannot be fixed. Three consecutive failures is the threshold: a single
+  // miss is a tunnel, a run of them is a broken link.
+  const backupWarning = await backupAlert();
+  if (backupWarning) children.push(backupWarning);
+
   // ===== reprogram nudge (Sundays, as a block winds down) =====
   const reprog = await reprogramReminder(iso);
   if (reprog) children.push(reprog);
@@ -475,4 +484,30 @@ export async function renderHome() {
   mount(children);
   if (!done) fillReadinessHero(orbHero, kicker, weekFallback, makeMini);   // pending workout → load WHOOP recovery (fall back to week progress if unavailable)
   fillFuelToday(fuelToday, iso);
+}
+
+// A dead backup, said out loud. Deliberately narrow: only when a backup is
+// actually configured (an install with none is local-only BY CHOICE and must
+// never be nagged), and only once failures look like a pattern rather than a
+// phone in a lift.
+async function backupAlert() {
+  try {
+    const { getCloudHealth } = await import("../cloudsync.js");
+    const h = await getCloudHealth();
+    if (!h || h.ok) return null;
+    const hard = h.reason === "unauthorized" || h.reason === "too_large";
+    if (!hard && (h.consecutiveFailures || 0) < 3) return null;
+    const detail = h.reason === "unauthorized"
+      ? "Your backup token was rejected. Re-enter it in Profile."
+      : h.reason === "too_large" ? "Your backup is too large for the Worker to accept."
+      : "Your training data hasn't reached the backup recently.";
+    const since = h.lastOkAt
+      ? `Last successful backup: ${new Date(h.lastOkAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}.`
+      : "Nothing has ever backed up successfully.";
+    return el("div.card", { style: "border-color:var(--red)" }, [
+      el("div.label", { style: "color:var(--red)", text: "Backup not working" }),
+      el("p.note", { style: "margin-top:6px", text: `${detail} ${since} Everything on this device is fine — but a wipe would lose it.` }),
+      el("button.btn.block", { style: "margin-top:10px", onclick: () => go("#/settings") }, "Open backup settings"),
+    ]);
+  } catch (_) { return null; }
 }

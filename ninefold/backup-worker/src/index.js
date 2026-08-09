@@ -24,6 +24,12 @@
 
 const CORS_METHODS = "GET,PUT,POST,OPTIONS";
 
+// "Has this snapshot come from an install someone actually set up?" The marker is
+// `onboardedAt`, not the mere presence of a profile: the app writes a blank
+// profile during its first-boot migration, so an empty install has one too.
+const hasProfile = (s) =>
+  !!(s && s.prefs && s.prefs.profile && s.prefs.profile.onboardedAt);
+
 function cors(origin) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
@@ -91,15 +97,34 @@ export default {
       // before its DB opens must never be able to blank the only durable copy.
       if (!parsed || !Array.isArray(parsed.sessions))
         return new Response("missing sessions array", { status: 400, headers: H });
-      if (parsed.sessions.length === 0) {
-        const prev = await env.STRONG_BACKUP.get(STATE_KEY);
+      // TWO REFUSALS, ONE IDEA: a client that has lost its memory must not be
+      // able to tell this store to forget too. Both are cases where the incoming
+      // snapshot is strictly poorer than the stored one in a way no user action
+      // produces, so the write is far more likely to be an accident than intent.
+      const prevRaw = (parsed.sessions.length === 0 || !hasProfile(parsed))
+        ? await env.STRONG_BACKUP.get(STATE_KEY) : null;
+      if (prevRaw) {
+        let prev = null;
+        try { prev = JSON.parse(prevRaw); } catch (_) { /* unparseable — let the write through */ }
         if (prev) {
-          try {
-            if ((JSON.parse(prev).sessions || []).length > 0)
-              return new Response(JSON.stringify({ error: "refused_empty_overwrite",
-                detail: "Stored backup is non-empty; refusing to replace it with zero sessions." }),
-                { status: 409, headers: jsonHeaders });
-          } catch (_) { /* stored value unparseable — let the write through */ }
+          // 1. Zero sessions over a log that has some.
+          if (parsed.sessions.length === 0 && (prev.sessions || []).length > 0) {
+            return new Response(JSON.stringify({ error: "refused_empty_overwrite",
+              detail: "Stored backup is non-empty; refusing to replace it with zero sessions." }),
+              { status: 409, headers: jsonHeaders });
+          }
+          // 2. No profile over a stored one. This is the wiped-device case, and it
+          //    is subtle: the device HAS sessions (it just pulled them back), so
+          //    the check above passes, while its settings are still the blank ones
+          //    a fresh install starts with. Left unguarded, the first push after a
+          //    mis-stepped restore overwrites the only copy of the zones, goal,
+          //    places and routine that the restore was supposed to bring back.
+          if (!hasProfile(parsed) && hasProfile(prev)) {
+            return new Response(JSON.stringify({ error: "refused_profile_regression",
+              detail: "Stored backup has a set-up profile; refusing to replace it with one that has none. "
+                + "If this device should start fresh, clear the stored backup first." }),
+              { status: 409, headers: jsonHeaders });
+          }
         }
       }
       await env.STRONG_BACKUP.put(STATE_KEY, body);

@@ -1040,6 +1040,58 @@ async function appleTests() {
 
 await appleTests();
 
+// ---------------------------------------------------------------------------
+// The backup Worker's write guards, exercised as real requests against an
+// in-memory KV. These protect the only durable copy of a training log, and both
+// refusals exist because the failure they prevent has a plausible everyday path
+// (a device wiped by an app reinstall, pushing its blank settings back up).
+async function workerTests() {
+  const worker = (await import("../backup-worker/src/index.js")).default;
+  const TOKEN = "t".repeat(40);
+  const kv = new Map();
+  const env = { BACKUP_TOKEN: TOKEN, STRONG_BACKUP: {
+    get: async (k) => (kv.has(k) ? kv.get(k) : null),
+    put: async (k, v) => { kv.set(k, v); },
+  } };
+  const put = (body) => worker.fetch(new Request("https://x/", { method: "PUT",
+    headers: { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" },
+    body: JSON.stringify(body) }), env);
+
+  const real   = { sessions: [{ id: "a" }, { id: "b" }], programs: [],
+                   prefs: { profile: { onboardedAt: "2026-01-15", physiology: { maxHR: 194 } } } };
+  const blank  = { sessions: [{ id: "a" }, { id: "b" }], programs: [], prefs: { profile: { onboardedAt: null } } };
+  const noPref = { sessions: [{ id: "a" }], programs: [] };
+  const empty  = { sessions: [], programs: [], prefs: { profile: { onboardedAt: "2026-01-15" } } };
+
+  kv.clear();
+  const freshBlank = (await put(blank)).status;      // nothing stored yet
+  kv.clear();
+  const first  = (await put(real)).status;
+  const overBlank = (await put(blank)).status;
+  const overNone  = (await put(noPref)).status;
+  const overEmpty = (await put(empty)).status;
+  const again  = (await put(real)).status;
+  const stored = JSON.parse(kv.values().next().value);
+
+  group("backup Worker — a wiped device cannot erase the backup", () => {
+    it("accepts a set-up install", () => assert.equal(first, 200));
+    it("refuses a blank profile over a set-up one", () => assert.equal(overBlank, 409));
+    it("refuses a snapshot carrying no prefs at all", () => assert.equal(overNone, 409));
+    it("still refuses zero sessions over a real log", () => assert.equal(overEmpty, 409));
+    it("keeps accepting the real install", () => assert.equal(again, 200));
+    it("leaves the stored profile untouched through all of it", () => {
+      assert.equal(stored.prefs.profile.onboardedAt, "2026-01-15");
+      assert.equal(stored.prefs.profile.physiology.maxHR, 194);
+    });
+    it("does NOT block a genuinely fresh backup", () => {
+      // Guarding must not stop a new install from ever writing its first snapshot.
+      assert.equal(freshBlank, 200);
+    });
+  });
+}
+
+await workerTests();
+
 for (const [name, fn] of groups) { console.log("\n" + name); fn(); }
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
