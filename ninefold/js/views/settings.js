@@ -15,10 +15,11 @@ import { zonesFromBounds, DEFAULT_ZONE_BOUNDS } from "../cardio-intel.js";
 import { provider, has, resetProviderCache, PROVIDERS, CAP,
   recoveryToday, bestWorkoutFor, body as trackerBody, vo2max as healthVO2max } from "../health/index.js";
 import { resetAppleCache } from "../health/apple.js";
-import { getProfile, patchProfile } from "../profile.js";
+import { getProfile, patchProfile, TRACKED_FEATURES, equipmentFor } from "../profile.js";
 import { THEMES, DEFAULT_THEME, applyTheme } from "../theme.js";
 import { weightLabel, weightValue, weightToKg, lengthLabel, lengthValue, lengthToCm,
-  distanceLabel, distanceValue, readEdit } from "../units.js";
+  distanceLabel, distanceValue, readEdit, defaultEquipmentFor, isStockRack, rackFields,
+  METRIC_EQUIPMENT, IMPERIAL_EQUIPMENT } from "../units.js";
 import { resolvedConfig, setRuntimeConfig, hasBackup } from "../config.js";
 import * as db from "../db.js";
 import { el, mount, go } from "../ui.js";
@@ -27,13 +28,27 @@ import { cloudPull, cloudCheck } from "../cloudsync.js";
 // Running build version — baked into the code so it always reflects the
 // installed version (iOS standalone PWAs don't reliably expose caches.keys()
 // or SW messaging to the page). BUMP THIS together with CACHE in sw.js.
-const APP_VERSION = "v144";
+const APP_VERSION = "v145";
 
 function daysSince(iso) {
   if (!iso) return null;
   const a = new Date(iso + "T00:00:00"), b = new Date(todayISO() + "T00:00:00");
   return Math.floor((b - a) / 86400000);
 }
+
+// Re-render this screen in place after a control changes what it should show.
+//
+// `go("#/settings")` CANNOT do this, which is subtle enough that three controls
+// shipped broken: go() only assigns window.location.hash, and assigning a hash
+// the value it already holds fires no hashchange, so the router never runs. The
+// tracker picker, the program selector and the units switch all "worked" — they
+// wrote the change and left the screen showing the old state until you navigated
+// away and back. Scroll position is preserved because every one of these controls
+// lives well down a long page, and snapping to the top on each tap is its own bug.
+const redraw = () => {
+  const y = window.scrollY;
+  return renderSettings().then(() => window.scrollTo(0, y));
+};
 
 export async function renderSettings() {
   const program = await getActiveProgram();
@@ -328,7 +343,7 @@ export async function renderSettings() {
     b.onclick = async () => {
       await patchProfile({ tracker: { provider: p.id } });
       resetProviderCache();
-      go("#/settings");
+      redraw();
     };
     trkSeg.appendChild(b);
   }
@@ -501,7 +516,7 @@ export async function renderSettings() {
     const pseg = el("div", { style: "display:flex;flex-wrap:wrap;gap:8px" });
     const mkProg = (active, label, onPick) => {
       const b = el("button.progchip" + (active ? ".on" : ""), {}, label);
-      b.onclick = async () => { await onPick(); go("#/settings"); };
+      b.onclick = async () => { await onPick(); redraw(); };
       return b;
     };
     pseg.appendChild(mkProg(sel.auto, "Auto", setAutoProgram));
@@ -610,16 +625,90 @@ export async function renderSettings() {
       await patchProfile({ units: val === "lb"
         ? { weight: "lb", length: "in", distance: "mi" }
         : { weight: "kg", length: "cm", distance: "km" } });
-      go("#/settings");                    // redraw so this screen's own numbers convert
+      redraw();                            // re-render in place; go() would be a no-op here
     };
     return b;
   };
   uSeg.appendChild(uOpt("kg", "kg · cm · km"));
   uSeg.appendChild(uOpt("lb", "lb · in · mi"));
+
+  // A RACK IS NOT A DISPLAY UNIT. Everything the app stores is metric and simply
+  // reads out in whichever system you pick — except the kit, which is physical
+  // objects. A 20 kg bar under imperial units reads "44 lb", which no gym owns,
+  // and the engine then rounds loads to weights nobody can load. So when the
+  // places still carry the OTHER system's stock rack, offer to re-base them.
+  // Only stock racks are offered: an edited rack describes a real gym.
+  const wantEquip = defaultEquipmentFor(profileNow);
+  const otherEquip = unitsNow === "lb" ? METRIC_EQUIPMENT : IMPERIAL_EQUIPMENT;
+  const stale = (profileNow && profileNow.places || []).filter((pl) => isStockRack(pl, otherEquip));
+  const rebaseStatus = el("p.note", { style: "margin-top:8px;min-height:1em" });
+  const rebaseRow = stale.length ? el("div", { style: "margin-top:14px;padding-top:14px;border-top:1px solid var(--line)" }, [
+    el("div", { style: "font-weight:700;font-size:.9rem", text: "Your kit is still a " + (unitsNow === "lb" ? "metric" : "US") + " rack" }),
+    el("p.note", { style: "margin-top:4px", text:
+      `${stale.map((p) => p.name).join(", ")} ${stale.length === 1 ? "uses" : "use"} a `
+      + `${otherEquip.barWeightKg === METRIC_EQUIPMENT.barWeightKg ? "20 kg bar with metric plates" : "45 lb bar with pound plates"}`
+      + `, so loads get prescribed at weights your rack can't make. Re-basing swaps in a `
+      + `${weightValue(wantEquip.barWeightKg)} ${weightLabel()} bar and `
+      + `${wantEquip.barbellPlatesKg.map((k) => weightValue(k)).join(" / ")} ${weightLabel()} plates. Your logged sets are untouched.` }),
+    el("button.btn.block", { style: "margin-top:10px", onclick: async () => {
+      const places = (profileNow.places || []).map((pl) =>
+        (isStockRack(pl, otherEquip) ? { ...pl, ...rackFields(wantEquip) } : pl));
+      await patchProfile({ places });
+      redraw();
+    } }, `Re-base to a ${unitsNow === "lb" ? "US" : "metric"} rack`),
+    rebaseStatus,
+  ]) : null;
+
   const unitsCard = el("div.card", {}, [
     el("div.label", { text: "Units" }),
     el("p.note", { style: "margin-top:4px", text: "Display only — your log is stored in metric and converted on the way out, so switching never rewrites a single logged set." }),
     el("div", { style: "margin-top:12px" }, [uSeg]),
+    rebaseRow,
+  ]);
+
+  // --- build a block ---------------------------------------------------------
+  // The builder used to be reachable ONLY from the zero-program state — the Home
+  // and Plan buttons both sit inside `if (!program)`, and the router only jumps
+  // to it when there is no active block. So the moment you had a plan, the thing
+  // that writes plans became unreachable, which is exactly backwards: re-planning
+  // is what you do repeatedly. This is the permanent way in.
+  const buildCard = el("div.card", {}, [
+    el("div.label", { text: "Training blocks" }),
+    el("p.note", { style: "margin-top:4px", text: program
+      ? "Build a new block when this one ends, or replace it if the plan stopped fitting. Existing blocks are kept — the app runs whichever one covers today."
+      : "Answer a few questions and the app writes the plan, then runs it with you session by session." }),
+    el("button.btn.block.primary", { style: "margin-top:12px", onclick: () => go("#/build") },
+      program ? "Build a new block" : "Build my first block"),
+  ]);
+
+  // --- what you track --------------------------------------------------------
+  // Onboarding asks this and, until the audit, nothing but two Progress cards
+  // ever read the answer — so an install could switch nutrition off at setup and
+  // still be shown a nutrition card forever. The toggles gate the optional cards
+  // below, and they live here so the answer is changeable rather than a one-shot
+  // question at setup. Turning one off hides its card; the data is kept.
+  const feats = (profileNow && profileNow.features) || {};
+  const featList = el("div.list", { style: "margin-top:12px" });
+  const paintFeats = (state) => featList.replaceChildren(...TRACKED_FEATURES.map(([key, title, sub]) => {
+    const on = !!state[key];
+    return el("button.item" + (on ? ".on" : ""), {
+      style: "text-align:left" + (on ? ";border-color:var(--accent)" : ""),
+      onclick: async () => {
+        const next = { ...state, [key]: !on };
+        paintFeats(next);
+        await patchProfile({ features: { [key]: !on } });
+        redraw();                          // the gated cards below appear/disappear
+      },
+    }, [
+      el("div.meta", {}, [el("div.t", { text: title }), el("div.s", { text: sub })]),
+      el("span.badge" + (on ? ".accent" : ""), { text: on ? "On" : "Off" }),
+    ]);
+  }));
+  paintFeats(feats);
+  const featuresCard = el("div.card", {}, [
+    el("div.label", { text: "What you track" }),
+    el("p.note", { style: "margin-top:4px", text: "Turning one off just hides its card — nothing you've already logged is deleted." }),
+    featList,
   ]);
 
   const themeCard = el("div.card", {}, [
@@ -695,19 +784,24 @@ export async function renderSettings() {
       ]),
     ]),
 
-    ...(programCard ? [sectionH("Program"), programCard] : []),
+    sectionH("Program"),
+    buildCard,
+    ...(programCard ? [programCard] : []),
 
-    sectionH("Health & body"),
-    nutritionCard,
-    measureCard,
-    dexaCard,
-    vo2Card,
+    // Each of these is gated on its own toggle in "What you track" below. A
+    // feature that is off keeps its data — it just stops asking about it.
+    ...(feats.nutrition || feats.measurements || feats.dexa || feats.vo2max ? [sectionH("Health & body")] : []),
+    feats.nutrition ? nutritionCard : null,
+    feats.measurements ? measureCard : null,
+    feats.dexa ? dexaCard : null,
+    feats.vo2max ? vo2Card : null,
 
     sectionH("Devices & cardio"),
     trackerCard,
-    hrCard,
+    feats.cardio ? hrCard : null,
 
     sectionH("Appearance"),
+    featuresCard,
     unitsCard,
     themeCard,
 

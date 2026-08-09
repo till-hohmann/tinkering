@@ -77,6 +77,13 @@ export async function renderWeek(pid, n) {
     children.push(el("div.label", { text: program.name }));
   }
 
+  // Building is not a one-off. The Plan tab is where you come to look at the
+  // block, so it is also where you ask for the next one — this used to exist
+  // only in the zero-program empty state, which made the builder unreachable
+  // the moment you had a plan.
+  children.push(el("button.btn.block", { style: "margin-top:10px", onclick: () => go("#/build") },
+    "+ Build a new block"));
+
   // --- week stepper (flips CONTINUOUSLY across blocks: last week of one block →
   //     week 1 of the next, and back) ---
   const pi = programs.findIndex((p) => p.id === program.id);

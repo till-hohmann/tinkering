@@ -30,7 +30,7 @@ import { THEMES, themeById, DEFAULT_THEME } from "../js/theme.js";
 import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT, METRIC_EQUIPMENT,
   defaultEquipmentFor, plateLabel, plateColor, weightLabel, isImperialWeight, setDisplayProfile,
   distanceValue, distanceToKm, lengthValue, lengthToCm, fmtPace as fmtPaceU, paceLabel,
-  METRIC_PROFILE, readEdit } from "../js/units.js";
+  METRIC_PROFILE, readEdit, isStockRack, rackFields } from "../js/units.js";
 import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay } from "../js/model.js";
 import { parseAppleExport, summarise, appleTime } from "../js/health/apple-import.js";
 
@@ -691,6 +691,32 @@ group("units — the ambient profile drives every read-only string", () => {
       emptied.value = "";                                    // unparseable → keep what was stored
       assert.equal(readEdit(emptied, 18, (v) => (Number(v) ? weightToKg(Number(v)) : null)), 18);
     } finally { setDisplayProfile(null); }
+  });
+  it("a rack is re-based only when it is still stock", () => {
+    // Switching units must not rewrite a rack somebody has edited: that rack
+    // describes a real gym. Only an untouched stock set may be swapped.
+    const metricPlace = { name: "Gym", ...rackFields(METRIC_EQUIPMENT) };
+    const imperialPlace = { name: "Gym", ...rackFields(IMPERIAL_EQUIPMENT) };
+    assert.equal(isStockRack(metricPlace, METRIC_EQUIPMENT), true);
+    assert.equal(isStockRack(imperialPlace, IMPERIAL_EQUIPMENT), true);
+    assert.equal(isStockRack(metricPlace, IMPERIAL_EQUIPMENT), false);
+    const edited = { ...metricPlace, barbellPlatesKg: [25, 20, 15, 10, 5] };   // no 2.5s
+    assert.equal(isStockRack(edited, METRIC_EQUIPMENT), false, "an edited rack must never be re-based");
+    const oddBar = { ...metricPlace, barWeightKg: 15 };                        // women's bar
+    assert.equal(isStockRack(oddBar, METRIC_EQUIPMENT), false);
+    assert.equal(isStockRack(null, METRIC_EQUIPMENT), false);
+    assert.equal(isStockRack(metricPlace, null), false);
+  });
+  it("re-basing yields kit that physically exists", () => {
+    const imperial = { units: { weight: "lb", length: "in", distance: "mi" } };
+    const rebased = { name: "Gym", ...rackFields(IMPERIAL_EQUIPMENT) };
+    assert.equal(weightValue(rebased.barWeightKg, imperial), 45);
+    assert.deepEqual(rebased.barbellPlatesKg.map((k) => weightValue(k, imperial)), [45, 35, 25, 10, 5, 2.5]);
+    // and the copy is deep — re-basing two places must not alias one array
+    const a = rackFields(METRIC_EQUIPMENT), b = rackFields(METRIC_EQUIPMENT);
+    a.barbellPlatesKg.push(999);
+    assert.equal(b.barbellPlatesKg.includes(999), false);
+    assert.equal(METRIC_EQUIPMENT.barbellPlatesKg.includes(999), false, "must not mutate the shared constant");
   });
   it("an explicit profile still beats the ambient", () => {
     asImperial(() => {

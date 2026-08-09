@@ -97,6 +97,20 @@ export function defaultProfile() {
   };
 }
 
+// The optional trackers, declared once. Onboarding asks these and Settings lets
+// you change the answer later — they were two separate lists until the audit
+// found the second half missing entirely, so an install could switch nutrition
+// off at setup and still be shown a nutrition card forever.
+export const TRACKED_FEATURES = [
+  ["cardio", "Running & cardio", "Guided runs, heart-rate zones, pace trends"],
+  ["weight", "Bodyweight", "A weigh-in trend over time"],
+  ["mobility", "Mobility & stability", "A short supplemental routine a few times a week"],
+  ["nutrition", "Food & energy", "Calories in vs out, protein target"],
+  ["measurements", "Tape measurements", "Waist and the rest — the honest fat-loss signal"],
+  ["dexa", "DEXA scans", "Full body composition, if you get them"],
+  ["vo2max", "VO₂max", "Track the number your watch reports"],
+];
+
 // A place is a gym, a home rack, a hotel. `implements` is the vocabulary the
 // engines already speak (barbell / ez_bar / cable / dumbbell_pair /
 // dumbbell_single / bodyweight / treadmill / bike / rower / elliptical).

@@ -172,6 +172,30 @@ export const METRIC_EQUIPMENT = {
 export const defaultEquipmentFor = (profile) =>
   (isImperialWeight(profile) ? IMPERIAL_EQUIPMENT : METRIC_EQUIPMENT);
 
+// --- has this place still got a stock rack? ----------------------------------
+// Switching units is a display change for every number the app STORES, but a
+// rack is not a number — it is physical objects. A 20 kg bar shown in pounds is
+// "44 lb", which is not a bar anyone owns, and the engine would then round loads
+// to weights that cannot be loaded. So Settings offers to re-base the kit on a
+// switch, and this is the guard on that offer: only a rack that still matches
+// the stock set may be rewritten. A rack somebody has edited is a statement
+// about their own gym and must never be silently replaced.
+const near = (a, b) => a != null && b != null && Math.abs(a - b) < 0.05;
+
+export function isStockRack(place, equip) {
+  if (!place || !equip) return false;
+  if (!near(place.barWeightKg, equip.barWeightKg)) return false;
+  const p = place.barbellPlatesKg || [], q = equip.barbellPlatesKg || [];
+  return p.length === q.length && p.every((v, i) => near(v, q[i]));
+}
+
+// The kit fields a re-base replaces — everything that names a real object.
+export const rackFields = (equip) => ({
+  barWeightKg: equip.barWeightKg, ezBarWeightKg: equip.ezBarWeightKg,
+  barbellPlatesKg: [...equip.barbellPlatesKg], ezBarPlatesKg: [...equip.ezBarPlatesKg],
+  cable: { ...equip.cable }, dumbbells: { ...equip.dumbbells },
+});
+
 // Plate face colours, keyed by the DISPLAYED denomination so an imperial rack
 // gets the colours an American lifter expects (45 blue, 25 green, 10 white)
 // rather than whatever the kg equivalent happens to land on.

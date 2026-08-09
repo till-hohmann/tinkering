@@ -22,7 +22,7 @@
 // features stay off.
 
 import { el, mount, go, backBtn, addActionBar } from "../ui.js";
-import { getProfile, patchProfile, defaultProfile } from "../profile.js";
+import { getProfile, patchProfile, defaultProfile, TRACKED_FEATURES } from "../profile.js";
 import { PROVIDERS, resetProviderCache } from "../health/index.js";
 import { THEMES, applyTheme, DEFAULT_THEME } from "../theme.js";
 import { todayISO } from "../model.js";
@@ -151,15 +151,7 @@ function about(body) {
 // lit up implies you should be filling all of them, which is how people end up
 // logging nothing.
 function track(body) {
-  const OPTS = [
-    ["cardio", "Running & cardio", "Guided runs, heart-rate zones, pace trends"],
-    ["weight", "Bodyweight", "A weigh-in trend over time"],
-    ["mobility", "Mobility & stability", "A short supplemental routine a few times a week"],
-    ["nutrition", "Food & energy", "Calories in vs out, protein target"],
-    ["measurements", "Tape measurements", "Waist and the rest — the honest fat-loss signal"],
-    ["dexa", "DEXA scans", "Full body composition, if you get them"],
-    ["vo2max", "VO₂max", "Track the number your watch reports"],
-  ];
+  const OPTS = TRACKED_FEATURES;          // shared with Settings, so they can't drift
   const list = el("div.list", { style: "margin-top:16px" });
   const paint = () => list.replaceChildren(...OPTS.map(([key, title, sub]) => {
     const on = !!S.features[key];
