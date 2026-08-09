@@ -36,6 +36,7 @@ import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT,
 import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay } from "../js/model.js";
 import { parseAppleExport, summarise, appleTime } from "../js/health/apple-import.js";
 import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES } from "../js/substitution.js";
+import * as mob from "../js/mobility.js";
 
 let passed = 0, failed = 0;
 const groups = [];
@@ -377,6 +378,44 @@ group("substitution — every candidate resolves to a real lift", () => {
   it("the program's own entry still wins over the library", () => {
     const custom = { exercises: { db_goblet_squat: { name: "My Goblet", implement: "dumbbell_single", cue: "" } } };
     assert.equal(metaFor(custom, "db_goblet_squat").name, "My Goblet");
+  });
+});
+
+// ---------------------------------------------------------------------------
+group("mobility — the routine is data, so a build can serve two people", () => {
+  it("the build's own routine is storable — days as an array, not a Set", () => {
+    const r = mob.defaultRoutine();
+    assert.ok(Array.isArray(r.days) && r.days.length, "days must survive JSON");
+    assert.deepEqual(JSON.parse(JSON.stringify(r)), r, "routine must round-trip through JSON");
+    assert.ok(Object.keys(r.sessions).length >= 1);
+  });
+  it("applying a stored routine swaps what every view reads", () => {
+    const custom = { title: "My rehab", minutes: 12, days: ["Mon", "Thu"], sessions: {
+      Mon: { key: "R", title: "Reset", focus: "knee", items: [{ id: "x", name: "X", mode: "timed", durationSeconds: 30 }] },
+      Thu: { key: "A", title: "Hips", focus: "hips", items: [{ id: "y", name: "Y", mode: "timed", durationSeconds: 30 }] },
+    } };
+    assert.equal(mob.applyRoutine(custom), true);
+    assert.equal(mob.MOBILITY_TITLE, "My rehab");
+    assert.equal(mob.MOBILITY_MINUTES, 12);
+    assert.equal(mob.isMobilityDay("Mon"), true);
+    assert.equal(mob.isMobilityDay("Wed"), false, "the default's days must not linger");
+    assert.equal(mob.sessionFor("Mon").title, "Reset");
+    assert.equal(mob.sessionByKey("R").title, "Reset");
+  });
+  it("days fall back to whatever weekdays the routine defines", () => {
+    assert.equal(mob.applyRoutine({ sessions: { Sat: { key: "A", title: "S", items: [] } } }), true);
+    assert.deepEqual([...mob.MOBILITY_DAYS], ["Sat"]);
+  });
+  it("junk is refused rather than leaving the app with no sessions", () => {
+    const before = mob.MOBILITY_SESSIONS;
+    for (const bad of [null, undefined, {}, { sessions: {} }, { sessions: "nope" }, { title: "x" }]) {
+      assert.equal(mob.applyRoutine(bad), false, `accepted ${JSON.stringify(bad)}`);
+    }
+    assert.equal(mob.MOBILITY_SESSIONS, before, "a refused routine must change nothing");
+  });
+  it("restores cleanly to the build default", () => {
+    assert.equal(mob.applyRoutine(mob.defaultRoutine()), true);
+    assert.equal(mob.MOBILITY_TITLE, "Mobility & stability");
   });
 });
 

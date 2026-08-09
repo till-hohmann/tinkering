@@ -1,16 +1,20 @@
-# deploy.ps1 — deploy the app to Cloudflare Pages (project: fitness-tracker).
+# deploy.ps1 — deploy the app to Cloudflare Pages.
 #
-# Ships the app + the program plans + data/seed-sessions.json. The seed file is
-# deployed ON PURPOSE: it is the auto-restore safety net, so if on-device storage
-# is ever cleared (e.g. the home-screen app is removed/re-added) the history
-# repopulates on next launch. Seeding is non-destructive (store.js only fills
-# missing sessions, never overwrites local data). It sits on the unguessable
-# *.pages.dev URL and contains only training logs (no credentials).
-# Still NEVER deployed: full backups / exported logs (fitness-backup*.json, fitness-log*.md).
+# Ships the PUBLIC build by default: the app, and nothing personal. No endpoint,
+# no token, no personal routine, no training blocks, no logged history. That is
+# what lets ONE deployment serve several people — each install holds its own
+# backup endpoint + token in Settings, on its own device, and pulls its own data.
+#
+# Set NINEFOLD_BAKE_OVERLAY=1 to bake a private overlay in instead. See the
+# overlay section below for what that ships and why it is no longer the default.
+#
+# NEVER deployed either way: full backups / exported logs
+# (fitness-backup*.json, fitness-log*.md).
 #
 #   pwsh tools/deploy.ps1
 #
-# Remember to bump CACHE in sw.js before deploying so devices pick up changes.
+# Remember to bump CACHE in sw.js (and APP_VERSION in js/version.js) before
+# deploying so devices pick up changes.
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -29,35 +33,59 @@ if (Test-Path img) {
   Copy-Item -Recurse img $stage
   Get-ChildItem (Join-Path $stage "img") -Recurse -Filter *.png -ErrorAction SilentlyContinue | Remove-Item -Force
 }
-# Program plans. The PUBLIC repo ships none — a fresh install has no program and
-# the in-app builder writes the first one. Personal blocks live in the private
-# overlay, so this copies whatever is there (possibly nothing).
-if (Test-Path overlay/data) {
-  Get-ChildItem overlay/data -Filter *.json | ForEach-Object { Copy-Item $_.FullName (Join-Path $stage "data") }
-}
-if (Test-Path data/seed-sessions.json) {                                        # history auto-restore net
-  Copy-Item data/seed-sessions.json (Join-Path $stage "data")
-}
+# --- private overlay: OFF by default ---------------------------------------
+#
+# Baking a personal install into the deployment is now OPT-IN, because a
+# deployment is a public web address and everything staged here is served to
+# anyone who has it. Four things used to be baked in:
+#
+#   config.js            your Worker endpoint AND its token — readable by anyone
+#                        who fetches the JS, which is what forced a rotation once
+#   mobility-program.js  a routine written around one person's injuries
+#   overlay/data/*.json  your training blocks, seeded into any install on first run
+#   seed-sessions.json   your entire logged history, likewise
+#
+# None of that is safe on an address more than one person uses, and the app no
+# longer needs any of it: the endpoint and token belong in Settings (device-local,
+# never synced, never in the JS), the routine is a synced pref, and programs and
+# sessions come back from the cloud backup. So the default deploy is now the
+# PUBLIC build, which one URL can serve to several people who each keep their own
+# backup.
+#
+# Set NINEFOLD_BAKE_OVERLAY=1 for the old single-user behaviour. It is convenient
+# for a private URL nobody else opens — a wiped device recovers with no input,
+# because the credential is already in the build — and that convenience is exactly
+# the exposure, so it should be a decision, not a default.
+$bake = $env:NINEFOLD_BAKE_OVERLAY -eq "1"
 
-# --- private overlay -------------------------------------------------------
-# The repo's js/config.js ships EMPTY (local-only, no secrets). overlay/config.js
-# is gitignored and holds the real endpoints + token. Copy it over the staged
-# copy so the deployed app is "public code + my values", and nothing else.
-# Each entry is  overlay-file -> the staged public file it replaces.
-$overlayMap = @{
-  "config.js"           = "js/config.js"
-  "mobility-program.js" = "js/mobility-program.js"
-}
-$applied = @()
-foreach ($src in $overlayMap.Keys) {
-  $from = Join-Path $root "overlay/$src"
-  if (Test-Path $from) {
-    Copy-Item $from (Join-Path $stage $overlayMap[$src]) -Force
-    $applied += $src
+if ($bake) {
+  # Program plans. The PUBLIC repo ships none — a fresh install has no program and
+  # the in-app builder writes the first one.
+  if (Test-Path overlay/data) {
+    Get-ChildItem overlay/data -Filter *.json | ForEach-Object { Copy-Item $_.FullName (Join-Path $stage "data") }
   }
+  if (Test-Path data/seed-sessions.json) {                                      # history auto-restore net
+    Copy-Item data/seed-sessions.json (Join-Path $stage "data")
+  }
+  # Each entry is  overlay-file -> the staged public file it replaces.
+  $overlayMap = @{
+    "config.js"           = "js/config.js"
+    "mobility-program.js" = "js/mobility-program.js"
+  }
+  $applied = @()
+  foreach ($src in $overlayMap.Keys) {
+    $from = Join-Path $root "overlay/$src"
+    if (Test-Path $from) {
+      Copy-Item $from (Join-Path $stage $overlayMap[$src]) -Force
+      $applied += $src
+    }
+  }
+  if ($applied.Count) { Write-Host "BAKED private overlay: $($applied -join ', ') - this URL is now single-user." }
+  else { Write-Host "NINEFOLD_BAKE_OVERLAY set but no overlay/ found - deploying the PUBLIC build." }
+} else {
+  Write-Host "Deploying the PUBLIC build: no credentials, no personal routine, no programs, no history."
+  Write-Host "  Each install sets its own backup under Settings -> Data & backup -> Cloud backup."
 }
-if ($applied.Count) { Write-Host "Applied private overlay: $($applied -join ', ')" }
-else { Write-Host "No overlay/ found - deploying the PUBLIC build (local-only, generic routines)." }
 
 # safety: refuse to deploy full backups / exported logs (those stay off the URL)
 $leak = Get-ChildItem -Recurse $stage -Include "fitness-backup*.json", "fitness-log*.md"
@@ -66,6 +94,21 @@ if ($leak) { throw "Refusing to deploy: backup/export data in staging: $($leak.F
 # safety: the staged config must parse and must not be a half-applied overlay
 $staged = Get-Content (Join-Path $stage "js/config.js") -Raw
 if ($staged -notmatch "BUILD_CONFIG") { throw "Refusing to deploy: staged js/config.js looks wrong." }
+
+# safety: a NON-baked deploy must carry nothing personal. This is the guard that
+# makes a shared URL safe to keep using — the failure mode it exists for is a
+# future edit quietly re-adding an overlay copy and nobody noticing until someone
+# else's install has your token in it.
+if (-not $bake) {
+  if ($staged -notmatch 'endpoint:\s*null' -or $staged -notmatch 'token:\s*null') {
+    throw "Refusing to deploy: staged js/config.js carries an endpoint or token, but this is a public build."
+  }
+  if ($staged -match 'legacyDefaults:\s*\{') {
+    throw "Refusing to deploy: staged js/config.js carries legacyDefaults, but this is a public build."
+  }
+  $personal = Get-ChildItem -Recurse (Join-Path $stage "data") -Filter *.json -ErrorAction SilentlyContinue
+  if ($personal) { throw "Refusing to deploy: personal program/session data in staging: $($personal.Name -join ', ')" }
+}
 
 # Deploy. Set NINEFOLD_PROJECT to your own Cloudflare Pages project name.
 #

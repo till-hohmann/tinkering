@@ -12,7 +12,7 @@ import { DEFAULT_ZONE_BOUNDS, maxHRof } from "./cardio-intel.js";
 // and its bearer token, i.e. a credential for this very sync channel — syncing
 // it through the service it unlocks would be circular, and it would put a
 // working key into every export file. It stays device-local, always.
-export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "weightLog", "mobilityLog", "mobilityProg"];
+export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine"];
 export async function syncedPrefs() {
   const out = {};
   for (const k of SYNCED_PREFS) { const v = await db.getPref(k); if (v !== undefined) out[k] = v; }
@@ -287,6 +287,28 @@ export async function mobilityDoneDates() { return new Set((await getMobilityLog
 // consumed/advanced by mobility.js applyHoldResults after each tracked session.
 export async function getMobilityProg() { return (await db.getPref("mobilityProg")) || {}; }
 export async function setMobilityProg(state) { await db.setPref("mobilityProg", state || {}); pushCloud(); }
+
+// The routine ITSELF — which sessions exist and what's in them. Synced, because
+// a routine written around one person's knees is personal data and belongs in
+// their backup, not in the build everybody downloads. See mobility.js.
+export async function getMobilityRoutine() { return (await db.getPref("mobilityRoutine")) || null; }
+export async function setMobilityRoutine(r) { await db.setPref("mobilityRoutine", r || null); pushCloud(); }
+
+// Resolve the routine ONCE at boot, and capture the build's own routine the
+// first time if nothing is stored yet.
+//
+// That capture is the migration: an install whose build carries a personal
+// overlay routine records it as data here, so the very next release can stop
+// shipping it without anyone losing anything. A fresh install captures the
+// general routine instead, which is the correct default for them.
+export async function initMobilityRoutine() {
+  const { applyRoutine, defaultRoutine } = await import("./mobility.js");
+  const stored = await getMobilityRoutine();
+  if (stored && applyRoutine(stored)) return stored;
+  const built = defaultRoutine();
+  await db.setPref("mobilityRoutine", built);      // no pushCloud: boot pushes anyway
+  return built;
+}
 
 // --- Apple Health, imported locally ---------------------------------------
 // The Shortcuts bridge posts to the backup Worker; this is the same shape held

@@ -11,8 +11,50 @@
 // that comes in under 70% of target backs the target off to what was really
 // held (floored at HOLD_MIN). Deload sessions run at 70% and never update state.
 
-export { MOBILITY_DAYS, MOBILITY_SESSIONS, MOBILITY_TITLE, MOBILITY_MINUTES } from "./mobility-program.js";
-import { MOBILITY_DAYS, MOBILITY_SESSIONS } from "./mobility-program.js";
+// THE ROUTINE IS DATA, NOT CODE — and these are deliberately `let`.
+//
+// mobility-program.js is the DEFAULT routine, and it used to be the only one:
+// a private overlay replaced the whole file at deploy time, which meant a
+// personal rehab routine could only exist by baking it into the build. That is
+// fine while a build serves one person and wrong the moment it serves two, and
+// it was the last personal thing left in the code — everything else (goal, sex,
+// zones, places, programs) had already moved into the profile or the backup.
+//
+// So the resolved routine now lives in a synced pref, and these exports are
+// live bindings over it. Every view imports the same four names it always did
+// and none of them needs to know the routine can be swapped; reassigning here
+// updates the binding they already hold.
+import { MOBILITY_DAYS as DEFAULT_DAYS, MOBILITY_SESSIONS as DEFAULT_SESSIONS,
+  MOBILITY_TITLE as DEFAULT_TITLE, MOBILITY_MINUTES as DEFAULT_MINUTES } from "./mobility-program.js";
+
+export let MOBILITY_DAYS = DEFAULT_DAYS;
+export let MOBILITY_SESSIONS = DEFAULT_SESSIONS;
+export let MOBILITY_TITLE = DEFAULT_TITLE;
+export let MOBILITY_MINUTES = DEFAULT_MINUTES;
+
+/** The build's own routine, as a storable record. */
+export const defaultRoutine = () => ({
+  title: DEFAULT_TITLE,
+  minutes: DEFAULT_MINUTES,
+  days: [...DEFAULT_DAYS],
+  sessions: DEFAULT_SESSIONS,
+});
+
+/**
+ * Swap in a stored routine. Returns false and changes nothing on anything that
+ * doesn't look like a routine — a half-written pref must degrade to the built-in
+ * one rather than leaving the app with no sessions at all.
+ */
+export function applyRoutine(r) {
+  if (!r || !r.sessions || typeof r.sessions !== "object" || !Object.keys(r.sessions).length) return false;
+  MOBILITY_SESSIONS = r.sessions;
+  // Days default to whichever weekdays the routine actually defines, so a stored
+  // routine that predates the `days` field still schedules correctly.
+  MOBILITY_DAYS = new Set(Array.isArray(r.days) && r.days.length ? r.days : Object.keys(r.sessions));
+  MOBILITY_TITLE = r.title || DEFAULT_TITLE;
+  MOBILITY_MINUTES = Number.isFinite(r.minutes) ? r.minutes : DEFAULT_MINUTES;
+  return true;
+}
 
 // Transition seconds between steps. Floor/wall/couch position changes need more
 // switching time than the standing warm-up's 5 s.
