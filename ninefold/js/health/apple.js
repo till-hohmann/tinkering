@@ -28,6 +28,19 @@ import { CAP, acwr, zoneMinutesFromSamples } from "./index.js";
 import { todayISO } from "../model.js";
 import { getProfile, resolveZoneBounds } from "../profile.js";
 
+// NUMBERS MAY ARRIVE AS STRINGS, and must still count.
+//
+// Shortcuts' JSON body builder offers Number and Text field types, and its Number
+// type TRUNCATES decimals — a real 7.1 hours of sleep posts as 7, a 96.2 kg
+// weigh-in as 96, a 44.2 VO2max as 44. The workaround is to send decimals as
+// Text, which only helps if the reader coerces. It did so for energy and for
+// workouts, and not for the seven day-level fields, so the advice "use Text"
+// would have silently disabled half of them.
+//
+// Found by running the real thing on a real phone: the first successful push
+// stored sleepHours: 7.
+const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+
 const CACHE_MS = 120000;                 // the phone pushes at most a few times a day
 let cache = { at: 0, store: null };
 
@@ -86,10 +99,10 @@ const dayOf = (store, iso) => daysOf(store)[iso] || null;
 // flattens to the middle no matter what.
 function baseline(store, iso, field, n = 28) {
   const vals = Object.entries(daysOf(store))
-    .filter(([d, v]) => d < iso && v && Number.isFinite(v[field]))
+    .filter(([d, v]) => d < iso && v && num(v[field]) != null)
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
     .slice(0, n)
-    .map(([, v]) => v[field]);
+    .map(([, v]) => num(v[field]));
   if (vals.length < 5) return null;      // too little history to compare against
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
@@ -107,16 +120,16 @@ function baseline(store, iso, field, n = 28) {
 export function deriveRecovery(day, bases) {
   if (!day) return null;
   const parts = [];
-  if (Number.isFinite(day.hrv) && bases.hrv) {
-    const r = day.hrv / bases.hrv;                       // 1.0 = at baseline
+  if (num(day.hrv) != null && bases.hrv) {
+    const r = num(day.hrv) / bases.hrv;                       // 1.0 = at baseline
     parts.push({ w: 0.5, s: clamp01((r - 0.7) / 0.5) }); // 0.7x -> 0, 1.2x -> 1
   }
-  if (Number.isFinite(day.restingHR) && bases.rhr) {
-    const r = day.restingHR / bases.rhr;                 // lower is better
+  if (num(day.restingHR) != null && bases.rhr) {
+    const r = num(day.restingHR) / bases.rhr;                 // lower is better
     parts.push({ w: 0.3, s: clamp01((1.1 - r) / 0.2) }); // 1.1x -> 0, 0.9x -> 1
   }
-  if (Number.isFinite(day.sleepHours)) {
-    parts.push({ w: 0.2, s: clamp01((day.sleepHours - 4.5) / 3) });  // 4.5h -> 0, 7.5h -> 1
+  if (num(day.sleepHours) != null) {
+    parts.push({ w: 0.2, s: clamp01((num(day.sleepHours) - 4.5) / 3) });  // 4.5h -> 0, 7.5h -> 1
   }
   if (!parts.length) return null;
   const wsum = parts.reduce((a, p) => a + p.w, 0);
@@ -201,8 +214,8 @@ const provider = {
     if (pct == null) return null;
     return {
       recoveryPct: pct,
-      restingHR: Number.isFinite(day.restingHR) ? Math.round(day.restingHR) : null,
-      hrv: Number.isFinite(day.hrv) ? Math.round(day.hrv) : null,
+      restingHR: num(day.restingHR) != null ? Math.round(num(day.restingHR)) : null,
+      hrv: num(day.hrv) != null ? Math.round(num(day.hrv)) : null,
       derived: true,
       source: "Apple Health",
       basis: bases.hrv ? "vs your 28-day HRV and resting-HR baseline" : "from sleep only",
@@ -212,12 +225,12 @@ const provider = {
   async sleepFor(iso) {
     const store = await fetchStore();
     const day = store && (dayOf(store, iso || todayISO()) || dayOf(store, prevISO(iso || todayISO())));
-    if (!day || !Number.isFinite(day.sleepHours)) return null;
+    if (!day || num(day.sleepHours) == null) return null;
     return {
-      hours: Math.round(day.sleepHours * 10) / 10,
+      hours: Math.round(num(day.sleepHours) * 10) / 10,
       // Apple has no "sleep performance" score; express it against a 8 h need so
       // the readiness auto-fill has the same 0-100 shape it expects.
-      performancePct: Math.round(clamp01(day.sleepHours / 8) * 100),
+      performancePct: Math.round(clamp01(num(day.sleepHours) / 8) * 100),
       efficiencyPct: null,
     };
   },
@@ -229,18 +242,18 @@ const provider = {
     const store = await fetchStore();
     const day = store && dayOf(store, iso || todayISO());
     if (!day) return null;
-    const a = Number(day.activeKcal), b = Number(day.basalKcal);
-    if (!Number.isFinite(a) && !Number.isFinite(b)) return null;
-    return Math.round((Number.isFinite(a) ? a : 0) + (Number.isFinite(b) ? b : 0));
+    const a = num(day.activeKcal), b = num(day.basalKcal);
+    if (a == null && b == null) return null;
+    return Math.round((a || 0) + (b || 0));
   },
 
   async burnByDate() {
     const store = await fetchStore();
     const out = {};
     for (const [iso, d] of Object.entries(daysOf(store))) {
-      const a = Number(d.activeKcal), b = Number(d.basalKcal);
-      if (Number.isFinite(a) || Number.isFinite(b)) {
-        out[iso] = Math.round((Number.isFinite(a) ? a : 0) + (Number.isFinite(b) ? b : 0));
+      const a = num(d.activeKcal), b = num(d.basalKcal);
+      if (a != null || b != null) {
+        out[iso] = Math.round((a || 0) + (b || 0));
       }
     }
     return out;
@@ -268,13 +281,13 @@ const provider = {
     const dates = Object.keys(daysOf(store)).sort().reverse();
     for (const d of dates) {
       const day = daysOf(store)[d];
-      if (Number.isFinite(day.weightKg)) {
+      if (num(day.weightKg) != null) {
         return {
           weightKg: Math.round(day.weightKg * 10) / 10,
-          heightM: Number.isFinite(day.heightM) ? day.heightM : null,
+          heightM: num(day.heightM),
           // Apple records observed max HR per workout, not a stored profile
           // value, so this is the highest seen recently rather than a true max.
-          maxHR: Number.isFinite(day.maxHR) ? Math.round(day.maxHR) : null,
+          maxHR: num(day.maxHR) != null ? Math.round(num(day.maxHR)) : null,
         };
       }
     }
@@ -287,8 +300,8 @@ const provider = {
     if (!store) return null;
     const dates = Object.keys(daysOf(store)).sort().reverse();
     for (const d of dates) {
-      const v = daysOf(store)[d].vo2max;
-      if (Number.isFinite(v)) return { value: Math.round(v * 10) / 10, date: d };
+      const v = num(daysOf(store)[d].vo2max);
+      if (v != null) return { value: Math.round(v * 10) / 10, date: d };
     }
     return null;
   },
@@ -299,8 +312,8 @@ const provider = {
     const store = await fetchStore();
     if (!store) return null;
     const days = Object.entries(daysOf(store))
-      .filter(([, d]) => Number.isFinite(d.activeKcal))
-      .map(([date, d]) => ({ date, value: d.activeKcal }));
+      .filter(([, d]) => num(d.activeKcal) != null)
+      .map(([date, d]) => ({ date, value: num(d.activeKcal) }));
     return acwr(days, { unit: "kcal", label: "Active energy" });
   },
 };

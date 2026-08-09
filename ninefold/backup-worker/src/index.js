@@ -147,7 +147,21 @@ export default {
       try { incoming = JSON.parse(body); } catch (_) {
         return new Response("invalid json", { status: 400, headers: H });
       }
-      const days = Array.isArray(incoming) ? incoming : (incoming && incoming.days) || [];
+      // THREE ACCEPTED SHAPES, because the client is a hand-built Shortcut.
+      //   { days: [ {...} ] }   the documented one
+      //   [ {...} ]             a bare array
+      //   { date, hrv, ... }    ONE day, unwrapped
+      //
+      // The third exists for a practical reason: Shortcuts can build a flat JSON
+      // body from its own UI in a few taps, where a nested array-of-dictionaries
+      // means routing a Text action through a file variable — a step that fails
+      // silently and reports itself as "the network connection was lost".
+      // Meeting the tool where it is costs three lines and removes the single
+      // most likely reason someone gives up during setup.
+      const days = Array.isArray(incoming) ? incoming
+        : incoming && Array.isArray(incoming.days) ? incoming.days
+        : incoming && typeof incoming.date === "string" ? [incoming]
+        : [];
       if (!Array.isArray(days) || !days.length)
         return new Response(JSON.stringify({ error: "no_days" }), { status: 400, headers: jsonHeaders });
 

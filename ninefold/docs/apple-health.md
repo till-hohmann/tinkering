@@ -35,6 +35,32 @@ bearer token. One object, containing a `days` array:
 }
 ```
 
+### The shape Shortcuts finds easy
+
+A single day may also be posted **unwrapped**, which is what you want when building
+this in Shortcuts:
+
+```json
+{ "date": "2026-08-09", "restingHR": 52, "hrv": 98, "sleepHours": 7.1 }
+```
+
+That matters more than it looks. With this shape you can set *Get Contents of URL*
+→ **Request Body: JSON** and add one flat field per metric in the Shortcuts UI. The
+wrapped shape needs an array of dictionaries, which in practice means composing the
+JSON in a **Text** action and routing it through a file variable — a step that
+fails silently and reports itself as *"The network connection was lost."*
+
+A bare array `[ { … } ]` is accepted too. All three shapes behave identically.
+
+### Send decimals as Text
+
+Shortcuts' JSON **Number** field type **truncates decimals**: 7.1 hours of sleep
+arrives as 7, a 96.2 kg weigh-in as 96, a 44.2 VO₂max as 44. Use the **Text** field
+type for anything with a decimal point — every field here is parsed numerically, so
+a quoted `"7.1"` counts exactly as `7.1` does.
+
+`date` is always Text.
+
 **The key names are read exactly as written.** This is the one thing to get right:
 the Worker stores whatever it is given, so a Shortcut sending `restingHeartRate`
 instead of `restingHR` will push successfully, report a fresh timestamp, and
