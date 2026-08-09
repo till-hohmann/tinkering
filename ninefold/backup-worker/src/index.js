@@ -101,7 +101,7 @@ export default {
       // able to tell this store to forget too. Both are cases where the incoming
       // snapshot is strictly poorer than the stored one in a way no user action
       // produces, so the write is far more likely to be an accident than intent.
-      const prevRaw = (parsed.sessions.length === 0 || !hasProfile(parsed))
+      const prevRaw = (parsed.sessions.length === 0 || !hasProfile(parsed) || parsed.installId)
         ? await env.STRONG_BACKUP.get(STATE_KEY) : null;
       if (prevRaw) {
         let prev = null;
@@ -119,6 +119,20 @@ export default {
           //    a fresh install starts with. Left unguarded, the first push after a
           //    mis-stepped restore overwrites the only copy of the zones, goal,
           //    places and routine that the restore was supposed to bring back.
+          // 3. A DIFFERENT INSTALL. The two guards above both assume the pusher is
+          //    yours and merely confused; this one assumes it isn't yours at all.
+          //    Two people set the app up, one ends up holding the other's endpoint
+          //    and token, and a perfectly healthy snapshot from the wrong phone
+          //    replaces a stranger's training history. Nothing above catches it —
+          //    the data is complete, the profile is set, it just belongs to
+          //    somebody else. A device restoring from this backup adopts its id,
+          //    so legitimate devices are unaffected.
+          if (parsed.installId && prev.installId && parsed.installId !== prev.installId) {
+            return new Response(JSON.stringify({ error: "refused_foreign_install",
+              detail: "This backup belongs to a different install. If this device should own it, "
+                + "restore from the backup first — that adopts its identity — rather than pushing over it." }),
+              { status: 409, headers: jsonHeaders });
+          }
           if (!hasProfile(parsed) && hasProfile(prev)) {
             return new Response(JSON.stringify({ error: "refused_profile_regression",
               detail: "Stored backup has a set-up profile; refusing to replace it with one that has none. "

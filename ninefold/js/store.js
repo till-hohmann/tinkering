@@ -40,8 +40,32 @@ async function restorePrefs(prefs, { overwrite = false } = {}) {
 }
 
 // Full local state for the cloud backup (programs + sessions + synced settings).
+// WHICH INSTALL THIS IS. Device-local, never synced, generated once.
+//
+// It exists so a backup can tell its own devices apart from someone else's. The
+// scenario is mundane and unrecoverable: two people set up the app, one ends up
+// holding the other's endpoint and token — a copied line, a forwarded note — and
+// the wrong install pushes a complete, healthy-looking snapshot straight over a
+// stranger's training history. The existing guards refuse a BLANK push; they have
+// nothing to say about a full one from the wrong person.
+//
+// A restored device adopts the id out of the backup it restored from, so it stays
+// the same install and keeps pushing normally.
+export async function getInstallId() {
+  let id = await db.getPref("installId");
+  if (!id) {
+    id = "inst-" + crypto.randomUUID();
+    await db.setPref("installId", id);
+  }
+  return id;
+}
+export async function adoptInstallId(id) {
+  if (typeof id === "string" && id) await db.setPref("installId", id);
+}
+
 export async function snapshot() {
   return { kind: "strong-backup", exportedAt: new Date().toISOString(),
+    installId: await getInstallId(),
     programs: await db.getAll("programs"), sessions: await db.getAll("sessions"),
     prefs: await syncedPrefs() };
 }
@@ -71,6 +95,10 @@ export async function mergeRestore(data, { overwrite = false } = {}) {
     for (const s of data.sessions) if (s && s.id && !have.has(s.id)) { await db.put("sessions", s); added++; }
   }
   await restorePrefs(data.prefs, { overwrite });
+  // An EXPLICIT restore means "this device is now that install", so it takes on
+  // the backup's identity. Without this a restored phone would look like a
+  // stranger to its own backup and be locked out of writing to it.
+  if (overwrite) await adoptInstallId(data.installId);
   return added;
 }
 
@@ -278,6 +306,7 @@ export async function restoreBackup(data) {
   // list — the saved choice beats an inference. Older backups predate the keys,
   // and for those the guess above stands.
   await restorePrefs(data.prefs, { overwrite: true });   // explicit restore adopts saved settings
+  await adoptInstallId(data.installId);                  // ...and the backup's identity
   pushCloud();
 }
 

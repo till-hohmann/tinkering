@@ -1057,8 +1057,13 @@ async function workerTests() {
     headers: { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" },
     body: JSON.stringify(body) }), env);
 
-  const real   = { sessions: [{ id: "a" }, { id: "b" }], programs: [],
+  const real   = { installId: "inst-mine", sessions: [{ id: "a" }, { id: "b" }], programs: [],
                    prefs: { profile: { onboardedAt: "2026-01-15", physiology: { maxHR: 194 } } } };
+  // A complete, healthy snapshot — from somebody else's phone.
+  const foreign = { installId: "inst-hers", sessions: [{ id: "x" }, { id: "y" }], programs: [],
+                    prefs: { profile: { onboardedAt: "2026-08-09", physiology: { maxHR: 178 } } } };
+  const noId   = { sessions: [{ id: "a" }], programs: [],
+                   prefs: { profile: { onboardedAt: "2026-01-15" } } };
   const blank  = { sessions: [{ id: "a" }, { id: "b" }], programs: [], prefs: { profile: { onboardedAt: null } } };
   const noPref = { sessions: [{ id: "a" }], programs: [] };
   const empty  = { sessions: [], programs: [], prefs: { profile: { onboardedAt: "2026-01-15" } } };
@@ -1071,7 +1076,11 @@ async function workerTests() {
   const overNone  = (await put(noPref)).status;
   const overEmpty = (await put(empty)).status;
   const again  = (await put(real)).status;
+  const overForeign = (await put(foreign)).status;
+  // Captured HERE, before the next push: an accepted write naturally replaces the
+  // stored blob, so asserting after it would test the wrong snapshot.
   const stored = JSON.parse(kv.values().next().value);
+  const overNoId = (await put(noId)).status;          // an older client, pre-installId
 
   group("backup Worker — a wiped device cannot erase the backup", () => {
     it("accepts a set-up install", () => assert.equal(first, 200));
@@ -1082,6 +1091,17 @@ async function workerTests() {
     it("leaves the stored profile untouched through all of it", () => {
       assert.equal(stored.prefs.profile.onboardedAt, "2026-01-15");
       assert.equal(stored.prefs.profile.physiology.maxHR, 194);
+    });
+    it("refuses a complete snapshot from a DIFFERENT install", () => {
+      // The credential-confusion case: two people, one holding the other's token.
+      // Nothing else catches it — the data is full and the profile is set.
+      assert.equal(overForeign, 409);
+      assert.equal(stored.prefs.profile.physiology.maxHR, 194, "someone else's numbers got in");
+      assert.deepEqual(stored.sessions.map((s) => s.id), ["a", "b"]);
+    });
+    it("still accepts a client that sends no install id at all", () => {
+      // An older install must not be locked out of its own backup.
+      assert.equal(overNoId, 200);
     });
     it("does NOT block a genuinely fresh backup", () => {
       // Guarding must not stop a new install from ever writing its first snapshot.
