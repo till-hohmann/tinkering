@@ -352,6 +352,36 @@ export async function initAudioPrefs() {
   return p;
 }
 
+// WHICH VERSION THIS DEVICE HAS ALREADY BEEN SHOWN. Device-local on purpose: the
+// question is "has this screen told YOU yet", which is per-device, not something
+// to sync between them.
+//
+// A brand-new install is stamped with the current version silently — someone who
+// has never used the app has nothing to catch up on, and greeting them with a
+// list of changes to features they have not met would be nonsense.
+export async function unseenNotes(currentVersion) {
+  const { notesSince } = await import("./changelog.js");
+  const seen = await db.getPref("lastSeenVersion");
+  if (seen === undefined) {
+    const fresh = !(await db.getAll("sessions")).length;
+    await db.setPref("lastSeenVersion", currentVersion);
+    if (fresh) return [];
+    // An existing install upgrading for the first time: show the most recent
+    // release that HAD something to say, rather than a history it lived through
+    // without being told.
+    //
+    // Not "the previous version number" — most versions carry no entry, so
+    // arithmetic would hand back an empty list and then stamp the device as
+    // current, permanently swallowing the last thing worth reading.
+    const { latestNotes } = await import("./changelog.js");
+    return latestNotes();
+  }
+  return notesSince(seen, currentVersion);
+}
+export async function markNotesSeen(currentVersion) {
+  await db.setPref("lastSeenVersion", currentVersion);
+}
+
 // Stretch hold progression for warm-ups and cool-downs — the same shape as
 // mobilityProg, and synced for the same reason: it is a record of what your body
 // actually does, not device bookkeeping.

@@ -340,6 +340,14 @@ export async function renderHome() {
   const backupWarning = await backupAlert();
   if (backupWarning) children.push(backupWarning);
 
+  // ===== what changed since you last opened it =====
+  // BELOW the backup warning: a broken backup is urgent, release notes are not.
+  // A quiet dismissible card rather than a dialog on open — the app updates
+  // itself silently and correctly, so this is news, not an interruption, and a
+  // notice that blocks the screen every release stops being read.
+  const whatsNew = await releaseNotes();
+  if (whatsNew) children.push(whatsNew);
+
   // ===== reprogram nudge (Sundays, as a block winds down) =====
   const reprog = await reprogramReminder(iso);
   if (reprog) children.push(reprog);
@@ -510,4 +518,32 @@ async function backupAlert() {
       el("button.btn.block", { style: "margin-top:10px", onclick: () => go("#/settings") }, "Open backup settings"),
     ]);
   } catch (_) { return null; }
+}
+
+
+// The version notice. Renders nothing at all unless this device has actually
+// missed something worth telling it about — most releases have no entry, and a
+// card that appears every time anything ships teaches people to dismiss it
+// unread.
+async function releaseNotes() {
+  try {
+    const { APP_VERSION } = await import("../version.js");
+    const { unseenNotes, markNotesSeen } = await import("../store.js");
+    const notes = await unseenNotes(APP_VERSION);
+    if (!notes.length) return null;
+    const card = el("div.card", { style: "border-color:var(--accent)" }, [
+      el("div.row", { style: "align-items:baseline" }, [
+        el("div.label", { style: "color:var(--accent)", text: "What’s new" }),
+        el("span.spacer"),
+        el("span.faint", { style: "font-size:.72rem", text: APP_VERSION }),
+      ]),
+      el("ul", { style: "margin:10px 0 0;padding-left:1.1rem" },
+        notes.map((n) => el("li", { style: "margin-bottom:6px;font-size:.92rem;line-height:1.5", text: n }))),
+      el("button.btn.block", { style: "margin-top:12px", onclick: async () => {
+        await markNotesSeen(APP_VERSION);
+        card.remove();
+      } }, "Got it"),
+    ]);
+    return card;
+  } catch (_) { return null; }   // never let a nicety break the home screen
 }

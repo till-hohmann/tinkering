@@ -38,6 +38,7 @@ import { parseAppleExport, summarise, appleTime } from "../js/health/apple-impor
 import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES } from "../js/substitution.js";
 import * as mob from "../js/mobility.js";
 import { applyStretchResults, applyStretchTargets, stretchTarget, STRETCH_MIN, STRETCH_CAP } from "../js/stretch.js";
+import { CHANGELOG, notesSince, versionNumber } from "../js/changelog.js";
 
 let passed = 0, failed = 0;
 const groups = [];
@@ -476,6 +477,44 @@ group("stretches — a hold you cut short changes the next one", () => {
   it("a skipped session changes nothing at all", () => {
     const before = { ham_stretch: { targetSec: 45, streak: 1, lastActual: 45 } };
     assert.deepEqual(applyStretchResults(before, items, []).state, before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+group("release notes — only when there is something to say", () => {
+  it("shows nothing when you are already current", () => {
+    assert.deepEqual(notesSince("v165", "v165"), []);
+    assert.deepEqual(notesSince("v170", "v165"), [], "a newer 'seen' must not go backwards");
+  });
+  it("shows only what happened since the version you saw", () => {
+    const since161 = notesSince("v161", "v165");
+    assert.ok(since161.length >= 1);
+    assert.ok(since161.some((n) => /stretch/i.test(n)), "should include the v165 change");
+    assert.ok(!since161.some((n) => /Just for today/i.test(n)), "v153 is older than v161");
+  });
+  it("caps a long absence rather than dumping everything", () => {
+    const all = notesSince("v100", "v165", 3);
+    assert.equal(all.length, 3);
+  });
+  it("entries are ordered newest first and carry a numeric version", () => {
+    for (let i = 1; i < CHANGELOG.length; i++)
+      assert.ok(CHANGELOG[i].v < CHANGELOG[i - 1].v, "changelog must stay newest-first");
+    for (const e of CHANGELOG) {
+      assert.ok(Number.isInteger(e.v) && e.v > 0);
+      assert.ok(e.notes.length && e.notes.every((n) => typeof n === "string" && n.length > 10));
+    }
+  });
+  it("no entry reads like a commit message", () => {
+    // The rule this file exists to enforce: written for the person using the app.
+    const jargon = /(refactor|wired|pref|param|regex|null|API|endpoint|guard|commit)/i;
+    for (const e of CHANGELOG) for (const n of e.notes)
+      assert.ok(!jargon.test(n), `too technical: "${n}"`);
+  });
+  it("versionNumber tolerates whatever it is handed", () => {
+    assert.equal(versionNumber("v165"), 165);
+    assert.equal(versionNumber("165"), 165);
+    assert.equal(versionNumber(undefined), 0);
+    assert.equal(versionNumber("nonsense"), 0);
   });
 });
 
