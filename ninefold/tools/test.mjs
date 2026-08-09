@@ -37,6 +37,7 @@ import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay } from "../js/
 import { parseAppleExport, summarise, appleTime } from "../js/health/apple-import.js";
 import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES } from "../js/substitution.js";
 import * as mob from "../js/mobility.js";
+import { applyStretchResults, applyStretchTargets, stretchTarget, STRETCH_MIN, STRETCH_CAP } from "../js/stretch.js";
 
 let passed = 0, failed = 0;
 const groups = [];
@@ -416,6 +417,65 @@ group("mobility — the routine is data, so a build can serve two people", () =>
   it("restores cleanly to the build default", () => {
     assert.equal(mob.applyRoutine(mob.defaultRoutine()), true);
     assert.equal(mob.MOBILITY_TITLE, "Mobility & stability");
+  });
+});
+
+// ---------------------------------------------------------------------------
+group("stretches — a hold you cut short changes the next one", () => {
+  const ham  = { id: "ham_stretch", name: "Hamstring", mode: "timed", durationSeconds: 40 };
+  const quad = { id: "quad_stretch", name: "Quad", mode: "timed", durationSeconds: 40 };
+  const jog  = { id: "easy_jog", name: "Easy jog", mode: "timed", durationSeconds: 120 };
+  const items = [ham, quad, jog];
+  const hold = (id, sec, side) => ({ id, side: side || null, targetSec: 40, heldSec: sec });
+
+  it("starts from whatever the program prescribes", () => {
+    assert.equal(stretchTarget({}, ham), 40);
+  });
+  it("two full holds earn +5s, one does not", () => {
+    let st = applyStretchResults({}, items, [hold("ham_stretch", 40)]).state;
+    assert.equal(stretchTarget(st, ham), 40, "one good hold should not promote");
+    st = applyStretchResults(st, items, [hold("ham_stretch", 41)]).state;
+    assert.equal(stretchTarget(st, ham), 45);
+  });
+  it("stopping well short re-bases the target to what was actually held", () => {
+    // The whole point: 40s was too long, so stop asking for 40s.
+    const { state, changes } = applyStretchResults({}, items, [hold("ham_stretch", 22)]);
+    assert.equal(stretchTarget(state, ham), 20);
+    assert.ok(changes.some((c) => /Hamstring/.test(c)));
+  });
+  it("close-but-not-full leaves it alone", () => {
+    const st = applyStretchResults({}, items, [hold("ham_stretch", 32)]).state;   // 80%
+    assert.equal(stretchTarget(st, ham), 40);
+  });
+  it("the worst side governs a two-sided stretch", () => {
+    const st = applyStretchResults({}, items, [
+      hold("ham_stretch", 40, "left"), hold("ham_stretch", 18, "right")]).state;
+    assert.equal(stretchTarget(st, ham), 20, "a 40/18 stretch is an 18 stretch");
+  });
+  it("never prescribes below the floor or above the cap", () => {
+    const low = applyStretchResults({}, items, [hold("ham_stretch", 1)]).state;
+    assert.ok(stretchTarget(low, ham) >= STRETCH_MIN);
+    let hi = { ham_stretch: { targetSec: STRETCH_CAP, streak: 1, lastActual: STRETCH_CAP } };
+    hi = applyStretchResults(hi, items, [hold("ham_stretch", STRETCH_CAP + 10)]).state;
+    assert.equal(stretchTarget(hi, ham), STRETCH_CAP, "must not grow past the cap");
+  });
+  it("an item you never reached is untouched", () => {
+    // Bailing out of a cool-down must not read as failing everything in it.
+    const st = applyStretchResults({}, items, [hold("ham_stretch", 12)]).state;
+    assert.equal(st.quad_stretch, undefined);
+    assert.equal(stretchTarget(st, quad), 40);
+  });
+  it("applies targets to a routine without touching dynamic work", () => {
+    const isStretch = (it) => /stretch/.test(it.id);
+    const st = { ham_stretch: { targetSec: 55, streak: 0, lastActual: 55 } };
+    const { def, items: applied } = applyStretchTargets({ items }, st, isStretch);
+    assert.equal(def.items.find((i) => i.id === "ham_stretch").durationSeconds, 55);
+    assert.equal(def.items.find((i) => i.id === "easy_jog").durationSeconds, 120, "the jog is not a stretch");
+    assert.equal(applied.length, 3);
+  });
+  it("a skipped session changes nothing at all", () => {
+    const before = { ham_stretch: { targetSec: 45, streak: 1, lastActual: 45 } };
+    assert.deepEqual(applyStretchResults(before, items, []).state, before);
   });
 });
 

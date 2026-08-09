@@ -2,8 +2,10 @@
 // (requirements §5/§6/§8). Builds a Session, saves it, and routes to the summary.
 
 import { getActiveProgram, getProgram, resolveDay, saveSession, exerciseHistory, getLastLocation, setLastLocation, setBodyweight,
-  getDraft, setDraft, clearDraft , exerciseHistoryAcross, getAllPrograms, equipmentForProgram } from "../store.js";
+  getDraft, setDraft, clearDraft , exerciseHistoryAcross, getAllPrograms, equipmentForProgram,
+  getStretchProg, setStretchProg } from "../store.js";
 import { getProfile, patchProfile, placeNames, withPlace } from "../profile.js";
+import { applyStretchTargets, applyStretchResults } from "../stretch.js";
 import { todayISO } from "../model.js";
 import * as M from "../model.js";
 import { el, mount, go, locationBadge, clear, backBtn, addActionBar } from "../ui.js";
@@ -13,7 +15,7 @@ import { interruptSheet } from "../components/interrupt.js";
 import { recommend, roundLoad, isDeloadWeek } from "../progression.js";
 import { needsSub, primarySubstitute, candidatesFor, isApprox, metaFor, seedSubLoad,
   backCalcOriginal, SUB_EXERCISES } from "../substitution.js";
-import { runRoutine } from "./routine.js";
+import { runRoutine, isStretch } from "./routine.js";
 import { runStrength } from "./strength.js";
 import { runCardioCore, logCardio } from "./cardio.js";
 import { recoveryToday, body as trackerBody, provider, has, CAP } from "../health/index.js";
@@ -128,11 +130,25 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
   }
 
   // promise-wrapped phases ---------------------------------------------------
+  // Warm-ups and cool-downs now progress their stretches the way the mobility
+  // sessions already did: the target comes from what you last actually held, and
+  // stopping early is recorded rather than invisible. Dynamic items are untouched.
   const routinePhase = (routineKey, title) =>
-    new Promise((res) => {
-      const def = program.routines[routineKey];
-      if (!def) return res(true);
-      runRoutine(stage, def, program, { title, onComplete: ({ completed }) => res(completed) });
+    new Promise(async (res) => {
+      const raw = program.routines[routineKey];
+      if (!raw) return res(true);
+      const prog = await getStretchProg();
+      const { def, items } = applyStretchTargets(raw, prog, isStretch);
+      runRoutine(stage, def, program, {
+        title, trackHolds: true, trackWhen: isStretch,
+        onComplete: async ({ completed, holds }) => {
+          try {
+            const { state } = applyStretchResults(prog, items, holds);
+            if (holds && holds.length) await setStretchProg(state);
+          } catch (err) { console.warn("stretch progression skipped", err); }
+          res(completed);
+        },
+      });
     });
 
   // The Wednesday interval finisher (Block 2+): the "+ Intervals" the day label

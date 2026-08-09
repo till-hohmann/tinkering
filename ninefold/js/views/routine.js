@@ -97,8 +97,13 @@ function buildSteps(def) {
 
 // stretch holds get the spoken "stretch" cue; dynamic items (cardio, swings,
 // circles) just get the start beep so we never mis-announce them.
-const STRETCH_RE = /hamstring|quad|glute|hip_flex|chest|lat|tspine|calf|calv|stretch|figure|doorway|worlds_greatest/i;
-const isStretch = (item) => STRETCH_RE.test(item.id || "") || /stretch/i.test(item.name || "");
+// Adductors and dead hangs were missing: both are timed holds you can fail —
+// exactly what the end-hold button is for — and neither name contains the word
+// "stretch". Everything still excluded here is dynamic work on a fixed clock
+// (an easy jog, leg swings, ankle rolls), where "how long did you hold it" is
+// not a meaningful question.
+const STRETCH_RE = /hamstring|quad|glute|hip_flex|chest|lat|tspine|calf|calv|stretch|figure|doorway|worlds_greatest|adductor|butterfly|dead[_ ]?hang/i;
+export const isStretch = (item) => STRETCH_RE.test(item.id || "") || /stretch/i.test(item.name || "");
 
 // Each warm-up / cool-down movement gets its own movement-figure tile — the same
 // glowing, tinted-tile illustration the main lifts use — resolved from its id.
@@ -170,10 +175,15 @@ export function runRoutine(container, def, program, opts = {}) {
   // press. The engine consumes the worst side per exercise to progress targets
   // honestly instead of assuming every hold was made.
   const trackHolds = !!opts.trackHolds;
+  // WHICH steps offer "end hold". Mobility tracks every timed item; a warm-up
+  // tracks only its stretches, because "how long did you hold it" is not a
+  // question an easy jog or a set of leg swings is answering.
+  const tracked = (step) => trackHolds && step && step.type === "timed"
+    && (!opts.trackWhen || opts.trackWhen(step.item));
   const holdRecords = {};   // stepIdx -> { id, side, targetSec, heldSec }
   function recordHold(heldSec) {
     const step = steps[idx];
-    if (!trackHolds || !step || step.type !== "timed") return;
+    if (!tracked(step)) return;
     holdRecords[idx] = { id: step.item.id, side: step.side || null,
       targetSec: step.seconds, heldSec: Math.round(Math.max(0, heldSec)) };
   }
@@ -313,7 +323,7 @@ export function runRoutine(container, def, program, opts = {}) {
 
     // Live foreground cue. Suppressed on the post-unlock catch-up (opts.silent),
     // since the lock timeline already voiced those steps while the screen was off.
-    endHoldBtn.style.display = trackHolds && step.type === "timed" ? "" : "none";
+    endHoldBtn.style.display = tracked(step) ? "" : "none";
     const sayLive = !stepOpts.silent && !document.hidden;
     if (step.type === "transition") { if (sayLive) say("position"); haptic(10); }
     else if (isStretch(step.item)) { if (sayLive) say("stretch"); haptic(20); }

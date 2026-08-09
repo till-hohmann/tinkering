@@ -17,7 +17,7 @@ import { DEFAULT_ZONE_BOUNDS, maxHRof } from "./cardio-intel.js";
 // reverted to picking by date — so someone deliberately running an older block
 // would come back from a wipe running a different one, with nothing to indicate
 // it had changed. The ids they reference are themselves in the backup.
-export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "activeProgramId", "autoSelectProgram", "audioPrefs"];
+export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "stretchProg", "activeProgramId", "autoSelectProgram", "audioPrefs"];
 export async function syncedPrefs() {
   const out = {};
   for (const k of SYNCED_PREFS) { const v = await db.getPref(k); if (v !== undefined) out[k] = v; }
@@ -351,6 +351,12 @@ export async function initAudioPrefs() {
   applyAudioPrefs(p);
   return p;
 }
+
+// Stretch hold progression for warm-ups and cool-downs — the same shape as
+// mobilityProg, and synced for the same reason: it is a record of what your body
+// actually does, not device bookkeeping.
+export async function getStretchProg() { return (await db.getPref("stretchProg")) || {}; }
+export async function setStretchProg(state) { await db.setPref("stretchProg", state || {}); pushCloud(); }
 
 // The routine ITSELF — which sessions exist and what's in them. Synced, because
 // a routine written around one person's knees is personal data and belongs in
