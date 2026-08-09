@@ -21,7 +21,7 @@
 // benchmark card hides, zones fall back to a labelled estimate, optional
 // features stay off.
 
-import { el, mount, go, backBtn, addActionBar } from "../ui.js";
+import { el, mount, go, backBtn, addActionBar, clear } from "../ui.js";
 import { getProfile, patchProfile, defaultProfile, TRACKED_FEATURES } from "../profile.js";
 import { PROVIDERS, resetProviderCache } from "../health/index.js";
 import { THEMES, applyTheme, DEFAULT_THEME } from "../theme.js";
@@ -89,7 +89,71 @@ function intro(body) {
     ]),
     el("p.note.center", { style: "margin-top:18px", text: "Takes about a minute. You can skip any of it." }),
   );
-  bar("Get started", next);
+  bar("Get started", next, el("button.btn.big.block", { onclick: restore }, "I already have a backup"));
+}
+
+// --- restore from a backup ---------------------------------------------------
+// The escape hatch for a device that has been wiped — a new phone, or an app
+// removed and re-added to change its icon, which on iOS is the only way to change
+// an icon and takes IndexedDB with it.
+//
+// This has to live HERE, before onboarding, and that is the whole point. Restored
+// settings are applied add-if-missing, so anything onboarding writes first WINS
+// and the real value is refused: finish setup and your zones, goal, places and
+// routine are replaced by the answers you just gave, permanently. Onboarding also
+// hides the tab bar, so on a fresh install there is no route to Settings to enter
+// a backup from — this screen was the missing way back.
+function restore() {
+  const stage = document.querySelector(".stage") || document.body;
+  const field = (label, node) => el("div", { style: "margin-top:14px" }, [
+    el("div.faint", { style: "font-size:.72rem;margin-bottom:4px", text: label }), node]);
+  const inStyle = "width:100%;padding:11px 13px;background:var(--bg-elev2);border:1px solid var(--line);"
+    + "border-radius:11px;color:var(--text);font-size:.9rem";
+  const epIn = el("input", { type: "text", inputmode: "url", placeholder: "https://your-backup.workers.dev", style: inStyle });
+  const tokIn = el("input", { type: "password", placeholder: "your backup token", style: inStyle });
+  const status = el("p.note", { style: "margin-top:12px;min-height:1.2em" });
+
+  clear(stage);
+  const back = backBtn("Back", "#");
+  back.onclick = () => { document.querySelector(".actionbar")?.remove(); draw(); };
+  stage.append(
+    back,
+    el("h1", { style: "margin:8px 0 0", text: "Restore from your backup" }),
+    el("p.dim", { text: "If you've used the app before and set up a cloud backup, put its details in here and everything comes back — training history, plans, settings. Do this BEFORE setting up, not after." }),
+    el("div.card", { style: "margin-top:16px" }, [field("WORKER URL", epIn), field("TOKEN", tokIn), status]),
+    el("p.note", { style: "margin-top:14px", text:
+      "These stay on this device. They're never synced anywhere — the backup service can't hold its own key." }),
+  );
+
+  const go2 = el("button.btn.primary.big.block", { onclick: async () => {
+    const ep = epIn.value.trim().replace(/\/+$/, ""), tok = tokIn.value.trim();
+    if (!/^https:\/\//i.test(ep)) { status.textContent = "The URL must start with https://"; return; }
+    if (!tok) { status.textContent = "The token is needed too — it's what unlocks the backup."; return; }
+    go2.disabled = true; status.textContent = "Connecting…";
+    try {
+      const db = await import("../db.js");
+      const { setRuntimeConfig } = await import("../config.js");
+      await setRuntimeConfig(db, { backup: { endpoint: ep, token: tok } });
+      const { cloudPull } = await import("../cloudsync.js");
+      const data = await cloudPull(8000);
+      if (!data) {
+        status.textContent = "Connected, but there's no backup stored there yet. Check the URL, or go back and set up fresh.";
+        go2.disabled = false; return;
+      }
+      const { mergeRestore } = await import("../store.js");
+      const added = await mergeRestore(data, { overwrite: true });
+      status.textContent = `Restored ${added} session${added === 1 ? "" : "s"}. Reopening…`;
+      // Full reload rather than routing on: boot re-runs the pull, the profile
+      // migration and the routine resolution in the right order, against a store
+      // that now has everything. Continuing in-place would leave stale in-memory
+      // copies of exactly the things we just restored.
+      setTimeout(() => { window.location.hash = "#/"; window.location.reload(); }, 700);
+    } catch (e) {
+      status.textContent = "Couldn't reach that backup: " + (e && e.message ? e.message : "unknown error");
+      go2.disabled = false;
+    }
+  } }, "Restore");
+  addActionBar(go2);
 }
 const point = (t, s) => el("div", { style: "margin-top:14px" }, [
   el("div", { style: "font-weight:700;font-size:.92rem", text: t }),

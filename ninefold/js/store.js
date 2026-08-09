@@ -42,10 +42,20 @@ export async function snapshot() {
 }
 const pushCloud = () => cloudPushDebounced(snapshot);
 
-// Non-destructive restore from a cloud/backup snapshot: add programs/sessions we
-// don't already have and adopt any missing settings; NEVER overwrite local data.
-// Returns count of new sessions.
-export async function mergeRestore(data) {
+// Restore from a cloud/backup snapshot: add programs/sessions we don't already
+// have and adopt settings. Returns count of new sessions.
+//
+// `overwrite` decides what happens to a setting that ALREADY exists locally, and
+// the two callers need opposite answers:
+//
+//   - a BOOT sync must never clobber a local choice, so it leaves them alone;
+//   - an EXPLICIT restore action must win, because the local values it is
+//     refusing are not the user's choices at all. A wiped device writes a default
+//     profile during migration before anyone touches anything, so add-if-missing
+//     silently refused the real profile that was sitting in the backup — zones,
+//     max HR, goal, places, every feature toggle. The restore reported success
+//     and quietly gave you a stranger's blank settings.
+export async function mergeRestore(data, { overwrite = false } = {}) {
   if (!data) return 0;
   for (const p of data.programs || []) {
     if (!(await db.get("programs", p.id))) await db.put("programs", p);
@@ -55,7 +65,7 @@ export async function mergeRestore(data) {
     const have = new Set((await db.getAll("sessions")).map((s) => s.id));
     for (const s of data.sessions) if (s && s.id && !have.has(s.id)) { await db.put("sessions", s); added++; }
   }
-  await restorePrefs(data.prefs);
+  await restorePrefs(data.prefs, { overwrite });
   return added;
 }
 
@@ -305,8 +315,25 @@ export async function initMobilityRoutine() {
   const { applyRoutine, defaultRoutine } = await import("./mobility.js");
   const stored = await getMobilityRoutine();
   if (stored && applyRoutine(stored)) return stored;
+
+  // NOTHING STORED. Capture the build's routine ONLY on an install that is
+  // already in use — never on an empty one.
+  //
+  // The reason is the wiped device. It boots empty, with no backup configured
+  // yet, so the cloud pull returns nothing; if we captured here, the pref would
+  // exist, and restorePrefs is add-if-missing — so the routine that came back
+  // from the backup an hour later would be silently refused, and a routine
+  // written around someone's injuries would be gone for good. Leaving the pref
+  // unset costs nothing: the module default is already the live binding, so the
+  // app behaves identically until a real routine arrives.
+  // The test is `onboardedAt`, NOT whether a profile exists: the migration writes
+  // a blank profile on the first boot of an empty install, so "has a profile" is
+  // true before the user has done anything at all and would capture here every
+  // time — which is the exact failure this guard exists to prevent.
+  const prof = await db.getPref("profile");
+  const inUse = !!(prof && prof.onboardedAt);
   const built = defaultRoutine();
-  await db.setPref("mobilityRoutine", built);      // no pushCloud: boot pushes anyway
+  if (inUse) await db.setPref("mobilityRoutine", built);       // no pushCloud: boot pushes anyway
   return built;
 }
 
