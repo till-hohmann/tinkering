@@ -133,8 +133,16 @@ export const BODYWEIGHT_ONLY = ["bodyweight", SURVEYED];
 export const BASIC_KIT = ["barbell", "dumbbell_pair", "dumbbell_single", "bench", "bench_incline",
   "rack", "bodyweight", SURVEYED];
 
+// The hotel/apartment room, which is its own shape and not a smaller commercial
+// gym: light dumbbells and a cable stack, almost never a barbell or a rack. It
+// earns a preset because for anyone who travels it is the single most-described
+// place, and building it from "Bodyweight only" means fifteen taps every time.
+export const HOTEL_KIT = ["dumbbell_pair", "dumbbell_single", "cable", "bench",
+  "m_chest_press", "m_row", MACHINE_IMPLEMENT, "bodyweight", SURVEYED];
+
 export const PRESETS = [
   ["Bodyweight only", "Nothing but a floor", BODYWEIGHT_ONLY],
+  ["Hotel or apartment gym", "Light dumbbells, a cable stack, a flat bench — no barbell, no rack", HOTEL_KIT],
   ["Basic equipment", "Barbell, dumbbells, flat + incline bench, squat rack", BASIC_KIT],
   ["Everything", "Ticks all of it, including every machine", FULL_GYM],
 ];

@@ -2,7 +2,7 @@
 // Cache-first for the app shell so the app opens with zero network.
 // Bump CACHE when shipping changes so clients pick up new files.
 
-const CACHE = "fittrack-v152";
+const CACHE = "fittrack-v153";
 const SHELL = [
   "./",
   "./index.html",

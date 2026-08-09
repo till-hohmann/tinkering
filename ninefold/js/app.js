@@ -130,6 +130,10 @@ async function boot() {
   }
   await router();
   registerSW();
+  // Fire-and-forget: a tracker that computes VO2max keeps the log current
+  // without the user retyping what their watch already knows. Never awaited —
+  // it must not hold up the first paint, and it fails silently offline.
+  import("./health/index.js").then((h) => h.syncTrackerVO2max()).catch(() => {});
   cloudPush(snapshot);   // reflect local state up to the cloud
 }
 

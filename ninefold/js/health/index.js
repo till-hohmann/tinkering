@@ -116,6 +116,31 @@ export const body = safe("body", null);
 export const vo2max = safe("vo2max", null);
 export const loadSeries = safe("loadSeries", null);
 
+// --- pulling a tracker's VO2max into the log ---------------------------------
+// Apple computes VO2max ("Cardio Fitness") and exposes it; WHOOP never has. The
+// app's VO2max trend reads `vo2maxLog`, which was manual-entry only — so an
+// Apple user could SEE their number in the tracker panel and still had to retype
+// it for it to reach a chart. That's the kind of gap that reads as the feature
+// being broken.
+//
+// Idempotent by construction: the log holds one entry per date, so re-running
+// this on every boot either writes the same value again or does nothing.
+export async function syncTrackerVO2max() {
+  try {
+    if (!(await has(CAP.vo2max))) return null;
+    const v = await vo2max();
+    if (!v || !Number.isFinite(v.value)) return null;
+    const { getVO2maxLog, addVO2max } = await import("../store.js");
+    const log = await getVO2maxLog();
+    const date = v.date || new Date().toISOString().slice(0, 10);
+    // Nothing to do if that exact reading is already logged. Worth checking:
+    // every write pushes the cloud backup, and the value only moves monthly.
+    if (log.some((e) => e.date === date && Math.abs(e.value - v.value) < 0.05)) return null;
+    await addVO2max(v.value, date);
+    return { value: v.value, date };
+  } catch (_) { return null; }        // a tracker being offline is not an error
+}
+
 // --- shared load maths -------------------------------------------------------
 // ACWR from ANY daily series. Acute = last 7 days' mean, chronic = last 28 days'
 // mean, ratio in ~0.8-1.3 is the usual "sweet spot", >1.5 a risky ramp, <0.8

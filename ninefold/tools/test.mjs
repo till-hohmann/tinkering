@@ -15,11 +15,11 @@ import { readdirSync, readFileSync } from "node:fs";
 
 import {
   defaultProfile, makePlace, estimateMaxHR, ageOf, resolveMaxHR, resolveZoneBounds,
-  proteinTarget, equipmentFor, ZONE_PCT, placeNames, needsPlacePrompt, TRACKED_FEATURES,
+  proteinTarget, equipmentFor, withPlace, ZONE_PCT, placeNames, needsPlacePrompt, TRACKED_FEATURES,
   lbFromKg, kgFromLb, inFromCm, cmFromIn, miFromKm, kmFromMi,
 } from "../js/profile.js";
 import { strengthScore, liftScore, standardsFor, STANDARDS_BY_SEX, LEVELS } from "../js/standards.js";
-import { roundLoad, loadCeiling, nextLoadUp } from "../js/progression.js";
+import { roundLoad, loadCeiling, nextLoadUp, rackAt } from "../js/progression.js";
 import { BUILD_CONFIG, hasBackup, hasWhoop } from "../js/config.js";
 import { EXERCISE_LIBRARY, checkLibrary, availableAt, pickForPattern } from "../js/exercise-library.js";
 import { FULL_GYM, EXERCISE_NEEDS, stationsKnown, canDoHere, SURVEYED, IMPLEMENTS, STATIONS, PRESETS } from "../js/equipment.js";
@@ -35,6 +35,7 @@ import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT,
   METRIC_PROFILE, readEdit, isStockRack, rackFields } from "../js/units.js";
 import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay } from "../js/model.js";
 import { parseAppleExport, summarise, appleTime } from "../js/health/apple-import.js";
+import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES } from "../js/substitution.js";
 
 let passed = 0, failed = 0;
 const groups = [];
@@ -165,6 +166,60 @@ group("profile — places replace hardcoded cities", () => {
     assert.deepEqual(e.dumbbells.Basement.valuesKg, [8, 12, 16, 24]);
     assert.deepEqual(e.locations.Hotel, ["bodyweight"]);
   });
+  it("plates and the cable stack resolve PER PLACE, not from the first one", () => {
+    // The bug this guards: bar, plates and cable used to be read from places[0]
+    // for every place, so someone training in a different gym most weeks was
+    // prescribed their first gym's loadable weights everywhere. Invisible if you
+    // always train in one room; wrong most weeks if you don't.
+    const p = { ...defaultProfile(), places: [
+      makePlace("Home rack", { implements: ["barbell", "cable", "bodyweight"],
+        barbellPlatesKg: [20, 10, 5, 2.5], cable: { minKg: 2.5, maxKg: 120, stepKg: 2.5 } }),
+      makePlace("Hotel", { implements: ["barbell", "cable", "bodyweight"],
+        barbellPlatesKg: [25, 20, 15, 10, 5, 2.5, 1.25], cable: { minKg: 5, maxKg: 90, stepKg: 5 } }),
+    ] };
+    const e = equipmentFor(p, null);
+    assert.deepEqual(rackAt(e, "Hotel").barbellPlatesKg, [25, 20, 15, 10, 5, 2.5, 1.25]);
+    assert.equal(rackAt(e, "Hotel").cable.stepKg, 5);
+    assert.equal(rackAt(e, "Home rack").cable.stepKg, 2.5);
+    // and the rounding that actually reaches the athlete
+    assert.equal(roundLoad(47.5, "cable", "Home rack", e), 47.5, "a 2.5 kg stack can set 47.5");
+    assert.equal(roundLoad(47.5, "cable", "Hotel", e), 50, "a 5 kg stack cannot");
+  });
+  it("a one-off place reaches the engines without touching the profile", () => {
+    // The traveller case: a gym used once should behave exactly like a saved
+    // place for the length of a session, and leave nothing behind.
+    const p = { ...defaultProfile(), places: [
+      makePlace("Home rack", { implements: ["barbell", "bodyweight"], barbellPlatesKg: [20, 10, 5, 2.5] }),
+    ] };
+    const base = equipmentFor(p, null);
+    const away = withPlace(base, { name: "Away", implements: ["dumbbell_pair", "cable", "bodyweight"],
+      cable: { minKg: 5, maxKg: 90, stepKg: 5 }, dumbbells: { minKg: 2, maxKg: 24, stepKg: 2 } });
+    assert.deepEqual(away.locations.Away, ["dumbbell_pair", "cable", "bodyweight"]);
+    assert.equal(roundLoad(47.5, "cable", "Away", away), 50);
+    assert.equal(roundLoad(23, "dumbbell_pair", "Away", away), 24);
+    assert.ok(away.locations["Home rack"], "the saved place must survive the fold");
+    assert.equal(base.locations.Away, undefined, "the base object must not be mutated");
+    assert.deepEqual(p.places.map((x) => x.name), ["Home rack"], "nothing written to the profile");
+  });
+  it("a one-off place overrides a saved place of the same name", () => {
+    // "I'm at my usual gym, but the rack is out of order" — today's answer wins.
+    const p = { ...defaultProfile(), places: [
+      makePlace("Gym", { implements: ["barbell", "rack", "bodyweight"] }),
+    ] };
+    const today = withPlace(equipmentFor(p, null), { name: "Gym", implements: ["dumbbell_pair", "bodyweight"] });
+    assert.deepEqual(today.locations.Gym, ["dumbbell_pair", "bodyweight"]);
+  });
+  it("withPlace on nothing is a no-op", () => {
+    const e = equipmentFor(defaultProfile(), null);
+    assert.equal(withPlace(e, null), e);
+    assert.equal(withPlace(e, { name: "" }), e);
+  });
+  it("a rack with no byPlace entry falls back to the flat fields", () => {
+    // Programs carry a flat equipmentProfile and callers without a location in
+    // hand pass it straight through — that path must keep working untouched.
+    assert.equal(roundLoad(47.5, "cable", "Anywhere", program.equipmentProfile), 47.5);
+    assert.equal(rackAt(program.equipmentProfile, "Nowhere").barWeightKg, 20);
+  });
   it("a program location the profile doesn't describe is preserved", () => {
     // Importing someone else's program must never strand a day with no kit.
     const p = { ...defaultProfile(), places: [makePlace("Basement", { implements: ["dumbbell_pair"] })] };
@@ -283,6 +338,45 @@ group("progression — discrete racks at any place name", () => {
   it("bodyweight has no ceiling", () => {
     assert.equal(loadCeiling("bodyweight", "Gym", equip), null);
     assert.equal(loadCeiling("barbell", "Gym", equip), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+group("substitution — every candidate resolves to a real lift", () => {
+  // A program's exercise map only holds what THAT plan uses, so most substitute
+  // candidates aren't in it. They used to fall through to a last-resort stub
+  // that printed the raw id and called everything a dumbbell PAIR — which then
+  // fed the seed ratio and the load rounding. Anyone training away from their
+  // planned place hits this on almost every session.
+  const prog = { exercises: { back_squat: { name: "Barbell Back Squat", implement: "barbell", cue: "" } } };
+  it("no candidate anywhere renders as its own id", () => {
+    for (const orig of Object.keys(SUB_CANDIDATES)) {
+      for (const cid of candidatesFor(orig)) {
+        const m = metaFor(prog, cid);
+        assert.notEqual(m.name, cid, `${cid} has no display name`);
+        assert.ok(m.name && m.name.length > 2, `${cid} name looks wrong: ${m.name}`);
+      }
+    }
+  });
+  it("candidates carry their TRUE implement, not a dumbbell-pair default", () => {
+    assert.equal(metaFor(prog, "db_goblet_squat").implement, "dumbbell_single");
+    assert.equal(metaFor(prog, "one_arm_db_row").implement, "dumbbell_single");
+    assert.equal(metaFor(prog, "core_circuit").implement, "bodyweight");
+    assert.equal(metaFor(prog, "incline_db_press").implement, "dumbbell_pair");
+  });
+  it("a bodyweight substitute is seeded at zero load, not a prescribed weight", () => {
+    const equip = { dumbbells: { Away: { minKg: 2, maxKg: 24, stepKg: 2 } }, locations: { Away: ["dumbbell_pair"] } };
+    const impl = metaFor(prog, "core_circuit").implement;
+    assert.equal(seedSubLoad("cable_pallof", "core_circuit", 30, impl, "Away", equip), 0);
+  });
+  it("a substitute is never seeded above the heaviest dumbbell there", () => {
+    const equip = { dumbbells: { Away: { minKg: 2, maxKg: 24, stepKg: 2 } }, locations: { Away: ["dumbbell_pair"] } };
+    const impl = metaFor(prog, "db_goblet_squat").implement;
+    assert.ok(seedSubLoad("back_squat", "db_goblet_squat", 120, impl, "Away", equip) <= 24);
+  });
+  it("the program's own entry still wins over the library", () => {
+    const custom = { exercises: { db_goblet_squat: { name: "My Goblet", implement: "dumbbell_single", cue: "" } } };
+    assert.equal(metaFor(custom, "db_goblet_squat").name, "My Goblet");
   });
 });
 

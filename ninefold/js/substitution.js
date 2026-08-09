@@ -17,6 +17,7 @@
 // whatever is actually on the rack there).
 
 import { e1rm, roundLoad } from "./progression.js";
+import { byId as libraryById } from "./exercise-library.js";
 
 // Substitute-only exercises (not in any day template — referenced only as swaps).
 // metaFor() falls back here when an id isn't in the program's own library.
@@ -78,9 +79,26 @@ export const candidatesFor = (originalId) => SUB_CANDIDATES[originalId] || [];
 export const primarySubstitute = (originalId) => (SUB_CANDIDATES[originalId] || [])[0] || null;
 export const isApprox = (originalId) => APPROX.has(originalId);
 
-// Resolve display meta for any id (program library first, then substitute-only).
+// Resolve display meta for any id: the program's own map first (it may carry a
+// renamed or customised entry), then the substitute-only lifts, then the shared
+// exercise library.
+//
+// THE LIBRARY STEP IS NOT COSMETIC. Most SUB_CANDIDATES ids live in the library
+// and NOT in any given program's exercise map — a plan that never programmed a
+// goblet squat has no entry for one. Without this lookup they fell through to
+// the last resort, which rendered the raw id ("db_goblet_squat") in the swap
+// picker AND claimed every one of them was a `dumbbell_pair`. That second half
+// is the real damage: the implement drives seedSubLoad's ratio and the rounding,
+// so a one-dumbbell goblet squat was seeded and rounded as a pair, and a
+// bodyweight core circuit was handed a load instead of zero.
+//
+// Anyone who trains away from their planned place regularly sees this on almost
+// every session, which is precisely who the substitution engine is for.
 export function metaFor(program, id) {
-  return (program.exercises && program.exercises[id]) || SUB_EXERCISES[id] || { name: id, cue: "", implement: "dumbbell_pair" };
+  return (program.exercises && program.exercises[id])
+    || SUB_EXERCISES[id]
+    || libraryById(id)
+    || { name: id, cue: "", implement: "dumbbell_pair" };
 }
 
 // Suggested starting load for a substitute, from the planned load × ratio,

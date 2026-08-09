@@ -8,13 +8,13 @@ import { interruptSheet } from "../components/interrupt.js";
 import { illustration } from "../illustrations.js";
 import { photoURL, loadPhotoManifest } from "../exercise-photo.js";
 import { exerciseHistory, exerciseHistoryAcross, getAllPrograms, getAllSessions, equipmentForProgram } from "../store.js";
-import { getProfile } from "../profile.js";
+import { getProfile, withPlace } from "../profile.js";
 import { PlateCalc } from "../components/plate-calc.js";
 import { WeightStepper } from "../components/db-scroller.js";
 import { Ticker } from "../components/timer.js";
 import { cueItemEnd, cueTick } from "../components/sound.js";
 import { celebrate } from "../components/confetti.js";
-import { recommend, detectStall, roundLoad, isDeloadWeek, e1rm, warmupPlan, replanSets, loadCeiling } from "../progression.js";
+import { recommend, detectStall, roundLoad, isDeloadWeek, e1rm, warmupPlan, replanSets, loadCeiling, rackAt } from "../progression.js";
 import { MUSCLE_MAP } from "../volume.js";
 
 import { muscleBody } from "../anatomy.js";
@@ -137,7 +137,9 @@ function pickExercise(program, excludeId) {
 
 export async function runStrength(container, program, day, weekday, iso, location, opts = {}) {
   const onComplete = opts.onComplete;
-  const equip = await equipmentForProgram(program);
+  // opts.adhocPlace is a gym described for this session only and never saved to
+  // the profile, so it has to be folded in here rather than looked up.
+  const equip = withPlace(await equipmentForProgram(program), opts.adhocPlace);
   const profile = await getProfile();   // display units for the weight widgets
   await loadPhotoManifest();            // so photoURL() can answer while rendering each exercise
   // opts.exercises overrides the planned list (e.g. a substitute workout);
@@ -354,7 +356,8 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     const aw = anchorWeight(program, rx.exerciseId);
     const recW = rec && rec.load != null ? rec.load : null;       // engine prescription
     const recReps = rec && rec.reps != null ? rec.reps : null;
-    const baseW = implement === "barbell" ? equip.barWeightKg : implement === "ez_bar" ? equip.ezBarWeightKg : 0;
+    const rack = rackAt(equip, location);
+    const baseW = implement === "barbell" ? rack.barWeightKg : implement === "ez_bar" ? rack.ezBarWeightKg : 0;
     // A single UNIFORM fill for strength sets — the prescription is "N sets at the
     // same load", so every set prefills identically. When the engine has no load,
     // fall back to last session's TOP set (one representative value), NOT last
@@ -471,7 +474,9 @@ export async function runStrength(container, program, day, weekday, iso, locatio
         widget = null;
         weightZone.appendChild(el("p.note.center", { text: "Bodyweight — log reps/time only" }));
       } else if (implement === "barbell" || implement === "ez_bar") {
-        widget = PlateCalc(implement, equip, w, (total) => { state.sets[active].weightKg = total; state.sets[active].edited = true; }, profile);
+        // The plate picker must show the plates THIS gym has, not the first
+        // place's — otherwise it offers denominations that aren't on the rack.
+        widget = PlateCalc(implement, rackAt(equip, location), w, (total) => { state.sets[active].weightKg = total; state.sets[active].edited = true; }, profile);
         weightZone.appendChild(widget.node);
       } else {
         widget = WeightStepper(implement, equip, location, w, (val) => { state.sets[active].weightKg = val; state.sets[active].edited = true; }, profile);

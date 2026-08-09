@@ -38,6 +38,11 @@ export async function renderSummary(sessionId) {
   if (!session) return mount([el("div.card", {}, [el("p", { text: "Session not found." }),
     el("button.btn.block", { onclick: () => go("#/progress") }, "Progress")])]);
 
+  // Resolved once here rather than at the point of use: the render body is a
+  // tree of synchronous builders, and this is the only thing in it that needs
+  // to ask the network layer a question.
+  const whoopActive = ((await provider()) || {}).id === "whoop";
+
   const isToday = session.date === M.todayISO();
   const backHref = isToday ? "#/" : "#/progress";
   const title = isToday
@@ -248,7 +253,13 @@ export async function renderSummary(sessionId) {
 
       // WHOOP feedback loop: export the lifts to WHOOP's Weightlifting AI, then
       // sync the strain WHOOP recalculates back onto this session.
-      if (!editing && (session.strengthResult || []).some((e) => (e.sets || []).length)) {
+      //
+      // WHOOP ONLY, and gated on the provider rather than on a capability: this
+      // is not "read a workout", it is a round trip through one vendor's own
+      // Weightlifting AI, and strain is WHOOP's proprietary score with no
+      // equivalent anywhere else. It used to render for everyone, so an Apple
+      // user was offered "Export for WHOOP" after every single session.
+      if (whoopActive && !editing && (session.strengthResult || []).some((e) => (e.sets || []).length)) {
         const wStatus = el("p.note", { style: "margin:8px 0 0;min-height:1em",
           text: session.whoopStrain != null ? `WHOOP strain ${session.whoopStrain} synced for this session.` : "" });
         const exportBtn = el("button.btn", { onclick: async () => {

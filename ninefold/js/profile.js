@@ -257,6 +257,9 @@ export function equipmentFor(profile, program) {
     return { ...GENERIC_EQUIPMENT, locations: { "": ALL_IMPLEMENTS.slice() } };
   }
 
+  // The flat fields are the FALLBACK rack, used by callers that don't know which
+  // place they're asking about (and by a program's own equipmentProfile). The
+  // real per-place answer lives in `byPlace` — see rackAt() in progression.js.
   const equip = {
     barWeightKg: places[0].barWeightKg || GENERIC_EQUIPMENT.barWeightKg,
     ezBarWeightKg: places[0].ezBarWeightKg || GENERIC_EQUIPMENT.ezBarWeightKg,
@@ -265,6 +268,7 @@ export function equipmentFor(profile, program) {
     cable: places[0].cable || (fromProgram && fromProgram.cable) || GENERIC_EQUIPMENT.cable,
     dumbbells: {},
     locations: {},
+    byPlace: {},
   };
   for (const pl of places) {
     const key = pl.name;                            // programs reference places by NAME
@@ -272,6 +276,18 @@ export function equipmentFor(profile, program) {
     equip.dumbbells[key] = pl.dumbbells
       || (fromProgram && fromProgram.dumbbells && fromProgram.dumbbells[key])
       || GENERIC_EQUIPMENT.dumbbells;
+    // Bars, plates and the cable stack vary between a home rack and a hotel gym
+    // exactly as much as the dumbbells do — a stack that moves in 5 kg steps
+    // cannot load the 47.5 kg a 2.5 kg stack can. These used to be read from
+    // places[0] for EVERY place, which is invisible if you always train in one
+    // room and wrong most weeks if you don't.
+    equip.byPlace[key] = {
+      barWeightKg: pl.barWeightKg || equip.barWeightKg,
+      ezBarWeightKg: pl.ezBarWeightKg || equip.ezBarWeightKg,
+      barbellPlatesKg: pl.barbellPlatesKg || equip.barbellPlatesKg,
+      ezBarPlatesKg: pl.ezBarPlatesKg || equip.ezBarPlatesKg,
+      cable: pl.cable || (fromProgram && fromProgram.cable) || GENERIC_EQUIPMENT.cable,
+    };
   }
   // Keep any location the PROGRAM knows about that the profile hasn't described,
   // so importing someone else's program can't strand a day with no equipment.
@@ -282,6 +298,39 @@ export function equipmentFor(profile, program) {
     }
   }
   return equip;
+}
+
+// Fold ONE place into an already-resolved equip object, without writing anything
+// to the profile.
+//
+// This is what makes a one-off place possible. The engines only ever see equip
+// keyed by place NAME, so a gym that exists for exactly one session doesn't need
+// a record anywhere — it only has to be in this object while that session runs.
+// Someone who trains in a different hotel every week would otherwise accumulate
+// a permanent list of places they will never visit again, and pick today's from
+// a menu of forty.
+//
+// The adhoc place WINS over a saved place of the same name, which is the useful
+// reading of the collision: "I'm at my usual gym, but the rack is out of order".
+export function withPlace(equip, place) {
+  if (!place || !place.name) return equip;
+  const base = equip || { ...GENERIC_EQUIPMENT, dumbbells: {}, locations: {}, byPlace: {} };
+  const name = place.name;
+  return {
+    ...base,
+    locations: { ...(base.locations || {}), [name]: (place.implements || []).slice() },
+    dumbbells: { ...(base.dumbbells || {}), [name]: place.dumbbells || GENERIC_EQUIPMENT.dumbbells },
+    // Deliberately NOT falling back to the base rack for plates and cable: the
+    // base is the first saved place, and inheriting its stack is exactly the bug
+    // byPlace exists to fix.
+    byPlace: { ...(base.byPlace || {}), [name]: {
+      barWeightKg: place.barWeightKg || GENERIC_EQUIPMENT.barWeightKg,
+      ezBarWeightKg: place.ezBarWeightKg || GENERIC_EQUIPMENT.ezBarWeightKg,
+      barbellPlatesKg: place.barbellPlatesKg || GENERIC_EQUIPMENT.barbellPlatesKg,
+      ezBarPlatesKg: place.ezBarPlatesKg || GENERIC_EQUIPMENT.ezBarPlatesKg,
+      cable: place.cable || GENERIC_EQUIPMENT.cable,
+    } },
+  };
 }
 
 // The place a session should default to. One place = no prompt at all, which is

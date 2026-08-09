@@ -16,6 +16,8 @@ import { provider, has, resetProviderCache, PROVIDERS, CAP,
   recoveryToday, bestWorkoutFor, body as trackerBody, vo2max as healthVO2max } from "../health/index.js";
 import { resetAppleCache } from "../health/apple.js";
 import { getProfile, patchProfile, TRACKED_FEATURES, equipmentFor } from "../profile.js";
+import { placeEditor, blankPlace, tidyPlace } from "../components/place-editor.js";
+import { IMPLEMENTS, STATIONS, MACHINES } from "../equipment.js";
 import { THEMES, DEFAULT_THEME, applyTheme } from "../theme.js";
 import { weightLabel, weightValue, weightToKg, lengthLabel, lengthValue, lengthToCm,
   distanceLabel, distanceValue, readEdit, defaultEquipmentFor, isStockRack, rackFields, plateLabel,
@@ -637,7 +639,9 @@ export async function renderSettings() {
   // strength, cyan = cardio, violet = recovery, coral = intensity) is fixed
   // across all of them, because those hues carry meaning in charts and on the
   // muscle map — restyling them would change what the app says, not how it looks.
-  const profileNow = await getProfile();
+  // `let`, not const: the Places editor below re-reads it after a save so the
+  // list it paints is the profile that was actually written.
+  let profileNow = await getProfile();
   const currentTheme = (profileNow && profileNow.theme) || DEFAULT_THEME;
   const themeGrid = el("div", { style: "display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;margin-top:12px" });
   function paintThemes(active) {
@@ -717,6 +721,118 @@ export async function renderSettings() {
     el("p.note", { style: "margin-top:4px", text: "Display only — your log is stored in metric and converted on the way out, so switching never rewrites a single logged set." }),
     el("div", { style: "margin-top:12px" }, [uSeg]),
     rebaseRow,
+  ]);
+
+  // --- places ----------------------------------------------------------------
+  // Places could be WRITTEN in exactly two moments — the builder's equipment step
+  // and the mid-session "somewhere else" — and edited in neither. A gym described
+  // once by accident, or one you have since moved away from, was permanent, and
+  // the only way to correct a rack was to run the whole block builder again.
+  //
+  // This is the missing third thing: the list, editable, with a way out. It
+  // matters most for someone who trains in a different city most weeks, which is
+  // also who accumulates the junk entries fastest.
+  const placesNow = (profileNow && profileNow.places) || [];
+  // Which names a plan actually refers to. Deleting one of these is safe — the
+  // program carries its own equipment snapshot — but the day still says "Gym",
+  // so say so rather than letting it look like nothing happened.
+  const usedByPlan = new Set();
+  for (const p of programs) {
+    for (const t of Object.values(p.dayTemplates || {})) if (t && t.location) usedByPlan.add(t.location);
+  }
+
+  const placesStatus = el("p.note", { style: "margin-top:8px;min-height:1em" });
+  const placesList = el("div.list", { style: "margin-top:10px" });
+  let editing = null;          // { index, draft } — a working copy, so Cancel is real
+  let armed = null;            // name awaiting delete confirmation
+
+  const kitSummary = (pl) => {
+    const imps = pl.implements || [];
+    const named = IMPLEMENTS.filter(([id]) => imps.includes(id)).map(([, label]) => label);
+    const stations = STATIONS.filter(([id]) => imps.includes(id)).length;
+    const machines = MACHINES.filter(([id]) => imps.includes(id)).length;
+    const bits = [named.length ? named.join(", ") : "Bodyweight only"];
+    if (stations) bits.push(`${stations} station${stations === 1 ? "" : "s"}`);
+    if (machines) bits.push(`${machines} machine${machines === 1 ? "" : "s"}`);
+    return bits.join(" · ");
+  };
+
+  async function commitPlaces(next) {
+    await patchProfile({ places: next });
+    profileNow = await getProfile();
+    editing = null; armed = null;
+    paintPlaces();
+  }
+
+  function paintPlaces() {
+    const list = (profileNow && profileNow.places) || [];
+    if (editing) {
+      const isNew = editing.index < 0;
+      placesList.replaceChildren(el("div.card", { style: "background:var(--bg-elev2)" }, [
+        el("div.label", { text: isNew ? "New place" : "Editing " + (list[editing.index] || {}).name }),
+        placeEditor(editing.draft, profileNow, { onChange: () => { placesStatus.textContent = ""; } }),
+        el("div.row", { style: "margin-top:14px;gap:8px" }, [
+          el("button.btn", { style: "flex:1", onclick: () => { editing = null; paintPlaces(); } }, "Cancel"),
+          el("button.btn.primary", { style: "flex:1", onclick: async () => {
+            const tidied = tidyPlace(editing.draft, profileNow, "Gym");
+            const clash = list.some((p, i) => i !== editing.index && p.name.toLowerCase() === tidied.name.toLowerCase());
+            if (clash) { placesStatus.textContent = `You already have a place called ${tidied.name}.`; return; }
+            const next = list.slice();
+            if (isNew) next.push(tidied); else next[editing.index] = tidied;
+            await commitPlaces(next);
+            placesStatus.textContent = `Saved ${tidied.name}.`;
+          } }, "Save"),
+        ]),
+      ]));
+      return;
+    }
+    if (!list.length) {
+      placesList.replaceChildren(el("p.note", { style: "margin:0", text:
+        "No places described yet — the app assumes a normal commercial gym, which is the forgiving default." }));
+      return;
+    }
+    placesList.replaceChildren(...list.map((pl, i) => {
+      const isArmed = armed === pl.name;
+      return el("div.item" + (isArmed ? ".on" : ""), { style: isArmed ? "border-color:var(--red)" : "" }, [
+        el("div.meta", {}, [
+          el("div.t", { text: pl.name }),
+          el("div.s", { text: kitSummary(pl) + (usedByPlan.has(pl.name) ? " · in your plan" : "") }),
+        ]),
+        el("div.row", { style: "gap:6px" }, [
+          el("button.btn.ghost", { style: "padding:6px 10px;font-size:.8rem",
+            "aria-label": "Edit " + pl.name,
+            onclick: () => { armed = null; editing = { index: i, draft: { ...pl, implements: (pl.implements || []).slice() } }; paintPlaces(); } }, "Edit"),
+          el("button.btn" + (isArmed ? ".danger" : ".ghost"), { style: "padding:6px 10px;font-size:.8rem",
+            "aria-label": (isArmed ? "Confirm remove " : "Remove ") + pl.name,
+            onclick: async () => {
+              if (armed !== pl.name) {
+                armed = pl.name;
+                placesStatus.textContent = usedByPlan.has(pl.name)
+                  ? `Remove “${pl.name}”? Your plan still names it, and will keep using the kit it recorded. Tap Confirm.`
+                  : `Remove “${pl.name}”? Logged sessions keep it. Tap Confirm.`;
+                paintPlaces();
+                return;
+              }
+              await commitPlaces(list.filter((_, j) => j !== i));
+              placesStatus.textContent = `Removed ${pl.name}.`;
+            } }, isArmed ? "Confirm" : "Remove"),
+        ]),
+      ]);
+    }));
+  }
+  paintPlaces();
+
+  const placesCard = el("div.card", {}, [
+    el("div.label", { text: "Places" }),
+    el("p.note", { style: "margin-top:4px", text:
+      "Where you train, and what's there. This decides which exercises a plan can pick and which weights the app will prescribe. Somewhere you're only going once doesn't belong here — say \"just for today\" when a session asks." }),
+    placesList,
+    el("button.btn.block", { style: "margin-top:12px", onclick: () => {
+      armed = null;
+      editing = { index: -1, draft: blankPlace(profileNow) };
+      paintPlaces();
+    } }, "+ Add a place"),
+    placesStatus,
   ]);
 
   // --- build a block ---------------------------------------------------------
@@ -840,6 +956,7 @@ export async function renderSettings() {
     sectionH("Program"),
     buildCard,
     ...(programCard ? [programCard] : []),
+    placesCard,
 
     // Each of these is gated on its own toggle in "What you track" below. A
     // feature that is off keeps its data — it just stops asking about it.

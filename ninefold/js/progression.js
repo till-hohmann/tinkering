@@ -92,21 +92,41 @@ function nearestIn(vals, x) {
 }
 function barStep(plates) { return 2 * Math.min(...(plates && plates.length ? plates : [1.25])); }
 
+// The rack at ONE place. Bar weight, plate denominations and the cable stack are
+// per-place facts, resolved by location exactly as the dumbbells already were:
+// a hotel stack moving in 5 kg steps cannot load the 47.5 kg a home stack can,
+// and prescribing it produces a number the athlete stands there unable to set.
+//
+// Falls back to the flat top-level fields, which is what a program's own
+// equipmentProfile supplies and what any caller with no location in hand gets.
+export function rackAt(equip, location) {
+  const e = equip || {};
+  const p = (e.byPlace && e.byPlace[location]) || null;
+  return {
+    barWeightKg: (p && p.barWeightKg) || e.barWeightKg || 20,
+    ezBarWeightKg: (p && p.ezBarWeightKg) || e.ezBarWeightKg || 7.5,
+    barbellPlatesKg: (p && p.barbellPlatesKg) || e.barbellPlatesKg || [25, 20, 15, 10, 5, 2.5, 1.25],
+    ezBarPlatesKg: (p && p.ezBarPlatesKg) || e.ezBarPlatesKg || [10, 5, 2.5, 1.25],
+    cable: (p && p.cable) || e.cable || null,
+  };
+}
+
 // Snap an arbitrary load to what the athlete can actually load right now.
 export function roundLoad(load, implement, location, equip) {
   if (load == null) return null;
   equip = equip || {};
   if (implement === "bodyweight") return 0;
+  const rack = rackAt(equip, location);
   if (implement === "barbell") {
-    const bar = equip.barWeightKg || 20, step = barStep(equip.barbellPlatesKg);
+    const bar = rack.barWeightKg, step = barStep(rack.barbellPlatesKg);
     return Math.max(bar, bar + Math.round((load - bar) / step) * step);
   }
   if (implement === "ez_bar") {
-    const bar = equip.ezBarWeightKg || 7.5, step = barStep(equip.ezBarPlatesKg);
+    const bar = rack.ezBarWeightKg, step = barStep(rack.ezBarPlatesKg);
     return Math.max(bar, bar + Math.round((load - bar) / step) * step);
   }
   if (implement === "cable") {
-    const c = equip.cable || {}; const step = c.stepKg || 2.5;
+    const c = rack.cable || {}; const step = c.stepKg || 2.5;
     return roundToStep(load, step, c.minKg || step);
   }
   // dumbbells — snap to what's actually on the rack at this location: a discrete
@@ -341,9 +361,9 @@ function fmt(load, implement) {
 // Returns [{weightKg, reps}] or null when no warm-up is worth doing.
 export function warmupPlan({ load, implement, location, equip, role, timed }) {
   if (timed || load == null || !load || implement === "bodyweight") return null;
-  equip = equip || {};
-  const bar = implement === "barbell" ? (equip.barWeightKg || 20)
-    : implement === "ez_bar" ? (equip.ezBarWeightKg || 7.5) : 0;
+  const rack = rackAt(equip, location);
+  const bar = implement === "barbell" ? rack.barWeightKg
+    : implement === "ez_bar" ? rack.ezBarWeightKg : 0;
   const raw = [];
   if (role === "compound") {
     if (bar) {

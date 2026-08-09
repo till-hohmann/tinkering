@@ -3,7 +3,7 @@
 
 import { getActiveProgram, getProgram, resolveDay, saveSession, exerciseHistory, getLastLocation, setLastLocation, setBodyweight,
   getDraft, setDraft, clearDraft , exerciseHistoryAcross, getAllPrograms, equipmentForProgram } from "../store.js";
-import { getProfile, patchProfile, placeNames } from "../profile.js";
+import { getProfile, patchProfile, placeNames, withPlace } from "../profile.js";
 import { todayISO } from "../model.js";
 import * as M from "../model.js";
 import { el, mount, go, locationBadge, clear, backBtn, addActionBar } from "../ui.js";
@@ -181,7 +181,7 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
 
   const strengthPhase = (loc, rd) =>
     new Promise((res, rej) => runStrength(stage, program, day, weekday, srcIso, loc || template.location, {
-      onComplete: res, readiness: rd,
+      onComplete: res, readiness: rd, adhocPlace,
       startIndex: resuming ? (draft._exIndex || 0) : 0,
       seed: resuming ? draft.strengthResult : null,
       // persist after each exercise so an interruption keeps the logged sets
@@ -219,18 +219,24 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
   const known = placeNames(profile);
   const others = known.filter((n) => n !== plannedLoc);
   let actualLoc = draft.location;
+  // A place that exists for this session only. Held on the draft, not the
+  // profile, so a resume after a phone lock still knows which gym it's in.
+  let adhocPlace = draft.adhocPlace || null;
   if (!resuming) {
     const lastLoc = await getLastLocation();
     const preferred = lastLoc && lastLoc.date === logDate ? lastLoc.location : plannedLoc;
-    actualLoc = await locationPrompt(stage, plannedLoc, others, preferred, profile);
+    const picked = await locationPrompt(stage, plannedLoc, others, preferred, profile);
+    actualLoc = picked.location;
+    adhocPlace = picked.adhoc;
     await setLastLocation(logDate, actualLoc);
     draft.location = actualLoc;
+    draft.adhocPlace = adhocPlace;
     draft.plannedLocation = plannedLoc;
     persist();
   }
   // substitute only when actually elsewhere AND some lift's kit is missing there
   // (a dumbbell day at another place just logs with the local weights).
-  const sessionEquip = await equipmentForProgram(program);
+  const sessionEquip = withPlace(await equipmentForProgram(program), adhocPlace);
   const substituting = day.type === "strength" && actualLoc !== plannedLoc &&
     (day.exercises || []).some((e) => needsSub(program.exercises[e.exerciseId].implement, actualLoc, sessionEquip));
 
@@ -264,7 +270,7 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
     if (day.type === "strength") {
       if (substituting) {
         const { strengthResult, substitution } =
-          await substitutedStrength(stage, program, day, weekday, srcIso, plannedLoc, actualLoc, readiness);
+          await substitutedStrength(stage, program, day, weekday, srcIso, plannedLoc, actualLoc, readiness, adhocPlace);
         draft.strengthResult = strengthResult;
         draft.substitution = substitution;
         persist();
@@ -421,12 +427,15 @@ async function notes(stage, draft) {
 // --- Location check: are you where the plan expects? ----------------------
 // `others` is every OTHER place the profile knows about — one row each, so this
 // works with two places or ten. Only reached when there is a real choice.
+//
+// Resolves to { location, adhoc }. `adhoc` is a place record that exists for
+// this session only and is never written to the profile — see withPlace().
 function locationPrompt(stage, planned, others, preferred, profile) {
   return new Promise((res) => {
     const draw = () => {
       clear(stage);
       const choice = (title, sub, loc, isPlanned, isPreferred) =>
-        el("button.item", { style: "text-align:left" + (isPreferred ? ";border-color:var(--accent)" : ""), onclick: () => res(loc) }, [
+        el("button.item", { style: "text-align:left" + (isPreferred ? ";border-color:var(--accent)" : ""), onclick: () => res({ location: loc, adhoc: null }) }, [
           el("div.meta", {}, [el("div.t", { text: title }), el("div.s", { text: isPreferred && !isPlanned ? "earlier today · substitute here" : sub })]),
           el("span.badge" + (isPlanned ? ".accent" : ""), { text: isPlanned ? "Planned" : "Swap" }),
         ]);
@@ -450,30 +459,50 @@ function locationPrompt(stage, planned, others, preferred, profile) {
       ]));
     };
 
+    // Somewhere new. Two exits, because "a gym I'll use again" and "a gym I'll
+    // never see again" are different facts and only one of them is worth
+    // remembering. Making every one-off permanent is how a frequent traveller
+    // ends up choosing today's session from a list of forty dead hotels.
     function addPlace() {
       const place = blankPlace(profile);
       const status = el("p.note", { style: "min-height:1em;margin-top:10px" });
       clear(stage);
-      const editor = placeEditor(place, profile, { onChange: () => { status.textContent = ""; } });
+      const editor = placeEditor(place, profile, {
+        onChange: () => { status.textContent = ""; },
+        nameLabel: "What's it called? (optional)",
+      });
       stage.appendChild(el("div", {}, [
         backBtn("Back", "#/"),
-        el("div.label", { style: "margin-top:8px", text: "New place" }),
+        el("div.label", { style: "margin-top:8px", text: "Somewhere else" }),
         el("h1", { style: "margin:4px 0 0", text: "What's here?" }),
-        el("p.dim", { text: "Tick what this place actually has. The app picks matched movements for today and converts the results back into your plan — and remembers it for next time." }),
+        el("p.dim", { text: "Tick what this place actually has. The app picks matched movements for today and converts the results back into your plan." }),
         el("div.card", { style: "margin-top:14px" }, [editor]),
         status,
       ]));
-      const bar = addActionBar(el("button.btn.primary.big.block", { onclick: async () => {
+
+      // Just for today: no name required, nothing written to the profile. It
+      // still needs A name because the engines key equipment by place name, so
+      // an unnamed one becomes "Away" — which also means a run of one-off gyms
+      // reads as one honest label in the history rather than forty singletons.
+      const useOnce = el("button.btn.big.block", { onclick: () => {
+        const p = tidyPlace(place, profile, "Away");
+        bar.remove();
+        res({ location: p.name, adhoc: p });
+      } }, "Just for today");
+
+      const saveIt = el("button.btn.primary.big.block", { onclick: async () => {
         const named = tidyPlace(place, profile, "");
-        if (!named.name) { status.textContent = "Give it a name so you can pick it again."; return; }
+        if (!named.name) { status.textContent = "Give it a name to save it — or use it just for today."; return; }
         const existing = (profile && profile.places) || [];
         if (existing.some((p) => p.name.toLowerCase() === named.name.toLowerCase())) {
           status.textContent = `You already have a place called ${named.name}.`; return;
         }
         await patchProfile({ places: [...existing, named] }).catch(() => {});
         bar.remove();
-        res(named.name);
-      } }, "Train here today"));
+        res({ location: named.name, adhoc: null });
+      } }, "Save as a place");
+
+      const bar = addActionBar(useOnce, saveIt);
       // Leaving the new-place screen must return to the picker, not the app.
       const bb = stage.querySelector(".backbtn");
       if (bb) bb.onclick = () => { bar.remove(); draw(); };
@@ -581,8 +610,10 @@ function readinessCheck(stage) {
 }
 
 // --- Substituted strength session -----------------------------------------
-async function substitutedStrength(stage, program, day, weekday, iso, plannedLoc, actualLoc, readiness) {
-  const equip = await equipmentForProgram(program);
+async function substitutedStrength(stage, program, day, weekday, iso, plannedLoc, actualLoc, readiness, adhocPlace) {
+  // A one-off place is exactly the case this whole path exists for, so its kit
+  // has to be in the equip the swap decisions are made from.
+  const equip = withPlace(await equipmentForProgram(program), adhocPlace);
   const planned = day.exercises;
 
   // 1) engine target for each PLANNED lift (what the substitute must match)
@@ -638,7 +669,7 @@ async function substitutedStrength(stage, program, day, weekday, iso, plannedLoc
   });
   const subResults = await new Promise((res) =>
     runStrength(stage, augProgram, { exercises: subExercises }, weekday, iso, actualLoc,
-      { exercises: subExercises, recs: recsOverride, onComplete: res, readiness }));
+      { exercises: subExercises, recs: recsOverride, onComplete: res, readiness, adhocPlace }));
 
   // 5) back-calc swapped → planned lift; keep kept; assemble in planned order.
   //    Map by index (not id) so a swap can't cross-wire with a kept lift's id.
