@@ -1,0 +1,41 @@
+name = "ninefold-backup"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# Durable cloud backup for Ninefold — one KV key holds a full install's state
+# (programs + sessions + synced settings), plus a second key for pushed Apple
+# Health metrics. Deployed separately from the Pages app:
+#
+#   cd backup-worker && wrangler deploy
+#
+# SECRETS (set once, never committed):
+#   wrangler secret put BACKUP_TOKEN
+#     -> paste a long random string at the prompt. NEVER put it on the command
+#        line, or it lands in your shell history. This one token gates read AND
+#        write of your whole training log.
+#
+#   Generate one:
+#     macOS/Linux   openssl rand -base64 32
+#     Windows       $b = New-Object byte[] 32
+#                   [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+#                   [Convert]::ToBase64String($b)
+#
+# Then put the same URL + token into the app: Settings -> Data & backup ->
+# Cloud backup, or bake them into your private config overlay.
+#
+# You must create your own KV namespace and paste its id below:
+#   wrangler kv namespace create BACKUP
+[[kv_namespaces]]
+binding = "STRONG_BACKUP"
+id = "PUT_YOUR_KV_NAMESPACE_ID_HERE"   # wrangler kv namespace create BACKUP
+
+[vars]
+# Optional. The app origin allowed to call this Worker (CORS). Leave unset for
+# "*" — the bearer token, not the origin, is the real gate, but locking this to
+# your own Pages URL costs nothing.
+# APP_ORIGIN = "https://your-app.pages.dev"
+
+# Optional. Overrides the token-derived storage key. Set this ONLY if you already
+# have a backup stored under a specific key and don't want to migrate it — for
+# example when rotating BACKUP_TOKEN on an install that has existing data.
+# BACKUP_KEY = "till"
