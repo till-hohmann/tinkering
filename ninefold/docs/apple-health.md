@@ -120,6 +120,27 @@ Run it once by hand, then open **Profile → Tracker**. It should show the last 
 date. If it shows a red line naming unrecognised keys, your dictionary keys don't
 match the table above.
 
+### When it doesn't work
+
+Three failures account for almost everything, and all three were hit while this
+was being written.
+
+**`unauthorized`, and you're sure the token is right.** Check whether the header
+arrived at all before blaming the token. In Shortcuts a header row only commits
+when the field **loses focus** — type a value, tap ▶ straight away, and the entire
+row is silently dropped, so the request goes out with no Authorization at all.
+Fill the Key, tap Done; fill the Value, tap Done; tap the action's background so
+nothing has focus; *then* run.
+
+**"The network connection was lost."** Usually not a network problem. It's what
+Shortcuts says when it can't build the request body — most often *Request Body:
+File* pointing at a variable that isn't set. Use **Request Body: JSON** with flat
+fields and the problem disappears.
+
+**It pushes fine and nothing appears in the app.** The keys don't match. The
+Worker stores whatever it is sent, so a wrong name is a successful push carrying
+nothing readable. Profile → Tracker names the keys it didn't recognise.
+
 ### If you would rather not build one
 
 The **Health Auto Export** app (App Store, a few pounds) does the same job with no
