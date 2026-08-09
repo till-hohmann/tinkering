@@ -396,22 +396,22 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     ]));
     container.appendChild(el("div.progress", {}, [el("div.progress-fill", { style: `width:${(exIndex / exercises.length) * 100}%` })]));
 
-    // The 74px tile stays the hand-drawn figure — a photo shrunk to thumbnail is
-    // mush, and this one has to read at a glance mid-set. But when a render
-    // exists, the tile becomes a BUTTON that opens it full-screen: previously the
-    // demo was only reachable from the exercise card, which means leaving the
-    // session, which nobody does mid-workout. That made the renders invisible
-    // exactly when someone unsure of the movement needs them.
+    // THE WHOLE IMAGE, not the demo crop. Lists get the cropped photograph
+    // because a muscle panel is unreadable at 44px, but this is the screen you
+    // stand in front of between sets — the activation half is the half that
+    // answers "am I meant to feel this here?", and cropping it away was the
+    // wrong trade at this size. Full width, whole composite, tap to enlarge.
     const demoURL = photoURL(rx.exerciseId);
-    const figure = el("div", { style: "width:74px;height:74px;color:var(--accent);flex:none" }, [illustration(rx.exerciseId)]);
-    const figureNode = demoURL
-      ? el("button.exdemo", { "aria-label": `Show ${lib.name} demonstration`, onclick: () => showDemo(demoURL, lib.name) }, [figure])
-      : figure;
+    const heroNode = demoURL
+      ? el("button.exhero-btn", { "aria-label": `Enlarge ${lib.name} demonstration`,
+          onclick: () => showDemo(demoURL, lib.name) },
+          [el("img.exhero-img", { src: demoURL, alt: `${lib.name} — demonstration and muscles worked`,
+            decoding: "async" })])
+      : el("div", { style: "width:74px;height:74px;color:var(--accent);flex:none" }, [illustration(rx.exerciseId)]);
     container.appendChild(el("div.ex-head", {}, [
-      el("div.row", {}, [
-        figureNode,
-        el("h2", { style: "margin:0", text: lib.name }),
-      ]),
+      demoURL
+        ? el("div", {}, [el("h2", { style: "margin:0 0 10px" }, lib.name), heroNode])
+        : el("div.row", {}, [heroNode, el("h2", { style: "margin:0", text: lib.name })]),
       el("div.cue", { text: lib.cue || "" }),
       el("div.rx", { text: `${rx.prescribedSets} × ${rx.repRange} · rest ${rx.restSeconds}s${rx.role === "core" ? " · core" : ""}` }),
       prevEx ? el("div.rx", { text: "Last time: " + prevEx.sets.map((s) => M.setDisplay(implement, s)).join("  ") })
@@ -444,7 +444,10 @@ export async function runStrength(container, program, day, weekday, iso, locatio
         stall ? el("div.rxstall", { text: "⚠ " + stall.message }) : null,
       ]);
     }
-    const targetsPanel = muscleTargets(rx.exerciseId, true);
+    // Suppressed when the render is showing: its right-hand half IS an activation
+    // map, and the app's SVG version directly beneath it says the same thing worse
+    // — while costing vertical space on the one screen where the set list matters.
+    const targetsPanel = demoURL ? null : muscleTargets(rx.exerciseId, true);
     if (banner || targetsPanel) container.appendChild(el("div.rxrow", {},
       [banner, targetsPanel].filter(Boolean)));
 
