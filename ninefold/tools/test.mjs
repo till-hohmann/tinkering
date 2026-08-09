@@ -22,6 +22,7 @@ import { strengthScore, liftScore, standardsFor, STANDARDS_BY_SEX, LEVELS } from
 import { roundLoad, loadCeiling, nextLoadUp } from "../js/progression.js";
 import { BUILD_CONFIG, hasBackup, hasWhoop } from "../js/config.js";
 import { EXERCISE_LIBRARY, checkLibrary, availableAt, pickForPattern } from "../js/exercise-library.js";
+import { FULL_GYM, EXERCISE_NEEDS, stationsKnown, canDoHere, SURVEYED, IMPLEMENTS, STATIONS, PRESETS } from "../js/equipment.js";
 import { MUSCLE_MAP } from "../js/volume.js";
 import { EXERCISE_ANATOMY } from "../js/exercise-anatomy.js";
 import { hasIllustration } from "../js/illustrations.js";
@@ -561,6 +562,57 @@ group("themes — vary brand, never meaning", () => {
   it("each theme has a distinct accent", () => {
     const accents = THEMES.map((t) => t.vars["--accent"]);
     assert.equal(new Set(accents).size, accents.length);
+  });
+});
+
+group("equipment — stations gate exercises without punishing old installs", () => {
+  const full = [...FULL_GYM];
+  const garage = ["barbell", "bodyweight", SURVEYED];       // a bar on the floor, asked about stations
+  const garagePlusRack = ["barbell", "bodyweight", "rack", SURVEYED];
+  const legacy = ["barbell", "dumbbell_pair", "bodyweight"]; // saved before stations existed
+
+  it("a bar with no rack and no bench loses the lifts that need them", () => {
+    const ids = availableAt(garage).map((e) => e.id);
+    assert.equal(ids.includes("back_squat"), false, "no rack, no back squat");
+    assert.equal(ids.includes("bench_press"), false, "no bench, no bench press");
+    assert.equal(ids.includes("rdl_barbell"), true, "an RDL needs neither — it must survive");
+    assert.equal(ids.includes("deadlift"), true);
+  });
+  it("adding the rack brings the racked lifts back", () => {
+    const ids = availableAt(garagePlusRack).map((e) => e.id);
+    assert.equal(ids.includes("back_squat"), true);
+    assert.equal(ids.includes("ohp_barbell"), true);
+    assert.equal(ids.includes("bench_press"), false, "still no bench");
+  });
+  it("a place that was never asked keeps everything", () => {
+    // The regression that matters: someone who has been benching for a year must
+    // not lose bench press because a new question appeared in the builder.
+    assert.equal(stationsKnown(legacy), false);
+    const ids = availableAt(legacy).map((e) => e.id);
+    assert.equal(ids.includes("bench_press"), true);
+    assert.equal(ids.includes("back_squat"), true);
+  });
+  it("bodyweight-only still trains every major pattern", () => {
+    const ids = availableAt(["bodyweight"]).map((e) => e.id);
+    for (const must of ["push_up", "bodyweight_squats", "bw_lunge", "glute_bridge"]) {
+      assert.ok(ids.includes(must), `bodyweight install lost ${must}`);
+    }
+    assert.equal(ids.includes("pull_up"), true, "no station info = assume the bar exists");
+  });
+  it("a bodyweight place that WAS asked loses the hanging work", () => {
+    const ids = availableAt(["bodyweight", "bench", SURVEYED]).map((e) => e.id);   // asked, no bar
+    assert.equal(ids.includes("pull_up"), false);
+    assert.equal(ids.includes("dip"), false);
+    assert.equal(ids.includes("push_up"), true);
+  });
+  it("every gated exercise id exists in the library", () => {
+    const known = new Set(EXERCISE_LIBRARY.map((e) => e.id));
+    for (const [station, ids] of Object.entries(EXERCISE_NEEDS)) {
+      for (const id of ids) assert.ok(known.has(id), `${station} gates ${id}, which is not in the library`);
+    }
+  });
+  it("the full-gym preset unlocks the whole library", () => {
+    assert.equal(availableAt(full).length, EXERCISE_LIBRARY.length);
   });
 });
 

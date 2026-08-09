@@ -32,6 +32,8 @@ import { ADAPTATIONS, byId as adaptationById, analysePriorities, compatibility,
 import { generateProgram } from "../builder/generate.js";
 import { getProfile, patchProfile } from "../profile.js";
 import { defaultEquipmentFor, weightValue, weightToKg, weightLabel, distanceValue, distanceLabel } from "../units.js";
+import { FULL_GYM } from "../equipment.js";
+import { placeEditor, blankPlace, tidyPlace } from "../components/place-editor.js";
 import { importProgram } from "../store.js";
 import { todayISO } from "../model.js";
 
@@ -245,89 +247,34 @@ function stepDefender(body) {
 // Answers are written back to the PROFILE, not just the wizard: places are a
 // property of the person, not of one block, and every later block (plus the
 // substitution engine) reads them.
-const IMPLEMENT_OPTIONS = [
-  ["barbell", "Barbell & plates", "Squat rack, bench, olympic bar"],
-  ["dumbbell_pair", "Dumbbells", "Fixed rack or adjustables"],
-  ["cable", "Cable machine", "Pulldowns, pushdowns, face pulls"],
-  ["ez_bar", "EZ bar", "Curls and extensions"],
-  ["machine", "Machines", "Leg press, chest press, rows, leg curl/extension"],
-];
 
 function stepEquipment(body) {
   if (!S.places) {
     const existing = (S.profile && S.profile.places) || [];
-    // Defaults follow the user's UNITS: an imperial gym is a 45 lb bar with
-    // 45/25/10/5 plates, not metric numbers relabelled. Stored in kg like
-    // everything else, so the engines never learn about units.
-    const kit = defaultEquipmentFor(S.profile);
     S.places = existing.length
       ? existing.map((p) => ({ ...p, implements: (p.implements || []).slice() }))
-      : [{ name: "Gym", implements: ["barbell", "dumbbell_pair", "cable", "ez_bar"],
-           barWeightKg: kit.barWeightKg, ezBarWeightKg: kit.ezBarWeightKg,
-           barbellPlatesKg: kit.barbellPlatesKg, ezBarPlatesKg: kit.ezBarPlatesKg,
-           cable: kit.cable, dumbbells: { ...kit.dumbbells } }];
+      // A fresh install starts from the commercial-gym preset because that is
+      // the most common answer AND the most forgiving wrong one: over-stating
+      // your kit gets corrected the first time you look for a machine, while
+      // under-stating it silently narrows the plan forever.
+      : [{ ...blankPlace(S.profile, "Gym"), implements: [...FULL_GYM] }];
   }
   const host = el("div");
 
   function render() {
-    host.replaceChildren(...S.places.map((place, idx) => {
-      const nameEl = el("input", { type: "text", value: place.name, placeholder: "Gym, Home, Hotel…",
-        style: FIELD, oninput: (e) => { place.name = e.target.value; } });
-      const toggles = el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:10px" },
-        IMPLEMENT_OPTIONS.map(([id, label]) => {
-          const on = place.implements.includes(id);
-          return el("button.progchip" + (on ? ".on" : ""), {
-            onclick: () => {
-              place.implements = on ? place.implements.filter((x) => x !== id) : [...place.implements, id];
-              // dumbbell_single rides along with the pair — one bell from a pair
-              // rack is always available, and several lifts need exactly that.
-              place.implements = place.implements.filter((x) => x !== "dumbbell_single");
-              if (place.implements.includes("dumbbell_pair")) place.implements.push("dumbbell_single");
-              render();
-            },
-          }, label);
-        }));
-      const heaviest = place.implements.includes("dumbbell_pair")
-        ? el("div.row", { style: "margin-top:12px;align-items:center;gap:8px" }, [
-            el("div", { style: "flex:1" }, [
-              el("div", { text: "Heaviest dumbbell" }),
-              el("div.faint", { style: "font-size:.76rem", text: "per hand — stops the app prescribing a weight you don't own" })]),
-            el("input", { type: "text", inputmode: "decimal",
-              value: String(weightValue((place.dumbbells && place.dumbbells.maxKg) || defaultEquipmentFor(S.profile).dumbbells.maxKg, S.profile)),
-              style: "width:78px;text-align:center;padding:8px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)",
-              oninput: (e) => {
-                const kg = weightToKg(e.target.value, S.profile);
-                const base = defaultEquipmentFor(S.profile).dumbbells;
-                place.dumbbells = { minKg: base.minKg, stepKg: base.stepKg, maxKg: kg && kg > 0 ? kg : base.maxKg };
-              } }),
-            el("span.dim", { text: weightLabel(S.profile) }),
-          ])
-        : null;
-      return el("div.card", { style: "margin-top:12px" }, [
-        el("div.row", { style: "align-items:center" }, [
+    host.replaceChildren(...S.places.map((place, idx) =>
+      el("div.card", { style: "margin-top:12px" }, [
+        el("div.row", { style: "align-items:center;margin-bottom:6px" }, [
           el("div.label", { text: "Place " + (idx + 1) }), el("span.spacer"),
           S.places.length > 1
             ? el("button.btn", { style: "padding:5px 11px", onclick: () => { S.places.splice(idx, 1); render(); } }, "Remove")
             : null,
         ].filter(Boolean)),
-        el("div", { style: "margin-top:8px" }, [nameEl]),
-        toggles,
-        heaviest,
-        place.implements.filter((x) => x !== "dumbbell_single" && x !== "bodyweight").length
-          ? null
-          : el("p.note", { style: "margin-top:10px", text: "Bodyweight only — the plan will use holds and bodyweight movements here." }),
-      ].filter(Boolean));
-    }));
+        placeEditor(place, S.profile, { onChange: () => {} }),
+      ])));
     bar("Continue", () => {
       // Persist to the profile so later blocks and the substitution engine see them.
-      const kit2 = defaultEquipmentFor(S.profile);
-      S.places = S.places.map((p) => ({
-        barWeightKg: kit2.barWeightKg, ezBarWeightKg: kit2.ezBarWeightKg,
-        barbellPlatesKg: kit2.barbellPlatesKg, ezBarPlatesKg: kit2.ezBarPlatesKg,
-        cable: kit2.cable,
-        ...p,
-        name: (p.name || "").trim() || "Gym",
-        implements: [...new Set([...p.implements, "bodyweight"])] }));
+      S.places = S.places.map((p) => tidyPlace(p, S.profile));
       patchProfile({ places: S.places }).catch(() => {});
       next();
     });
@@ -337,7 +284,7 @@ function stepEquipment(body) {
     el("p.dim", { text: "This decides which exercises the plan can pick. Add a second place if you regularly train somewhere else — the app swaps in matched movements when you're there and converts the results back." }),
     host,
     el("button.btn.block", { style: "margin-top:12px", onclick: () => {
-      S.places.push({ name: "", implements: ["bodyweight"] }); render();
+      S.places.push(blankPlace(S.profile)); render();
     } }, "+ Add another place"),
   );
   render();

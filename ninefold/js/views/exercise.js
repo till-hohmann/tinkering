@@ -17,10 +17,16 @@ import { MOBILITY_SESSIONS } from "../mobility.js";
 
 // role → the heat-map colour it corresponds to in the render, so the callout
 // chip reads as a key to the image.
+// Matched to the RENDERS, not chosen freely. The shipped images shade the primary
+// mover RED and everything secondary AMBER, so the callout dots have to speak the
+// same language: the previous palette made "primary" yellow, which is the render's
+// colour for secondary — the list and the picture beside it contradicted each other.
+// Stabilizers get a cool tone precisely BECAUSE the renders don't shade them; a
+// third warm colour would imply a heat level the image doesn't show.
 const ROLE_COLOR = {
-  primary: "#ffd23f",     // white-hot / yellow core
-  synergist: "#fb923c",   // amber-orange
-  stabilizer: "#a3e635",  // lime rim
+  primary: "#f87171",     // red — the render's hot muscle
+  synergist: "#fbbf24",   // amber — the render's warm muscle
+  stabilizer: "#7dd3fc",  // cool: named here, deliberately not lit in the render
 };
 
 // Lifts live in the program library; the M&S movements are an app-side constant
@@ -77,6 +83,11 @@ export async function renderExercise(id) {
     ]));
 
     // --- body map: the same attribution, shaded by role ---------------------
+    // ONLY when there's no render. The shipped images carry their own front/back
+    // activation figures in the right-hand panel, so drawing the app's version
+    // underneath states the same thing twice — and the SVG map loses badly to a
+    // photoreal one sitting two centimetres above it. Without a render it is the
+    // only activation view there is, so it stays.
     const heat = heatByGroup(id);
     const colorOf = (group) => {
       const h = heat[group];
@@ -85,7 +96,7 @@ export async function renderExercise(id) {
       if (h >= 0.6) return ROLE_COLOR.synergist;
       return ROLE_COLOR.stabilizer;
     };
-    children.push(el("div.card", { style: "margin-top:14px" }, [
+    if (!url) children.push(el("div.card", { style: "margin-top:14px" }, [
       el("div.label", { text: "Activation map" }),
       muscleBody(colorOf, { glow: true }),
     ]));

@@ -7,6 +7,8 @@
 // Everything degrades to the SVG figure when a render is missing, so partial
 // coverage is fine — generate the library a few exercises at a time.
 
+import { APP_VERSION } from "./version.js";
+
 const DIR = "./img/exercises/";
 let manifest = null;      // Set of exercise ids, or null until loaded
 let pending = null;
@@ -35,7 +37,9 @@ const SHARES = {
 export function loadPhotoManifest() {
   if (manifest) return Promise.resolve(manifest);
   if (pending) return pending;
-  pending = fetch(DIR + "manifest.json")
+  // ?v= is load-bearing: the filename never changes, so without it the edge
+  // serves the previous build's manifest and every render silently vanishes.
+  pending = fetch(`${DIR}manifest.json?v=${APP_VERSION}`)
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => { manifest = new Set((j && j.ids) || []); return manifest; })
     .catch(() => { manifest = new Set(); return manifest; });

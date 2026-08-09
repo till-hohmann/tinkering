@@ -38,7 +38,13 @@ const RENAMES = { "README.public.md": "README.md", "GETTING_STARTED.public.md": 
 // Never copied even from inside an allowed directory.
 // `concepts` is design scratch — rejected icon directions, before/after sheets.
 // Useful history in the dev repo, noise in a release someone is cloning.
-const EXCLUDE_RE = /(^|[\\/])(\.wrangler|node_modules|__pycache__|\.deploy|overlay|concepts)([\\/]|$)|\.pyc$/;
+//
+// The exercise PNGs are MASTERS, not assets: ~1.9 MB each, 129 MB for the set,
+// and the app never loads one — `build-exercise-images.py` turns them into the
+// 1024px webps that actually ship. Copying them would put 136 MB into a git repo
+// to deliver 5 MB of images. They are gitignored in the dev repo for the same
+// reason, but this tool copies from DISK, so it needs its own rule.
+const EXCLUDE_RE = /(^|[\\/])(\.wrangler|node_modules|__pycache__|\.deploy|overlay|concepts)([\\/]|$)|\.pyc$|(^|[\\/])img[\\/]exercises[\\/][^\\/]+\.png$/;
 
 // --- what must never appear --------------------------------------------------
 //

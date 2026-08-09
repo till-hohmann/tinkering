@@ -24,11 +24,11 @@ import { resolvedConfig, setRuntimeConfig, hasBackup } from "../config.js";
 import * as db from "../db.js";
 import { el, mount, go } from "../ui.js";
 import { cloudPull, cloudCheck } from "../cloudsync.js";
+// Baked in rather than read at runtime: an iOS standalone PWA exposes neither
+// caches.keys() nor SW messaging to the page, so the code reports its own version.
+import { APP_VERSION } from "../version.js";
 
-// Running build version — baked into the code so it always reflects the
-// installed version (iOS standalone PWAs don't reliably expose caches.keys()
-// or SW messaging to the page). BUMP THIS together with CACHE in sw.js.
-const APP_VERSION = "v146";
+
 
 function daysSince(iso) {
   if (!iso) return null;

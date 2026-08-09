@@ -20,6 +20,8 @@
 // a knee-dominant and a hip-dominant movement. Balancing by pattern rather than
 // by muscle is what stops the generator producing four chest exercises and no rows.
 
+import { canDoHere } from "./equipment.js";
+
 export const PATTERNS = {
   squat:    { name: "Squat", group: "lower", axis: "knee" },
   hinge:    { name: "Hinge", group: "lower", axis: "hip" },
@@ -296,9 +298,15 @@ export const idsInLibrary = () => EXERCISE_LIBRARY.map((e) => e.id);
 
 // Everything trainable with the implements available at a place. `bodyweight` is
 // always available, which is what makes a hotel-room fallback possible at all.
+//
+// Two gates, not one. The implement is what you hold; the STATION is what you
+// rack out of or hang from, and it gates without changing the load — a bench
+// press is a barbell lift you simply cannot do with no bench. `canDoHere`
+// deliberately answers "yes" for a place that was never asked about stations,
+// so an install that predates the question keeps every exercise it had.
 export function availableAt(implementsAtPlace) {
   const have = new Set([...(implementsAtPlace || []), "bodyweight"]);
-  return EXERCISE_LIBRARY.filter((e) => have.has(e.implement));
+  return EXERCISE_LIBRARY.filter((e) => have.has(e.implement) && canDoHere(e.id, implementsAtPlace));
 }
 
 // Pick the best exercise for a pattern from what's available, preferring

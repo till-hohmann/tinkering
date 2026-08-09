@@ -22,7 +22,13 @@ New-Item -ItemType Directory -Force -Path (Join-Path $stage "data") | Out-Null
 
 Copy-Item index.html, manifest.webmanifest, sw.js $stage
 Copy-Item -Recurse css, js, icons, audio, fonts $stage
-if (Test-Path img) { Copy-Item -Recurse img $stage }                             # exercise anatomy renders (webp + manifest)
+# Exercise renders: the webps + manifest ship, the PNG MASTERS do not. They are
+# ~1.9 MB each (129 MB for the set), the app never requests one, and uploading
+# them would multiply the deploy by twenty-five to deliver nothing.
+if (Test-Path img) {
+  Copy-Item -Recurse img $stage
+  Get-ChildItem (Join-Path $stage "img") -Recurse -Filter *.png -ErrorAction SilentlyContinue | Remove-Item -Force
+}
 # Program plans. The PUBLIC repo ships none — a fresh install has no program and
 # the in-app builder writes the first one. Personal blocks live in the private
 # overlay, so this copies whatever is there (possibly nothing).

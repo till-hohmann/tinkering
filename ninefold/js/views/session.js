@@ -3,7 +3,7 @@
 
 import { getActiveProgram, getProgram, resolveDay, saveSession, exerciseHistory, getLastLocation, setLastLocation, setBodyweight,
   getDraft, setDraft, clearDraft , exerciseHistoryAcross, getAllPrograms, equipmentForProgram } from "../store.js";
-import { getProfile, placeNames } from "../profile.js";
+import { getProfile, patchProfile, placeNames } from "../profile.js";
 import { todayISO } from "../model.js";
 import * as M from "../model.js";
 import { el, mount, go, locationBadge, clear, backBtn, addActionBar } from "../ui.js";
@@ -17,6 +17,7 @@ import { runRoutine } from "./routine.js";
 import { runStrength } from "./strength.js";
 import { runCardioCore, logCardio } from "./cardio.js";
 import { recoveryToday, body as trackerBody, provider, has, CAP } from "../health/index.js";
+import { placeEditor, blankPlace, tidyPlace } from "../components/place-editor.js";
 import { weightLabel, weightValue, weightToKg, readEdit } from "../units.js";
 
 const repLo = (range) => { const n = (range || "").match(/\d+/); return n ? Number(n[0]) : 8; };
@@ -206,22 +207,22 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
   //
   // This used to assume exactly two places and flip between the literal strings
   // two hardcoded city names. Places now come from the profile and there can be
-  // any number of them, including one — and with only one there is nothing to
-  // ask, so the prompt is skipped entirely rather than shown with a single
-  // option. That's the common case for a new install.
+  // any number of them, including one.
+  //
+  // The prompt is now shown even with a SINGLE place, which looks like added
+  // friction and isn't: with one place it was skipped, so the one person who
+  // most needs to say "actually I'm in a hotel gym today" — someone who set the
+  // app up around one gym — had no way to say it. One tap confirms, and the
+  // escape hatch is always there.
   const plannedLoc = template.location;
   const profile = await getProfile();
   const known = placeNames(profile);
   const others = known.filter((n) => n !== plannedLoc);
   let actualLoc = draft.location;
   if (!resuming) {
-    if (!others.length) {
-      actualLoc = plannedLoc;                       // nowhere else to be
-    } else {
-      const lastLoc = await getLastLocation();
-      const preferred = lastLoc && lastLoc.date === logDate ? lastLoc.location : plannedLoc;
-      actualLoc = await locationPrompt(stage, plannedLoc, others, preferred);
-    }
+    const lastLoc = await getLastLocation();
+    const preferred = lastLoc && lastLoc.date === logDate ? lastLoc.location : plannedLoc;
+    actualLoc = await locationPrompt(stage, plannedLoc, others, preferred, profile);
     await setLastLocation(logDate, actualLoc);
     draft.location = actualLoc;
     draft.plannedLocation = plannedLoc;
@@ -420,25 +421,65 @@ async function notes(stage, draft) {
 // --- Location check: are you where the plan expects? ----------------------
 // `others` is every OTHER place the profile knows about — one row each, so this
 // works with two places or ten. Only reached when there is a real choice.
-function locationPrompt(stage, planned, others, preferred) {
+function locationPrompt(stage, planned, others, preferred, profile) {
   return new Promise((res) => {
-    clear(stage);
-    const choice = (title, sub, loc, isPlanned, isPreferred) =>
-      el("button.item", { style: "text-align:left" + (isPreferred ? ";border-color:var(--accent)" : ""), onclick: () => res(loc) }, [
-        el("div.meta", {}, [el("div.t", { text: title }), el("div.s", { text: isPreferred && !isPlanned ? "earlier today · substitute here" : sub })]),
-        el("span.badge" + (isPlanned ? ".accent" : ""), { text: isPlanned ? "Planned" : "Swap" }),
-      ]);
-    const elsewhere = others.length === 1 ? others[0] : "somewhere else";
-    stage.appendChild(el("div", {}, [
-      backBtn("Today", "#/"),
-      el("div.label", { style: "margin-top:8px", text: "Location check" }),
-      el("h1", { style: "margin:4px 0 0", text: "Where are you training?" }),
-      el("p.dim", { text: `Scheduled at ${planned}. If you're at ${elsewhere}, the app swaps in equipment-matched lifts and converts your results back into the plan.` }),
-      el("div.list", { style: "margin-top:16px" }, [
-        choice(`I'm at ${planned}`, "Run the workout as planned", planned, true, preferred === planned),
-        ...others.map((o) => choice(`I'm at ${o}`, "Substitute for the equipment here", o, false, preferred === o)),
-      ]),
-    ]));
+    const draw = () => {
+      clear(stage);
+      const choice = (title, sub, loc, isPlanned, isPreferred) =>
+        el("button.item", { style: "text-align:left" + (isPreferred ? ";border-color:var(--accent)" : ""), onclick: () => res(loc) }, [
+          el("div.meta", {}, [el("div.t", { text: title }), el("div.s", { text: isPreferred && !isPlanned ? "earlier today · substitute here" : sub })]),
+          el("span.badge" + (isPlanned ? ".accent" : ""), { text: isPlanned ? "Planned" : "Swap" }),
+        ]);
+      const elsewhere = others.length === 1 ? others[0] : "somewhere else";
+      const blurb = others.length
+        ? `Scheduled at ${planned}. If you're at ${elsewhere}, the app swaps in equipment-matched lifts and converts your results back into the plan.`
+        : `Scheduled at ${planned}. Training somewhere else today? Add it and the app matches the session to what's actually there.`;
+      stage.appendChild(el("div", {}, [
+        backBtn("Today", "#/"),
+        el("div.label", { style: "margin-top:8px", text: "Location check" }),
+        el("h1", { style: "margin:4px 0 0", text: "Where are you training?" }),
+        el("p.dim", { text: blurb }),
+        el("div.list", { style: "margin-top:16px" }, [
+          choice(`I'm at ${planned}`, "Run the workout as planned", planned, true, preferred === planned),
+          ...others.map((o) => choice(`I'm at ${o}`, "Substitute for the equipment here", o, false, preferred === o)),
+        ]),
+        // Somewhere new. Travelling, a hotel gym, a friend's garage — previously
+        // the only options were the places you'd already described, so the answer
+        // to "I'm somewhere else entirely" was to lie and pick the closest one.
+        el("button.btn.block", { style: "margin-top:12px", onclick: addPlace }, "+ Somewhere else"),
+      ]));
+    };
+
+    function addPlace() {
+      const place = blankPlace(profile);
+      const status = el("p.note", { style: "min-height:1em;margin-top:10px" });
+      clear(stage);
+      const editor = placeEditor(place, profile, { onChange: () => { status.textContent = ""; } });
+      stage.appendChild(el("div", {}, [
+        backBtn("Back", "#/"),
+        el("div.label", { style: "margin-top:8px", text: "New place" }),
+        el("h1", { style: "margin:4px 0 0", text: "What's here?" }),
+        el("p.dim", { text: "Tick what this place actually has. The app picks matched movements for today and converts the results back into your plan — and remembers it for next time." }),
+        el("div.card", { style: "margin-top:14px" }, [editor]),
+        status,
+      ]));
+      const bar = addActionBar(el("button.btn.primary.big.block", { onclick: async () => {
+        const named = tidyPlace(place, profile, "");
+        if (!named.name) { status.textContent = "Give it a name so you can pick it again."; return; }
+        const existing = (profile && profile.places) || [];
+        if (existing.some((p) => p.name.toLowerCase() === named.name.toLowerCase())) {
+          status.textContent = `You already have a place called ${named.name}.`; return;
+        }
+        await patchProfile({ places: [...existing, named] }).catch(() => {});
+        bar.remove();
+        res(named.name);
+      } }, "Train here today"));
+      // Leaving the new-place screen must return to the picker, not the app.
+      const bb = stage.querySelector(".backbtn");
+      if (bb) bb.onclick = () => { bar.remove(); draw(); };
+    }
+
+    draw();
   });
 }
 

@@ -6,6 +6,7 @@
 import { el, clear, haptic, go, registerCleanup } from "../ui.js";
 import { interruptSheet } from "../components/interrupt.js";
 import { illustration } from "../illustrations.js";
+import { photoURL, loadPhotoManifest } from "../exercise-photo.js";
 import { exerciseHistory, exerciseHistoryAcross, getAllPrograms, getAllSessions, equipmentForProgram } from "../store.js";
 import { getProfile } from "../profile.js";
 import { PlateCalc } from "../components/plate-calc.js";
@@ -15,8 +16,35 @@ import { cueItemEnd, cueTick } from "../components/sound.js";
 import { celebrate } from "../components/confetti.js";
 import { recommend, detectStall, roundLoad, isDeloadWeek, e1rm, warmupPlan, replanSets, loadCeiling } from "../progression.js";
 import { MUSCLE_MAP } from "../volume.js";
+
 import { muscleBody } from "../anatomy.js";
 import * as M from "../model.js";
+
+// Full-screen demonstration, opened from the exercise head mid-session.
+//
+// Deliberately NOT a route: navigating away from a running session and back is
+// how you lose your place in a set. This is an overlay over the live screen —
+// tap anywhere, press Escape, or hit the close button and the workout is exactly
+// where it was. The image is the same render the exercise card shows, muscle
+// panel included, because at full width both halves are legible.
+function showDemo(url, name) {
+  const img = el("img.exdemo-img", { src: url, alt: `${name} — demonstration and muscles worked`, decoding: "async" });
+  const sheet = el("div.exdemo-sheet", { role: "dialog", "aria-modal": "true", "aria-label": name }, [
+    el("div.exdemo-inner", {}, [
+      el("div.row", { style: "align-items:center;gap:10px;margin-bottom:10px" }, [
+        el("h2", { style: "margin:0;font-size:1.05rem", text: name }),
+        el("span.spacer"),
+        el("button.btn.ghost", { style: "padding:6px 12px", "aria-label": "Close demonstration" }, "✕"),
+      ]),
+      img,
+    ]),
+  ]);
+  const close = () => { sheet.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  sheet.addEventListener("click", close);
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(sheet);
+}
 
 // "Muscles worked" anatomy panel for an exercise — primary (1.0) lit coral,
 // secondary (<1.0) lit amber, on the front+back body. null if the lift isn't
@@ -111,6 +139,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
   const onComplete = opts.onComplete;
   const equip = await equipmentForProgram(program);
   const profile = await getProfile();   // display units for the weight widgets
+  await loadPhotoManifest();            // so photoURL() can answer while rendering each exercise
   // opts.exercises overrides the planned list (e.g. a substitute workout);
   // opts.recs supplies pre-built recommendations (substitute targets) so we skip
   // the engine. Otherwise compute the autoregulated recommendation + stall flag.
@@ -367,9 +396,20 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     ]));
     container.appendChild(el("div.progress", {}, [el("div.progress-fill", { style: `width:${(exIndex / exercises.length) * 100}%` })]));
 
+    // The 74px tile stays the hand-drawn figure — a photo shrunk to thumbnail is
+    // mush, and this one has to read at a glance mid-set. But when a render
+    // exists, the tile becomes a BUTTON that opens it full-screen: previously the
+    // demo was only reachable from the exercise card, which means leaving the
+    // session, which nobody does mid-workout. That made the renders invisible
+    // exactly when someone unsure of the movement needs them.
+    const demoURL = photoURL(rx.exerciseId);
+    const figure = el("div", { style: "width:74px;height:74px;color:var(--accent);flex:none" }, [illustration(rx.exerciseId)]);
+    const figureNode = demoURL
+      ? el("button.exdemo", { "aria-label": `Show ${lib.name} demonstration`, onclick: () => showDemo(demoURL, lib.name) }, [figure])
+      : figure;
     container.appendChild(el("div.ex-head", {}, [
       el("div.row", {}, [
-        el("div", { style: "width:74px;height:74px;color:var(--accent);flex:none" }, [illustration(rx.exerciseId)]),
+        figureNode,
         el("h2", { style: "margin:0", text: lib.name }),
       ]),
       el("div.cue", { text: lib.cue || "" }),
