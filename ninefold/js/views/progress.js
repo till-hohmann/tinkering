@@ -519,6 +519,11 @@ function daysBetween(aISO, bISO) {
 export async function renderProgress() {
   const { program, logged } = await scopedSessions();
   if (!logged.length) return emptyState("Progress");
+  // "Running & cardio" off means the pace trend and modality breakdown go away.
+  // Logged runs are NOT hidden from the session feed — the toggle governs the
+  // analytics you asked not to see, not whether your training happened.
+  const progProfile = await getProfile().catch(() => null);
+  const showCardio = !progProfile || progProfile.features.cardio !== false;
 
   const children = [el("h1", { text: "Progress" }), rangeSeg(renderProgress)];
   // section anchors for the sticky jump-chip navigator (built just before mount,
@@ -570,7 +575,7 @@ export async function renderProgress() {
   }
 
   // ===== 4. running pace =====
-  if (cardio.length) {
+  if (showCardio && cardio.length) {
     children.push(anchor("sec-cardio", "Cardio"));
     // pace only compares within running — a machine's "km" isn't a road km, so
     // elliptical is kept out of the pace trend (its progress shows in the breakdown).

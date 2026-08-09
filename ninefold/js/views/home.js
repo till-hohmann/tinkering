@@ -13,6 +13,7 @@ import { illustration, workoutFigure } from "../illustrations.js";
 import { ringStat } from "../components/charts.js";
 import { orbEl } from "../components/orb.js";
 import { recoveryToday, sleepFor, burnFor, provider, has, CAP } from "../health/index.js";
+import { getProfile } from "../profile.js";
 import { isLegDay, isLegSession } from "../volume.js";
 
 const recoveryColor = (p) => (p == null ? "var(--text-dim)" : p >= 67 ? "var(--accent)" : p >= 34 ? "var(--amber)" : "var(--coral)");
@@ -227,6 +228,11 @@ function computeStreak(program, doneDates, iso) {
 
 export async function renderHome() {
   const program = await getActiveProgram();
+  // "What you track" is a promise: a feature switched off must actually stop
+  // appearing, not just lose a Settings card. `showMobility` gates both the orb's
+  // M&S ring and the day's routine card.
+  const homeProfile = await getProfile().catch(() => null);
+  const showMobility = !homeProfile || homeProfile.features.mobility !== false;
   if (!program) {
     // Building is now the primary path — importing someone else's JSON is the
     // fallback, not the entry point.
@@ -299,7 +305,7 @@ export async function renderHome() {
   // (4 planned — Mon/Wed/Fri/Sun; done-on-another-day still counts for the week).
   const wkDateSet = week ? new Set(WEEKDAYS.map((_, i) => addDays(week.startDate, i))) : new Set();
   const mobWk = (await getMobilityLog()).filter((e) => wkDateSet.has(e.date)).length;
-  const makeMini = () => {
+  const makeMini = !showMobility ? null : () => {
     const w = el("div.orbmini", { title: "Mobility & stability this week" });
     // Target = however many mobility sessions the ACTIVE program actually has.
     // This was hardcoded to 4, which was right for the routine it was written
@@ -446,7 +452,7 @@ export async function renderHome() {
   // ===== supplemental mobility & stability (Wed/Fri/Sun) =====
   // The 10-min support routine for the knee / SI / core work — separate from the
   // main session, logged to its own cloud-synced list. Shows ✓ once done today.
-  if (isMobilityDay(weekday)) {
+  if (showMobility && isMobilityDay(weekday)) {
     const mobDone = await mobilityDoneOn(iso);
     const sess = sessionFor(weekday);
     children.push(el("div.card.tight", {}, [

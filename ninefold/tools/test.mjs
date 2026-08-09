@@ -11,10 +11,11 @@
 // value or a credential ever reappears in committed source.
 
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 
 import {
   defaultProfile, makePlace, estimateMaxHR, ageOf, resolveMaxHR, resolveZoneBounds,
-  proteinTarget, equipmentFor, ZONE_PCT, placeNames, needsPlacePrompt,
+  proteinTarget, equipmentFor, ZONE_PCT, placeNames, needsPlacePrompt, TRACKED_FEATURES,
   lbFromKg, kgFromLb, inFromCm, cmFromIn, miFromKm, kmFromMi,
 } from "../js/profile.js";
 import { strengthScore, liftScore, standardsFor, STANDARDS_BY_SEX, LEVELS } from "../js/standards.js";
@@ -560,6 +561,47 @@ group("themes — vary brand, never meaning", () => {
   it("each theme has a distinct accent", () => {
     const accents = THEMES.map((t) => t.vars["--accent"]);
     assert.equal(new Set(accents).size, accents.length);
+  });
+});
+
+group("features — every toggle is offered, and every toggle does something", () => {
+  // The audit found the second half of this contract missing: onboarding asked
+  // which optional trackers you wanted and then only two Progress cards ever
+  // read the answer, so switching nutrition off still left a nutrition card
+  // forever. Both directions are asserted, because either one rotting is a lie
+  // told to the user — an unofferable flag, or a switch that does nothing.
+  const declared = Object.keys(defaultProfile().features);
+  const offered = TRACKED_FEATURES.map(([k]) => k);
+
+  it("every declared feature can be switched", () => {
+    const missing = declared.filter((k) => !offered.includes(k));
+    assert.deepEqual(missing, [], `not offered in Settings/onboarding: ${missing}`);
+  });
+  it("every offered feature is a real one", () => {
+    const bogus = offered.filter((k) => !declared.includes(k));
+    assert.deepEqual(bogus, [], `offered but absent from the profile: ${bogus}`);
+  });
+  it("every toggle is actually read by some view", () => {
+    const dir = new URL("../js/", import.meta.url);
+    const seen = new Set();
+    const walk = (d) => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const u = new URL(e.name + (e.isDirectory() ? "/" : ""), d);
+        if (e.isDirectory()) walk(u);
+        else if (e.name.endsWith(".js")) {
+          for (const m of readFileSync(u, "utf8").matchAll(/features\.(\w+)/g)) seen.add(m[1]);
+        }
+      }
+    };
+    walk(dir);
+    const inert = offered.filter((k) => !seen.has(k));
+    assert.deepEqual(inert, [], `toggle exists but nothing honours it: ${inert}`);
+  });
+  it("TRACKED_FEATURES carries a title and a description for each", () => {
+    for (const row of TRACKED_FEATURES) {
+      assert.equal(row.length, 3, `malformed row: ${row}`);
+      assert.ok(row[1] && row[2], `missing copy for ${row[0]}`);
+    }
   });
 });
 

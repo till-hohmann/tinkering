@@ -18,7 +18,7 @@ import { resetAppleCache } from "../health/apple.js";
 import { getProfile, patchProfile, TRACKED_FEATURES, equipmentFor } from "../profile.js";
 import { THEMES, DEFAULT_THEME, applyTheme } from "../theme.js";
 import { weightLabel, weightValue, weightToKg, lengthLabel, lengthValue, lengthToCm,
-  distanceLabel, distanceValue, readEdit, defaultEquipmentFor, isStockRack, rackFields,
+  distanceLabel, distanceValue, readEdit, defaultEquipmentFor, isStockRack, rackFields, plateLabel,
   METRIC_EQUIPMENT, IMPERIAL_EQUIPMENT } from "../units.js";
 import { resolvedConfig, setRuntimeConfig, hasBackup } from "../config.js";
 import * as db from "../db.js";
@@ -28,7 +28,7 @@ import { cloudPull, cloudCheck } from "../cloudsync.js";
 // Running build version — baked into the code so it always reflects the
 // installed version (iOS standalone PWAs don't reliably expose caches.keys()
 // or SW messaging to the page). BUMP THIS together with CACHE in sw.js.
-const APP_VERSION = "v145";
+const APP_VERSION = "v146";
 
 function daysSince(iso) {
   if (!iso) return null;
@@ -649,7 +649,7 @@ export async function renderSettings() {
       + `${otherEquip.barWeightKg === METRIC_EQUIPMENT.barWeightKg ? "20 kg bar with metric plates" : "45 lb bar with pound plates"}`
       + `, so loads get prescribed at weights your rack can't make. Re-basing swaps in a `
       + `${weightValue(wantEquip.barWeightKg)} ${weightLabel()} bar and `
-      + `${wantEquip.barbellPlatesKg.map((k) => weightValue(k)).join(" / ")} ${weightLabel()} plates. Your logged sets are untouched.` }),
+      + `${wantEquip.barbellPlatesKg.map((k) => plateLabel(k)).join(" / ")} ${weightLabel()} plates. Your logged sets are untouched.` }),
     el("button.btn.block", { style: "margin-top:10px", onclick: async () => {
       const places = (profileNow.places || []).map((pl) =>
         (isStockRack(pl, otherEquip) ? { ...pl, ...rackFields(wantEquip) } : pl));

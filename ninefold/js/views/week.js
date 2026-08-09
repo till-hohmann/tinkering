@@ -11,6 +11,7 @@ import { ringStat } from "../components/charts.js";
 import { planToggle } from "./calendar.js";
 import { runKindLabel } from "../cardio-intel.js";
 import { sessionFor as mobSessionFor, isMobilityDay } from "../mobility.js";
+import { getProfile } from "../profile.js";
 
 function addDays(iso, n) {
   const [y, m, d] = iso.split("-").map(Number);
@@ -121,6 +122,9 @@ export async function renderWeek(pid, n) {
   // --- completion + scheme ---
   let planned = 0, completed = 0;
   const mobDone = await mobilityDoneDates();
+  // A tracker switched off in "What you track" must stop appearing here too.
+  const wkProfile = await getProfile().catch(() => null);
+  const showMobility = !wkProfile || wkProfile.features.mobility !== false;
   const rows = WEEKDAYS.flatMap((wd, i) => {
     const dayIso = addDays(week.startDate, i);
     const { day, template } = resolveDay(program, dayIso);
@@ -152,7 +156,7 @@ export async function renderWeek(pid, n) {
 
     // supplemental mobility & stability session on its scheduled days — tappable
     // any day (past, today or ahead), so it can be run late or previewed early.
-    if (!isMobilityDay(wd)) return [dayRow];
+    if (!showMobility || !isMobilityDay(wd)) return [dayRow];
     const ms = mobSessionFor(wd);
     const msDone = mobDone.has(dayIso);
     const msTile = el("div.ico.illotile", { style: "padding:0;overflow:hidden" }, [illustration(ms.items[0].id)]);

@@ -109,6 +109,7 @@ export const TRACKED_FEATURES = [
   ["measurements", "Tape measurements", "Waist and the rest — the honest fat-loss signal"],
   ["dexa", "DEXA scans", "Full body composition, if you get them"],
   ["vo2max", "VO₂max", "Track the number your watch reports"],
+  ["strengthStandards", "Strength standards", "Score your big lifts against bodyweight-relative benchmarks"],
 ];
 
 // A place is a gym, a home rack, a hotel. `implements` is the vocabulary the
