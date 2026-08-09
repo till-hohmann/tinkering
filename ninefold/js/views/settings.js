@@ -513,38 +513,67 @@ export async function renderSettings() {
     const ordered = [...programs].sort((a, b) => ((a.startDate || "") < (b.startDate || "") ? -1 : 1));
     // Wrapping chips (not a fixed segmented control) so it can't overflow the card
     // as more blocks are added. Labels are "Block N" by chronological order.
-    const pseg = el("div", { style: "display:flex;flex-wrap:wrap;gap:8px" });
-    const mkProg = (active, label, onPick) => {
-      const b = el("button.progchip" + (active ? ".on" : ""), {}, label);
-      b.onclick = async () => { await onPick(); redraw(); };
-      return b;
-    };
-    pseg.appendChild(mkProg(sel.auto, "Auto", setAutoProgram));
-    ordered.forEach((p, i) => {
-      const isPinned = !sel.auto && sel.activeId === p.id;
-      pseg.appendChild(mkProg(isPinned, `Block ${i + 1}`, () => setActiveProgramManual(p.id)));
-    });
+    // A dropdown, not numbered chips. Real block names are long — "6-Week
+    // Recomposition Build (Block 2)" — and a chip row either truncates them or
+    // wraps into a mess, which is how they ended up as "Block 1 / Block 2" in
+    // the first place. Positional labels are the wrong answer: you have to count
+    // them against the list to know which is which, and the numbers move when a
+    // block is deleted. The Plan tab already uses this control.
+    const pseg = el("div.selectwrap", {}, [
+      el("select.progselect", { "aria-label": "Which block to run",
+        onchange: async (e) => {
+          if (e.target.value === "__auto") await setAutoProgram();
+          else await setActiveProgramManual(e.target.value);
+          redraw();
+        } }, [
+        el("option", { value: "__auto", selected: sel.auto ? true : null }, "Automatic — follow the calendar"),
+        ...ordered.map((p) => el("option",
+          { value: p.id, selected: !sel.auto && sel.activeId === p.id ? true : null }, p.name || p.id)),
+      ]),
+    ]);
+
     // Deleting a block. Needed the moment the builder existed: a trial block you
     // no longer want otherwise sits in the calendar forever. Sessions are kept —
     // they record training that actually happened.
+    //
+    // Rows, named. It listed "Block 1 / Block 2" — positional labels that are
+    // exactly wrong for a destructive action: you have to count the chips against
+    // the selector above to work out which one you're about to delete, and the
+    // numbering shifts the moment one goes.
     const delStatus = el("p.note", { style: "margin-top:8px;min-height:1em" });
-    const delRow = el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:10px" },
-      ordered.map((p, i) => el("button.btn.ghost", { style: "padding:6px 11px;font-size:.8rem",
-        onclick: async () => {
-          if (delRow.dataset.arm !== p.id) {
-            delRow.dataset.arm = p.id;
-            delStatus.textContent = `Delete “${p.name}”? Tap again to confirm. Logged sessions are kept.`;
-            return;
-          }
-          try {
-            await deleteProgram(p.id);
-            redraw();
-          } catch (e) {
-            delStatus.textContent = e.message === "last_program"
-              ? "That's your only block — build another one first."
-              : "Couldn't delete that block.";
-          }
-        } }, `✕ Block ${i + 1}`)));
+    let armed = null;
+    const delList = el("div.list", { style: "margin-top:10px" });
+    const paintDel = () => delList.replaceChildren(...ordered.map((p) => {
+      const isArmed = armed === p.id;
+      const when = p.startDate
+        ? new Date(p.startDate + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+        : "";
+      return el("div.item" + (isArmed ? ".on" : ""), { style: isArmed ? "border-color:var(--red)" : "" }, [
+        el("div.meta", {}, [
+          el("div.t", { text: p.name || p.id }),
+          el("div.s", { text: [when ? "from " + when : "", p.lengthWeeks ? p.lengthWeeks + " weeks" : "",
+            program && p.id === program.id ? "current" : ""].filter(Boolean).join(" · ") }),
+        ]),
+        el("button.btn" + (isArmed ? ".danger" : ".ghost"), { style: "padding:6px 12px;font-size:.8rem",
+          "aria-label": (isArmed ? "Confirm delete " : "Delete ") + (p.name || "block"),
+          onclick: async () => {
+            if (armed !== p.id) {
+              armed = p.id;
+              delStatus.textContent = `Delete “${p.name}”? Tap Confirm. Logged sessions are kept.`;
+              paintDel();
+              return;
+            }
+            try { await deleteProgram(p.id); redraw(); }
+            catch (e) {
+              armed = null; paintDel();
+              delStatus.textContent = e.message === "last_program"
+                ? "That's your only block — build another one first."
+                : "Couldn't delete that block.";
+            }
+          } }, isArmed ? "Confirm" : "Delete"),
+      ]);
+    }));
+    paintDel();
 
     programCard = el("div.card", {}, [
       el("div.label", { style: "margin-bottom:8px", text: "Program selection" }),
@@ -553,7 +582,7 @@ export async function renderSettings() {
         ? "Automatic: the app switches to each block on its start date."
         : `Pinned to “${program ? program.name : "?"}”. Switch back to Auto to follow the calendar.` }),
       el("div.label", { style: "margin:18px 2px 0", text: "Delete a block" }),
-      delRow, delStatus,
+      delList, delStatus,
     ]);
   }
 
