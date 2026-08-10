@@ -16,7 +16,7 @@
 import { el } from "../ui.js";
 import { IMPLEMENTS, STATIONS, MACHINES, PRESETS, SURVEYED, MACHINE_IMPLEMENT } from "../equipment.js";
 import { defaultEquipmentFor, weightValue, weightToKg, weightLabel,
-  IMPERIAL_EQUIPMENT, METRIC_EQUIPMENT, rackFields } from "../units.js";
+  IMPERIAL_EQUIPMENT, METRIC_EQUIPMENT, rackFields, isImperialRack } from "../units.js";
 
 const FIELD = "width:100%;padding:11px 13px;background:var(--bg-elev2);border:1px solid var(--line);" +
   "border-radius:11px;color:var(--text);font-size:.95rem";
@@ -119,7 +119,7 @@ export function placeEditor(place, profile, { onChange = () => {}, compact = fal
     // whether or not you read in kilos, and prescribing 62.5 kg there asks for a
     // weight the bar cannot make. Your logged numbers and every screen stay in
     // your own units — only what this rack can physically load changes.
-    const imperialRack = Math.abs((place.barWeightKg || 0) - IMPERIAL_EQUIPMENT.barWeightKg) < 0.5;
+    const imperialRack = isImperialRack(place);
     kids.push(el("div.label", { style: "margin-top:16px", text: "Plates on the bar" }));
     kids.push(el("p.note", { style: "margin-top:4px", text:
       "Only matters if this gym's kit is from the other system — a US gym on a metric profile, or the reverse." }));

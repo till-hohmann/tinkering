@@ -15,6 +15,8 @@ import { Ticker } from "../components/timer.js";
 import { cueItemEnd, cueTick } from "../components/sound.js";
 import { celebrate } from "../components/confetti.js";
 import { recommend, detectStall, roundLoad, isDeloadWeek, e1rm, warmupPlan, replanSets, loadCeiling, rackAt } from "../progression.js";
+import { availableAt } from "../exercise-library.js";
+import { alternativesFor, metaFor, seedSubLoad, SUB_EXERCISES, implementAvailable } from "../substitution.js";
 import { MUSCLE_MAP } from "../volume.js";
 
 import { muscleBody } from "../anatomy.js";
@@ -101,29 +103,94 @@ function toast(msg) {
   setTimeout(() => { t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 1900);
 }
 
-// Bottom-sheet picker over the program's whole exercise library. Resolves the
-// chosen exerciseId, or null if cancelled.
-function pickExercise(program, excludeId) {
+// Bottom-sheet exercise picker. Resolves the chosen exerciseId, or null if
+// cancelled.
+//
+// THE WHOLE CATALOGUE, not just this block's lifts.
+//
+// This used to list `program.exercises` — the handful of movements the block
+// happens to program. That is the wrong set for both callers. Swapping is for
+// when you can't do the planned lift, and the alternative you need is very often
+// one this block never programmed; adding is explicitly "give me the long list".
+// So the source is the full library, filtered to what this place can load.
+//
+// Filtered, but not silently: `availableAt` gates on both the implement and the
+// station, and a gym always has something the profile doesn't know about, so the
+// filter is a default you can switch off rather than a wall.
+//
+// `matchFor` turns the sheet into a swap picker: equal alternatives are lifted
+// into their own section at the top (see alternativesFor), full list below.
+function pickExercise(program, { excludeId = null, matchFor = null, equip, location,
+                                 title = "Choose exercise" } = {}) {
   return new Promise((res) => {
-    const lib = program.exercises || {};
-    const ids = Object.keys(lib).filter((id) => id !== excludeId);
+    const implementsHere = (equip && equip.locations && equip.locations[location]) || [];
+    const pool = availableAt(implementsHere);
+    const poolIds = new Set(pool.map((e) => e.id));
+    // Substitute-only lifts aren't in the library but are exactly what the
+    // curated matches point at, so admit them on their implement alone.
+    const usable = new Set(poolIds);
+    for (const [id, meta] of Object.entries(SUB_EXERCISES))
+      if (implementAvailable(meta.implement, location, equip)) usable.add(id);
+
+    const alts = matchFor ? alternativesFor(matchFor, { pool, available: usable }) : [];
+    const altSet = new Set(alts);
+
+    // Everything offerable, name-resolved once. Program lifts ride along even if
+    // the library doesn't know them (an imported block may carry its own).
+    const everything = new Set([...usable, ...Object.keys(program.exercises || {})]);
+    const meta = (id) => metaFor(program, id);
+    const restrictedOut = [...everything].filter((id) => !usable.has(id));
+
+    let showAll = false;
     const listWrap = el("div.sheet-list");
-    const search = el("input.sheet-search", { type: "text", inputmode: "search", placeholder: "Search exercises…" });
-    const draw = (q) => {
+    const search = el("input.sheet-search", { type: "text", inputmode: "search", placeholder: "Search all exercises…" });
+    const allBtn = el("button.btn.ghost", { style: "padding:4px 12px;font-size:.78rem",
+      onclick: () => { showAll = !showAll; allBtn.textContent = showAll ? "Only what's here" : "Show all"; draw(search.value); } },
+      "Show all");
+
+    function row(id, tag) {
+      const m = meta(id);
+      return el("button.item", { style: "text-align:left", onclick: () => close(id) }, [
+        el("div.ico", {}, [illustration(id)]),
+        el("div.meta", {}, [
+          el("div.t", { text: m.name || id }),
+          el("div.s", { text: (m.implement || "").replace(/_/g, " ") }),
+        ]),
+        tag || null,
+      ].filter(Boolean));
+    }
+    function draw(q) {
       clear(listWrap);
       const ql = (q || "").toLowerCase();
-      const matches = ids.filter((id) => !ql || (lib[id].name || id).toLowerCase().includes(ql))
-        .sort((a, b) => (lib[a].name || a).localeCompare(lib[b].name || b));
-      if (!matches.length) { listWrap.appendChild(el("p.dim", { style: "padding:14px;text-align:center", text: "No match" })); return; }
-      for (const id of matches) listWrap.appendChild(el("button.item", { style: "text-align:left", onclick: () => close(id) }, [
-        el("div.ico", {}, [illustration(id)]),
-        el("div.meta", {}, [el("div.t", { text: lib[id].name || id }), el("div.s", { text: (lib[id].implement || "").replace(/_/g, " ") })]),
-      ]));
-    };
+      const hit = (id) => !ql || (meta(id).name || id).toLowerCase().includes(ql);
+      const byName = (a, b) => (meta(a).name || a).localeCompare(meta(b).name || b);
+
+      // matched alternatives keep their RANKED order — best match first is the
+      // whole point of the section, so it must not be re-sorted alphabetically
+      const shownAlts = alts.filter((id) => id !== excludeId && hit(id));
+      if (shownAlts.length) {
+        listWrap.appendChild(el("div.label", { style: "padding:10px 4px 4px", text: "Trains the same thing" }));
+        for (const id of shownAlts)
+          listWrap.appendChild(row(id, el("span.badge.accent", { text: "match" })));
+        listWrap.appendChild(el("div.label", { style: "padding:14px 4px 4px", text: "Everything else" }));
+      }
+      const rest = [...everything]
+        .filter((id) => id !== excludeId && !altSet.has(id) && hit(id) && (showAll || usable.has(id)))
+        .sort(byName);
+      if (!rest.length && !shownAlts.length) {
+        listWrap.appendChild(el("p.dim", { style: "padding:14px;text-align:center",
+          text: showAll || !restrictedOut.length ? "No match" : "No match here — try Show all." }));
+        return;
+      }
+      for (const id of rest)
+        listWrap.appendChild(row(id, usable.has(id) ? null : el("span.badge", { text: "not here" })));
+    }
+
     const ov = el("div.sheet");
     ov.appendChild(el("div.sheet-card", {}, [
       el("div.sheet-grip"),
-      el("div.row", { style: "margin-bottom:8px" }, [el("div.label", { text: "Choose exercise" }), el("span.spacer"),
+      el("div.row", { style: "margin-bottom:8px" }, [el("div.label", { text: title }), el("span.spacer"),
+        allBtn,
         el("button.btn.ghost", { style: "padding:4px 12px", onclick: () => close(null) }, "Cancel")]),
       search, listWrap,
     ]));
@@ -145,8 +212,13 @@ export async function runStrength(container, program, day, weekday, iso, locatio
   // opts.exercises overrides the planned list (e.g. a substitute workout);
   // opts.recs supplies pre-built recommendations (substitute targets) so we skip
   // the engine. Otherwise compute the autoregulated recommendation + stall flag.
-  // clone so on-the-fly swap/add never mutates the program's planned day
-  let exercises = (opts.exercises || day.exercises).slice();
+  // Clone the ENTRIES, not just the array. `.slice()` was enough while swap and
+  // add only ever replaced whole entries, but changing a set count edits one in
+  // place — and these objects are the program's own day template, still held in
+  // memory, so an extra set today would silently rewrite the plan for every
+  // future week. `_plannedSets` remembers what was asked of you before you
+  // changed it, which is the baseline the end-of-session question compares to.
+  let exercises = (opts.exercises || day.exercises).map((e) => ({ ...e, _plannedSets: e.prescribedSets }));
   let prevs, recs, stalls;
   if (opts.recs) {
     recs = opts.recs;
@@ -173,12 +245,12 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       const prevRange = prev ? prescribedRangeAt(srcProgram, prev.weekNumber, weekday, e.exerciseId) : null;
       return recommend({
         curRx: e, prevEx: prev ? prev.exercise : null, prevRange,
-        implement: program.exercises[e.exerciseId].implement,
+        implement: metaFor(program, e.exerciseId).implement,
         location, equip, exerciseId: e.exerciseId, deload,
       });
     });
     stalls = histories.map((h, i) => detectStall(h.map((o) => o.exercise),
-      loadCeiling(program.exercises[exercises[i].exerciseId].implement, location, equip)));
+      loadCeiling(metaFor(program, exercises[i].exerciseId).implement, location, equip)));
   }
 
   // readiness autoregulation: ease loads ~10% and/or trim a set on a rough day
@@ -187,7 +259,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     if (rd.mult && rd.mult !== 1) {
       recs = recs.map((r, i) => {
         if (!r || r.load == null) return r;
-        const impl = (program.exercises[exercises[i].exerciseId] || {}).implement;
+        const impl = metaFor(program, exercises[i].exerciseId).implement;
         return { ...r, load: roundLoad(r.load * rd.mult, impl, location, equip), eased: true };
       });
     }
@@ -204,6 +276,16 @@ export async function runStrength(container, program, day, weekday, iso, locatio
   const flags = exercises.map(() => ({ logged: false, visited: false }));
   exercises.forEach((e, i) => { if (results.some((r) => r.exerciseId === e.exerciseId)) flags[i] = { logged: true, visited: true }; });
   let commitCurrent = () => {};   // set by renderExercise — flushes the current lift's done sets
+
+  // WHAT YOU DID DIFFERENTLY TODAY, recorded as it happens rather than diffed
+  // afterwards. A diff against the template can see that a session has four sets
+  // of an exercise the plan gives three, but not whether you MEANT it — a
+  // substituted session, a readiness-eased one and a deliberate extra set all
+  // look identical after the fact. Captured live, each of these is an intent,
+  // which is what makes the end-of-session question worth asking at all.
+  const addedIds = [];          // exercises that weren't in today's plan
+  const swapped = [];           // { fromId, toId }
+  const setDeltas = new Map();  // exerciseId → net sets added (+) or dropped (−)
 
   const restTicker = new Ticker();
   let restPill = null, restTotal = 0;
@@ -231,10 +313,20 @@ export async function runStrength(container, program, day, weekday, iso, locatio
   // --- on-the-fly swap / add an exercise (gym reality: a machine's taken, you
   // want a finisher) — disabled in the substitute flow where back-calc owns the list.
   const canEdit = !opts.recs;
-  async function makeEntry(exId, baseRx) {
-    const lib = program.exercises[exId] || {};
+  // `seed` carries the load across a swap: a lift this block has never programmed
+  // has no history, so the engine would honestly say "first time — pick a load"
+  // and hand back the session's whole point. The planned lift's target converted
+  // through the substitution ratios is a far better opening bid, and it is
+  // explicitly a suggestion — the first logged set re-plans the rest anyway.
+  async function makeEntry(exId, baseRx, seed = null) {
+    // metaFor, NOT program.exercises: the picker now offers the whole library,
+    // and most of it isn't in any one block. A missing entry meant `implement`
+    // came back undefined, and the engine rounds, caps and prescribes off that.
+    const lib = metaFor(program, exId);
     const rx = { exerciseId: exId, prescribedSets: baseRx.prescribedSets || 3,
-      repRange: baseRx.repRange || "8-12", restSeconds: baseRx.restSeconds || 90, role: baseRx.role };
+      repRange: baseRx.repRange || "8-12", restSeconds: baseRx.restSeconds || 90, role: baseRx.role,
+      // a swap inherits the slot's planned count; an added lift was never planned
+      _plannedSets: baseRx._plannedSets != null ? baseRx._plannedSets : 0 };
     let hist = await exerciseHistory(program.id, weekday, exId, iso);
     let srcProgram = program;
     let prev = hist.length ? hist[hist.length - 1] : null;
@@ -246,30 +338,49 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     const deload = isDeloadWeek((program.weeks || []).find((w) => w.weekNumber === M.weekNumberFor(program, iso)));
     const rec = recommend({ curRx: rx, prevEx: prev ? prev.exercise : null, prevRange,
       implement: lib.implement, location, equip, exerciseId: exId, deload });
+    // Gated on "the engine produced no load", NOT on direction === "new".
+    // A lift with no history returns "new" on a normal week and "deload" on a
+    // deload week — both with load null — so keying off the direction silently
+    // dropped the carried load for a whole week of every block.
+    if (rec.load == null && seed && seed.load) {
+      const load = seedSubLoad(seed.fromId, exId, seed.load, lib.implement, location, equip);
+      if (load) {
+        rec.load = load;
+        rec.reps = seed.reps || rec.reps;
+        rec.reason = `Matched to your ${metaFor(program, seed.fromId).name || seed.fromId} target — same effort, adjust on the first set.`;
+      }
+    }
     return { rx, prev, rec, stall: detectStall(hist.map((o) => o.exercise), loadCeiling(lib.implement, location, equip)) };
   }
   async function swapExercise() {
-    const exId = await pickExercise(program, exercises[exIndex].exerciseId);
+    const fromId = exercises[exIndex].exerciseId;
+    const fromRec = recs[exIndex] || {};
+    const exId = await pickExercise(program, { excludeId: fromId, matchFor: fromId, equip, location,
+      title: "Swap for" });
     if (!exId) return;
-    const e = await makeEntry(exId, exercises[exIndex]);   // keep the current sets/range/rest
+    // keep the current sets/range/rest, and carry the target load across
+    const e = await makeEntry(exId, exercises[exIndex],
+      { fromId, load: fromRec.load, reps: fromRec.reps });
     exercises[exIndex] = e.rx; prevs[exIndex] = e.prev; recs[exIndex] = e.rec; stalls[exIndex] = e.stall;
     flags[exIndex] = { logged: false, visited: false };   // a new lift in this slot starts fresh
+    swapped.push({ fromId, toId: exId });
     renderExercise();
   }
   async function addExercise() {
-    const exId = await pickExercise(program, null);
+    const exId = await pickExercise(program, { equip, location, title: "Add an exercise" });
     if (!exId) return;
     const e = await makeEntry(exId, { prescribedSets: 3, repRange: "8-12", restSeconds: 90 });
     const at = exIndex + 1;   // log it right after the current one
     exercises.splice(at, 0, e.rx); prevs.splice(at, 0, e.prev); recs.splice(at, 0, e.rec); stalls.splice(at, 0, e.stall);
     flags.splice(at, 0, { logged: false, visited: false });
+    addedIds.push(exId);
     // update chrome IN PLACE (re-rendering would reset the current exercise's
     // half-entered sets) — the added lift comes up next when this one finishes.
     const badge = container.querySelector(".routine-head .navbadge");
     if (badge) badge.textContent = `≡  ${exIndex + 1}/${exercises.length}`;
     const skip = container.querySelector("button.btn.ghost.block");
     if (skip) skip.textContent = exIndex < exercises.length - 1 ? "Skip to next exercise ›" : "Finish logging ›";
-    toast(`Added ${(program.exercises[exId] || {}).name || exId} — up next`);
+    toast(`Added ${metaFor(program, exId).name || exId} — up next`);
   }
   // defer the current exercise to the end of the queue (rack busy → come back) —
   // moves it past every remaining lift; the next one comes up now.
@@ -282,6 +393,32 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     stalls.push(stalls.splice(i, 1)[0]);
     flags.push(flags.splice(i, 1)[0]);
     renderExercise();   // exIndex unchanged → now shows what was next
+  }
+
+  // What actually changed, measured against the LOG rather than the intent.
+  // Adding a set and then not doing it, or swapping to a lift and skipping it,
+  // changed nothing about the session — asking about it would be asking the user
+  // to ratify a plan change they didn't make.
+  function deviationSummary() {
+    const setsLogged = (id) => {
+      const r = results.find((x) => x.exerciseId === id);
+      return r && r.sets ? r.sets.length : 0;
+    };
+    const added = [];
+    for (const id of addedIds) {
+      const n = setsLogged(id);
+      if (n > 0) added.push({ exerciseId: id, sets: n });
+    }
+    const setChanges = [];
+    for (const id of setDeltas.keys()) {
+      if (addedIds.includes(id)) continue;   // reported as an added exercise instead
+      const rx = exercises.find((e) => e.exerciseId === id);
+      const actual = setsLogged(id);
+      if (!rx || !actual) continue;
+      const planned = rx._plannedSets || 0;
+      if (actual !== planned) setChanges.push({ exerciseId: id, planned, actual, delta: actual - planned });
+    }
+    return { added, setChanges, swapped: swapped.slice() };
   }
 
   // jump straight to any exercise — free reorder, or return to a skipped lift.
@@ -303,7 +440,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
   function openNav() {
     const ov = el("div.sheet");
     const rows = exercises.map((e, i) => {
-      const lib = program.exercises[e.exerciseId] || {};
+      const lib = metaFor(program, e.exerciseId);
       const st = exStatus(i);
       const tag = st === "logged" ? el("span.badge.accent", { text: "✓ done" })
         : st === "current" ? el("span.badge", { style: "color:var(--accent);border-color:var(--accent)", text: "now" })
@@ -339,7 +476,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       el("div.cue", { text: "You skipped or didn't finish these. Tap one to do it now, or finish the workout." }),
     ]));
     container.appendChild(el("div.list", { style: "margin-top:14px" }, remaining.map((i) => {
-      const e = exercises[i]; const lib = program.exercises[e.exerciseId] || {};
+      const e = exercises[i]; const lib = metaFor(program, e.exerciseId);
       return el("button.item", { style: "text-align:left", onclick: () => goToExercise(i) }, [
         el("div.ico", {}, [illustration(e.exerciseId)]),
         el("div.meta", {}, [el("div.t", { text: lib.name || e.exerciseId }),
@@ -383,13 +520,23 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     clearRest();
     clear(container);
     const rx = exercises[exIndex];
-    const lib = program.exercises[rx.exerciseId];
+    // metaFor, not program.exercises: swap and add now reach the whole library,
+    // and a lift this block never programmed has no entry here — which used to
+    // throw on `lib.implement` before the value could even be wrong.
+    const lib = metaFor(program, rx.exerciseId);
     const implement = lib.implement;
     const prevEx = prevs[exIndex] ? prevs[exIndex].exercise : null;
     const rec = recs[exIndex];
     const stall = stalls[exIndex];
     const state = initSets(rx, prevEx, implement, rec);
     let active = 0;
+    // Held rather than inlined so adding or dropping a set can repaint it: the
+    // header said "3 ×" over a four-row set list, which reads as a bug in the
+    // logging rather than a change the user just made.
+    const rxLine = el("div.rx");
+    const paintRx = () => { rxLine.textContent =
+      `${rx.prescribedSets} × ${rx.repRange} · rest ${rx.restSeconds}s${rx.role === "core" ? " · core" : ""}`; };
+    paintRx();
 
     // --- header ---
     container.appendChild(el("div.routine-head", {}, [
@@ -416,7 +563,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
         ? el("div", {}, [el("h2", { style: "margin:0 0 10px" }, lib.name), heroNode])
         : el("div.row", {}, [heroNode, el("h2", { style: "margin:0", text: lib.name })]),
       el("div.cue", { text: lib.cue || "" }),
-      el("div.rx", { text: `${rx.prescribedSets} × ${rx.repRange} · rest ${rx.restSeconds}s${rx.role === "core" ? " · core" : ""}` }),
+      rxLine,
       prevEx ? el("div.rx", { text: "Last time: " + prevEx.sets.map((s) => M.setDisplay(implement, s)).join("  ") })
         : anchorWeight(program, rx.exerciseId) != null ? el("div.rx", { text: "Week-1 anchor: " + program.loadAnchors[rx.exerciseId] }) : null,
     ]));
@@ -597,6 +744,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       const remaining = state.sets.filter((s) => !s.done).length;
       logBtn.textContent = remaining > 0 ? `Log set ${active + 1}` : "All sets done";
       volEl.textContent = M.fmtWeight(Math.round(liveVolume()));
+      paintSetBar();   // "− Set" turns off once every set is logged
     }
 
     let replannedUp = false;   // bump the remaining sets at most once per lift
@@ -653,6 +801,60 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       el("span.dim", { text: "Session volume" }), el("span.spacer"), volEl,
     ]));
     container.appendChild(setlist);
+
+    // --- one more set / one fewer -------------------------------------------
+    // Sets were fixed at the prescribed count, so "I've got one more in me" and
+    // "that's enough today" both had to wait for the post-session summary editor
+    // — i.e. you logged a workout you didn't do and corrected it afterwards.
+    //
+    // Removing only ever takes a set you have NOT logged. A logged set is a
+    // record of something that happened; dropping it silently is data loss, and
+    // the summary's edit mode is the place for genuine corrections.
+    const setBar = el("div.btn-row", { style: "margin-top:10px" });
+    function pendingCount() { return state.sets.filter((s) => !s.done).length; }
+    function redrawAfterSetChange() {
+      if (active >= state.sets.length) active = state.sets.length - 1;
+      if (state.sets[active].done) {
+        const next = state.sets.findIndex((s) => !s.done);
+        active = next >= 0 ? next : state.sets.length - 1;
+      }
+      rx.prescribedSets = state.sets.length;
+      setDeltas.set(rx.exerciseId, state.sets.length - (rx._plannedSets || 0));
+      paintRx();
+      buildWidget();
+      repsVal.value = String(curRep());
+      syncRir();
+      drawSets();
+      updateLogBtn();   // repaints the set bar too
+    }
+    function addSet() {
+      // copy the last set's prescription rather than re-deriving it: by now the
+      // in-session replanner may have moved the target, and the extra set should
+      // continue what you are actually lifting, not what the plan opened with.
+      const lastSet = state.sets[state.sets.length - 1] || {};
+      state.sets.push({ weightKg: lastSet.weightKg, reps: state.timed ? null : lastSet.reps,
+        seconds: state.timed ? lastSet.seconds : undefined, rir: null, done: false, edited: false });
+      redrawAfterSetChange();
+    }
+    function removeSet() {
+      const i = [...state.sets.keys()].reverse().find((k) => !state.sets[k].done);
+      if (i == null || state.sets.length <= 1) return;
+      state.sets.splice(i, 1);
+      redrawAfterSetChange();
+    }
+    function paintSetBar() {
+      const canRemove = state.sets.length > 1 && pendingCount() > 0;
+      clear(setBar);
+      setBar.append(
+        el("button.btn.ghost", { style: "flex:1;min-height:38px;font-size:.8rem", disabled: !canRemove,
+          "aria-label": "One fewer set", onclick: () => removeSet() }, "− Set"),
+        el("button.btn.ghost", { style: "flex:1;min-height:38px;font-size:.8rem",
+          "aria-label": "One more set", onclick: () => addSet() }, "+ Set"),
+      );
+    }
+    paintSetBar();
+    container.appendChild(setBar);
+
     container.appendChild(el("button.btn.ghost.block", { style: "margin-top:10px", onclick: () => finishExercise() },
       exIndex < exercises.length - 1 ? "Skip to next exercise ›" : "Finish logging ›"));
 
@@ -688,7 +890,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       if (n >= 0) { exIndex = n; renderExercise(); return; }
       const remaining = exercises.map((_, i) => i).filter((i) => !flags[i].logged);
       if (remaining.length) { renderReview(remaining); return; }
-      restTicker.stop(); onComplete && onComplete(results);
+      restTicker.stop(); onComplete && onComplete(results, deviationSummary());
     }
 
     // X button = leave the whole workout. Offer save-for-later / complete-now /

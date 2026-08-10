@@ -19,7 +19,9 @@ import {
   lbFromKg, kgFromLb, inFromCm, cmFromIn, miFromKm, kmFromMi,
 } from "../js/profile.js";
 import { strengthScore, liftScore, standardsFor, STANDARDS_BY_SEX, LEVELS } from "../js/standards.js";
-import { roundLoad, loadCeiling, nextLoadUp, rackAt } from "../js/progression.js";
+import { roundLoad, loadCeiling, nextLoadUp, rackAt, recommend } from "../js/progression.js";
+import { deviationQuestions, applyTemplateDecisions, stampEffort, YES, NO, CONSIDER } from "../js/deviations.js";
+import { toCSV, fromCSV, applyPlanCSV, diffPlans } from "../js/plan-csv.js";
 import { BUILD_CONFIG, hasBackup, hasWhoop } from "../js/config.js";
 import { EXERCISE_LIBRARY, checkLibrary, availableAt, pickForPattern } from "../js/exercise-library.js";
 import { FULL_GYM, EXERCISE_NEEDS, stationsKnown, canDoHere, SURVEYED, IMPLEMENTS, STATIONS, PRESETS } from "../js/equipment.js";
@@ -32,10 +34,10 @@ import { THEMES, themeById, DEFAULT_THEME } from "../js/theme.js";
 import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT, METRIC_EQUIPMENT,
   defaultEquipmentFor, plateLabel, plateColor, weightLabel, isImperialWeight, setDisplayProfile,
   distanceValue, distanceToKm, lengthValue, lengthToCm, fmtPace as fmtPaceU, paceLabel,
-  METRIC_PROFILE, readEdit, isStockRack, rackFields } from "../js/units.js";
-import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay } from "../js/model.js";
+  METRIC_PROFILE, readEdit, isStockRack, rackFields, isImperialRack } from "../js/units.js";
+import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay, dayCellRole } from "../js/model.js";
 import { parseAppleExport, summarise, appleTime } from "../js/health/apple-import.js";
-import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES } from "../js/substitution.js";
+import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES, alternativesFor } from "../js/substitution.js";
 import * as mob from "../js/mobility.js";
 import { applyStretchResults, applyStretchTargets, stretchTarget, STRETCH_MIN, STRETCH_CAP } from "../js/stretch.js";
 import { CHANGELOG, notesSince, versionNumber } from "../js/changelog.js";
@@ -345,6 +347,341 @@ group("progression — discrete racks at any place name", () => {
 });
 
 // ---------------------------------------------------------------------------
+group("service worker — offline-first means every module is precached", () => {
+  // See the comment at the top of sw.js: a module missing from SHELL still works
+  // (the fetch handler runtime-caches it) right up until the release that clears
+  // the old cache, and then it takes the app down for anyone who opens it
+  // offline. Nothing else catches this, so it is caught here.
+  const sw = readFileSync(new URL("../sw.js", import.meta.url), "utf8");
+  const listed = new Set([...sw.matchAll(/"\.\/(js\/[^"]+)"/g)].map((m) => m[1]));
+  const walk = (dir) => readdirSync(new URL(`../${dir}/`, import.meta.url), { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : e.name.endsWith(".js") ? [`${dir}/${e.name}`] : []));
+
+  it("no module has drifted off the precache list", () => {
+    const missing = walk("js").filter((f) => !listed.has(f));
+    assert.deepEqual(missing, [], `add these to SHELL in sw.js:\n  ${missing.join("\n  ")}`);
+  });
+  it("the precache list names no module that no longer exists", () => {
+    const onDisk = new Set(walk("js"));
+    const stale = [...listed].filter((f) => !onDisk.has(f));
+    assert.deepEqual(stale, [], "SHELL names a file that isn't there");
+  });
+  it("the cache name and the reported version agree", () => {
+    // They are declared in two files and must be bumped together every deploy.
+    const cache = (sw.match(/const CACHE = "fittrack-(v\d+)"/) || [])[1];
+    const version = readFileSync(new URL("../js/version.js", import.meta.url), "utf8")
+      .match(/APP_VERSION = "(v\d+)"/)[1];
+    assert.equal(cache, version, "sw.js CACHE and js/version.js APP_VERSION are out of step");
+  });
+});
+
+group("plan CSV — audit a block in a spreadsheet and put it back", () => {
+  const prog = () => ({
+    id: "p1", name: "Recomp Build", startDate: "2026-08-03", lengthWeeks: 2,
+    equipmentProfile: { barWeightKg: 20 },                    // CSV cannot express this
+    exercises: { back_squat: { name: "Barbell Back Squat", implement: "barbell", cue: "Brace" },
+      plank: { name: "Plank", implement: "bodyweight", cue: "" } },
+    dayTemplates: {
+      Mon: { weekday: "Mon", type: "strength", label: "Lower", preRoutine: "warmupStrength",
+        postRoutine: "cooldownStrength", exercises: [{ exerciseId: "back_squat", role: "compound", restSeconds: 180 }] },
+      Tue: { weekday: "Tue", type: "cardio", label: "Zone 2", preRoutine: "warmupCardio", exercises: [] },
+    },
+    weeks: [1, 2].map((weekNumber) => ({ weekNumber, startDate: "2026-08-03", phaseName: "Build", days: {
+      Mon: { weekday: "Mon", type: "strength", exercises: [
+        { exerciseId: "back_squat", role: "compound", prescribedSets: 3, repRange: "6-8", restSeconds: 180 },
+        { exerciseId: "plank", role: "core", prescribedSets: 2, repRange: "30-45", restSeconds: 60 }] },
+      Tue: { weekday: "Tue", type: "cardio", prescription: "40 min Zone 2" },
+      Wed: { weekday: "Wed", type: "rest" },
+    } })),
+  });
+
+  it("a block survives the round trip unchanged", () => {
+    const p = prog();
+    const parsed = fromCSV(toCSV(p));
+    assert.equal(parsed.ok, true);
+    assert.deepEqual(parsed.warnings, []);
+    assert.deepEqual(diffPlans(p, applyPlanCSV(p, parsed, { mode: "update" })), [],
+      "export → import must be a no-op, or the file cannot be trusted for auditing");
+  });
+  it("rest and cardio days survive, so a missing row means something", () => {
+    const parsed = fromCSV(toCSV(prog()));
+    const wk1 = parsed.weeks[0].days;
+    assert.equal(wk1.Wed.type, "rest");
+    assert.equal(wk1.Tue.type, "cardio");
+    assert.equal(wk1.Tue.prescription, "40 min Zone 2");
+  });
+  it("what the CSV cannot express is kept, not dropped", () => {
+    // The whole reason import merges rather than rebuilds.
+    const p = prog();
+    const next = applyPlanCSV(p, fromCSV(toCSV(p)), { mode: "update" });
+    assert.equal(next.dayTemplates.Mon.preRoutine, "warmupStrength");
+    assert.equal(next.dayTemplates.Mon.postRoutine, "cooldownStrength");
+    assert.deepEqual(next.equipmentProfile, { barWeightKg: 20 });
+    assert.equal(next.exercises.back_squat.cue, "Brace", "cues have no column and must not be erased");
+    assert.equal(next.exercises.back_squat.implement, "barbell");
+  });
+  it("updating in place keeps the block id, so its logged sessions stay attached", () => {
+    const p = prog();
+    assert.equal(applyPlanCSV(p, fromCSV(toCSV(p)), { mode: "update" }).id, "p1");
+    assert.equal(applyPlanCSV(p, fromCSV(toCSV(p)), { mode: "new", id: "p2" }).id, "p2");
+  });
+
+  it("an edit made in a spreadsheet comes back as that edit", () => {
+    const p = prog();
+    const edited = toCSV(p).replace("back_squat,Barbell Back Squat,3,6-8", "back_squat,Barbell Back Squat,5,4-6");
+    const next = applyPlanCSV(p, fromCSV(edited), { mode: "update" });
+    assert.equal(next.weeks[0].days.Mon.exercises[0].prescribedSets, 5);
+    assert.equal(next.weeks[0].days.Mon.exercises[0].repRange, "4-6");
+    const changes = diffPlans(p, next);
+    assert.ok(changes.some((c) => /3 → 5 sets/.test(c)), changes.join(" | "));
+    assert.ok(changes.some((c) => /6-8 → 4-6 reps/.test(c)), changes.join(" | "));
+  });
+  it("a deleted row removes the exercise, and the diff says so", () => {
+    const p = prog();
+    const edited = toCSV(p).split("\r\n").filter((l) => !/,1,Build,Mon,strength,Lower,2,plank/.test(l)).join("\r\n");
+    const next = applyPlanCSV(p, fromCSV(edited), { mode: "update" });
+    assert.deepEqual(next.weeks[0].days.Mon.exercises.map((e) => e.exerciseId), ["back_squat"]);
+    assert.ok(diffPlans(p, next).some((c) => /− Plank/.test(c)));
+  });
+  it("reordering rows reorders the day", () => {
+    const p = prog();
+    const edited = toCSV(p)
+      .replace(",1,back_squat,", ",9,back_squat,");     // push the squat last in week 1 & 2
+    const next = applyPlanCSV(p, fromCSV(edited), { mode: "update" });
+    assert.deepEqual(next.weeks[0].days.Mon.exercises.map((e) => e.exerciseId), ["plank", "back_squat"]);
+  });
+
+  it("a file that isn't a plan is refused with a reason", () => {
+    const r = fromCSV("name,email\nAda,ada@example.com\n");
+    assert.equal(r.ok, false);
+    assert.ok(/missing the/.test(r.warnings[0]), r.warnings[0]);
+    assert.equal(fromCSV("").ok, false);
+  });
+  it("one bad row is reported and skipped, not fatal", () => {
+    const p = prog();
+    const edited = toCSV(p).replace("back_squat,Barbell Back Squat,3,6-8", "back_squat,Barbell Back Squat,lots,6-8");
+    const r = fromCSV(edited);
+    assert.equal(r.ok, true, "the rest of the plan is still importable");
+    assert.ok(r.warnings.some((w) => /isn't a set count/.test(w)), r.warnings.join(" | "));
+    assert.equal(r.weeks[0].days.Mon.exercises.length, 1, "only the good row survived");
+  });
+  it("a missing week is named rather than silently run", () => {
+    const p = prog();
+    const edited = toCSV(p).split("\r\n").filter((l) => !/,1,Build,/.test(l)).join("\r\n");
+    const r = fromCSV(edited);
+    assert.ok(r.warnings.some((w) => /expected 1 to/.test(w)), r.warnings.join(" | "));
+  });
+  it("commas and quotes inside a field survive the trip", () => {
+    const p = prog();
+    p.name = 'Block "A", rebuilt';
+    p.weeks[0].days.Tue.prescription = '40 min Zone 2, then 6 × 20 s strides';
+    const parsed = fromCSV(toCSV(p));
+    assert.equal(parsed.meta.name, 'Block "A", rebuilt');
+    assert.equal(parsed.weeks[0].days.Tue.prescription, "40 min Zone 2, then 6 × 20 s strides");
+  });
+  it("a spreadsheet's CRLF, BOM and trailing blank line are all fine", () => {
+    const p = prog();
+    const r = fromCSV("﻿" + toCSV(p) + "\r\n");
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.warnings, []);
+  });
+});
+
+group("deviations — today's changes, and whether they stick", () => {
+  const prog = {
+    id: "p1",
+    exercises: { back_squat: { name: "Barbell Back Squat", implement: "barbell", cue: "" } },
+    dayTemplates: { Mon: { weekday: "Mon", type: "strength", exercises: [
+      { exerciseId: "back_squat", role: "compound", restSeconds: 180 },
+      { exerciseId: "plank", role: "core", restSeconds: 60 },
+    ] } },
+    weeks: [1, 2, 3].map((weekNumber) => ({ weekNumber, days: { Mon: { weekday: "Mon", type: "strength", exercises: [
+      { exerciseId: "back_squat", role: "compound", prescribedSets: 3, repRange: "6-8", restSeconds: 180 },
+      { exerciseId: "plank", role: "core", prescribedSets: 2, repRange: "30-45", restSeconds: 60 },
+    ] } } })),
+  };
+  const q = (dev) => deviationQuestions(dev, prog);
+
+  it("an ordinary session asks nothing", () => {
+    assert.deepEqual(q({ added: [], setChanges: [] }), []);
+    assert.deepEqual(q(null), []);
+  });
+  it("a change you didn't actually perform asks nothing", () => {
+    // added the exercise, then skipped it — the session is exactly as planned
+    assert.deepEqual(q({ added: [{ exerciseId: "db_curl", sets: 0 }], setChanges: [] }), []);
+    assert.deepEqual(q({ added: [], setChanges: [{ exerciseId: "back_squat", planned: 3, actual: 0, delta: -3 }] }), []);
+  });
+  it("an added exercise is named, not shown as an id", () => {
+    const [item] = q({ added: [{ exerciseId: "db_curl", sets: 3 }], setChanges: [] });
+    assert.equal(item.kind, "added");
+    assert.ok(/DB Biceps Curl/.test(item.question), item.question);
+    assert.equal(item.exerciseId, "db_curl");
+  });
+  it("a set change reads in plain numbers, both directions", () => {
+    const [more] = q({ added: [], setChanges: [{ exerciseId: "back_squat", planned: 3, actual: 4, delta: 1 }] });
+    assert.ok(/4 sets .* instead of 3 — 1 more\./.test(more.question), more.question);
+    const [fewer] = q({ added: [], setChanges: [{ exerciseId: "back_squat", planned: 3, actual: 1, delta: -2 }] });
+    assert.ok(/1 set .* instead of 3 — 2 fewer\./.test(fewer.question), fewer.question);
+  });
+
+  it("\"just for today\" changes nothing at all", () => {
+    const qs = q({ added: [{ exerciseId: "db_curl", sets: 3 }], setChanges: [] });
+    const answers = { [qs[0].key]: NO };
+    assert.equal(applyTemplateDecisions(prog, qs, answers, { weekday: "Mon", fromWeek: 1 }), prog);
+    const res = [{ exerciseId: "db_curl", sets: [{}, {}, {}] }];
+    assert.equal(stampEffort(res, qs, answers), res, "no effort signal either");
+  });
+
+  it("\"yes\" adds the lift to FUTURE weeks only", () => {
+    const qs = q({ added: [{ exerciseId: "db_curl", sets: 3 }], setChanges: [] });
+    const next = applyTemplateDecisions(prog, qs, { [qs[0].key]: YES }, { weekday: "Mon", fromWeek: 1 });
+    const ids = (wk) => next.weeks.find((w) => w.weekNumber === wk).days.Mon.exercises.map((e) => e.exerciseId);
+    assert.deepEqual(ids(1), ["back_squat", "plank"], "the week just trained is history — never rewritten");
+    assert.ok(ids(2).includes("db_curl"));
+    assert.ok(ids(3).includes("db_curl"));
+    assert.equal(prog.weeks[1].days.Mon.exercises.length, 2, "the original program must not be mutated");
+  });
+  it("an added lift lands before the core work, not after it", () => {
+    const qs = q({ added: [{ exerciseId: "db_curl", sets: 3 }], setChanges: [] });
+    const next = applyTemplateDecisions(prog, qs, { [qs[0].key]: YES }, { weekday: "Mon", fromWeek: 1 });
+    assert.deepEqual(next.weeks[1].days.Mon.exercises.map((e) => e.exerciseId), ["back_squat", "db_curl", "plank"]);
+  });
+  it("an added lift reaches the day TEMPLATE, so a regenerated block keeps it", () => {
+    const qs = q({ added: [{ exerciseId: "db_curl", sets: 3 }], setChanges: [] });
+    const next = applyTemplateDecisions(prog, qs, { [qs[0].key]: YES }, { weekday: "Mon", fromWeek: 1 });
+    assert.ok(next.dayTemplates.Mon.exercises.some((e) => e.exerciseId === "db_curl"));
+    assert.ok(next.exercises.db_curl && next.exercises.db_curl.name === "DB Biceps Curl",
+      "and gets a library entry, or it renders as a raw id forever");
+  });
+  it("\"yes\" on a set change rewrites the count in future weeks", () => {
+    const qs = q({ added: [], setChanges: [{ exerciseId: "back_squat", planned: 3, actual: 4, delta: 1 }] });
+    const next = applyTemplateDecisions(prog, qs, { [qs[0].key]: YES }, { weekday: "Mon", fromWeek: 1 });
+    const sets = (wk) => next.weeks.find((w) => w.weekNumber === wk).days.Mon.exercises[0].prescribedSets;
+    assert.equal(sets(1), 3, "history untouched");
+    assert.equal(sets(2), 4);
+    assert.equal(sets(3), 4);
+  });
+
+  it("\"remember it\" leaves the plan alone and marks the log instead", () => {
+    const qs = q({ added: [], setChanges: [{ exerciseId: "back_squat", planned: 3, actual: 4, delta: 1 }] });
+    const answers = { [qs[0].key]: CONSIDER };
+    assert.equal(applyTemplateDecisions(prog, qs, answers, { weekday: "Mon", fromWeek: 1 }), prog);
+    const res = stampEffort([{ exerciseId: "back_squat", sets: [] }], qs, answers);
+    assert.equal(res[0].extraSets, 1);
+  });
+  it("dropping sets marks the log the OTHER way", () => {
+    const qs = q({ added: [], setChanges: [{ exerciseId: "back_squat", planned: 3, actual: 1, delta: -2 }] });
+    const res = stampEffort([{ exerciseId: "back_squat", sets: [] }], qs, { [qs[0].key]: CONSIDER });
+    assert.equal(res[0].extraSets, -1, "sign, not magnitude — it's a nudge, not a verdict");
+  });
+  it("an added exercise's whole volume is not read as huge headroom", () => {
+    const qs = q({ added: [{ exerciseId: "db_curl", sets: 5 }], setChanges: [] });
+    const res = stampEffort([{ exerciseId: "db_curl", sets: [] }], qs, { [qs[0].key]: CONSIDER });
+    assert.equal(res[0].extraSets, 1, "5 extra sets of a NEW lift still means one step");
+  });
+});
+
+group("progression — extra volume you chose not to program still counts", () => {
+  // `extraSets` is written only when the user picked "remember it" at the end of
+  // a session. It moves the effort reserve by ONE step, which means it changes
+  // the prescription exactly where the reserve drives the number — the rep-range
+  // bridges, and the topped-out double-jump threshold — and nowhere else.
+  //
+  // That is not a gap. A clean session with no rep decay already infers a reserve
+  // of 2, which is already the top of the meaningful range and already earns the
+  // bigger jump; a third step would be a load leap dressed up as autoregulation.
+  // These assert the real numbers rather than a direction, so a future change to
+  // the caps shows up here as a failure instead of passing vacuously.
+  const equip = { locations: { Gym: ["barbell"] }, byPlace: { Gym: {
+    barWeightKg: 20, ezBarWeightKg: 7.5, barbellPlatesKg: [25, 20, 15, 10, 5, 2.5, 1.25],
+    ezBarPlatesKg: [10, 5, 2.5, 1.25], cable: { minKg: 2.5, maxKg: 120, stepKg: 2.5 } } } };
+  const at = (repRange, prevRange, sets, extraSets) => recommend({
+    curRx: { prescribedSets: 3, repRange }, prevRange, implement: "barbell",
+    location: "Gym", equip, exerciseId: "back_squat", prevEx: { sets, extraSets } });
+  const clean = [{ weightKg: 80, reps: 8 }, { weightKg: 80, reps: 8 }, { weightKg: 80, reps: 8 }];
+  const heavyTriple = [{ weightKg: 100, reps: 5 }, { weightKg: 100, reps: 5 }, { weightKg: 100, reps: 4 }];
+
+  it("an unmarked session prescribes exactly what it always did", () => {
+    assert.equal(at("6-8", "6-8", clean).load, 90, "guard: the untouched baseline");
+    assert.equal(at("6-8", "6-8", clean, 0).load, 90, "extraSets: 0 must be indistinguishable from absent");
+    assert.equal(at("6-8", "6-8", clean, undefined).load, 90);
+  });
+  it("stopping short lowers the next target", () => {
+    // reserve 2 → 1, so the topped-out branch stops double-jumping: 80 → 85, not 90
+    assert.equal(at("6-8", "6-8", clean, -1).load, 85);
+  });
+  it("an extra set raises the target where the reserve sets the number", () => {
+    // the higher-rep-range bridge re-bases straight off the effort-adjusted e1RM
+    assert.equal(at("6-8", "3-5", heavyTriple).load, 97.5, "guard: the untouched baseline");
+    assert.equal(at("6-8", "3-5", heavyTriple, 1).load, 100);
+    assert.equal(at("6-8", "3-5", heavyTriple, -1).load, 95);
+  });
+  it("an extra set never LOWERS a target, in any branch", () => {
+    for (const [range, prev, sets] of [["6-8", "6-8", clean], ["6-8", "3-5", heavyTriple],
+      ["6-8", "8-12", [{ weightKg: 60, reps: 12 }, { weightKg: 60, reps: 12 }, { weightKg: 60, reps: 12 }]]])
+      assert.ok(at(range, prev, sets, 1).load >= at(range, prev, sets).load,
+        `${range} from ${prev} went backwards on an extra set`);
+  });
+  it("it stays a nudge — never a second load jump on top of the double jump", () => {
+    // clean 8/8/8 already earns the bigger jump (reserve 2), and one more set
+    // must not compound into a third plate step.
+    assert.equal(at("6-8", "6-8", clean, 1).load, 90, "already double-jumping — do not stack another step");
+  });
+  it("a logged RIR is still the primary evidence", () => {
+    const grind = clean.map((s) => ({ ...s, rir: 0 }));
+    // RIR 0 on a topped set means hold and clean it up, whatever the volume said
+    assert.equal(at("6-8", "6-8", grind).direction, "hold");
+    assert.equal(at("6-8", "6-8", grind, 1).direction, "hold", "an extra set cannot override RIR 0");
+  });
+});
+
+group("swap — an equal alternative for a lift you can't do today", () => {
+  const FULL = ["barbell", "ez_bar", "cable", "dumbbell_pair", "dumbbell_single", "machine",
+    "bench", "incline_bench", "rack", "pullup_bar", SURVEYED];
+  const gym = availableAt(FULL);
+  const dumbbellsOnly = availableAt(["dumbbell_pair", "dumbbell_single", "bench", SURVEYED]);
+
+  it("the curated 1:1 match is offered first", () => {
+    const alts = alternativesFor("back_squat", { pool: gym });
+    assert.equal(alts[0], "db_goblet_squat", "SUB_CANDIDATES order must survive");
+    assert.equal(alts.includes("back_squat"), false, "never offer the lift being replaced");
+  });
+  it("substitute-only lifts reach the list, which is where most matches live", () => {
+    // db_bench_press is in SUB_EXERCISES, not the library, so filtering the
+    // curated matches against the library pool alone silently drops the best one.
+    const usable = new Set([...gym.map((e) => e.id), "db_bench_press"]);
+    const alts = alternativesFor("bench_press", { pool: gym, available: usable });
+    assert.equal(alts[0], "db_bench_press");
+  });
+  it("a lift with no curated match still gets same-pattern alternatives", () => {
+    // front_squat has no SUB_CANDIDATES entry at all — the general fallback is
+    // the only thing standing between the user and an empty suggestions list.
+    assert.equal(SUB_CANDIDATES.front_squat, undefined, "guard: this test assumes no curated entry");
+    const alts = alternativesFor("front_squat", { pool: gym });
+    assert.ok(alts.length > 0, "every lift must offer something");
+    const patterns = new Set(alts.map((id) => EXERCISE_LIBRARY.find((e) => e.id === id).pattern));
+    assert.deepEqual([...patterns], ["squat"], "alternatives must train the same pattern");
+  });
+  it("a compound is not swapped for an isolation exercise first", () => {
+    const alts = alternativesFor("front_squat", { pool: gym });
+    const first = EXERCISE_LIBRARY.find((e) => e.id === alts[0]);
+    assert.equal(first.role, "compound", "same role outranks everything else");
+  });
+  it("nothing the gym cannot load is ever offered", () => {
+    const alts = alternativesFor("back_squat", { pool: dumbbellsOnly });
+    const ids = new Set(dumbbellsOnly.map((e) => e.id));
+    for (const id of alts) assert.ok(ids.has(id), `${id} is not available at this place`);
+    assert.equal(alts.includes("front_squat"), false, "no barbell, no barbell alternatives");
+  });
+  it("an unknown lift degrades to nothing rather than throwing", () => {
+    assert.deepEqual(alternativesFor("not_a_real_lift", { pool: gym }), []);
+    assert.deepEqual(alternativesFor("back_squat", {}), []);
+  });
+  it("the list is capped so the section stays a shortlist", () => {
+    assert.ok(alternativesFor("back_squat", { pool: gym, limit: 3 }).length <= 3);
+  });
+});
+
 group("substitution — every candidate resolves to a real lift", () => {
   // A program's exercise map only holds what THAT plan uses, so most substitute
   // candidates aren't in it. They used to fall through to a last-resort stub
@@ -889,6 +1226,47 @@ group("features — every toggle is offered, and every toggle does something", (
   });
 });
 
+group("calendar — a day you trained outlives the block that planned it", () => {
+  const block = { id: "prog-1", startDate: "2026-08-03", lengthWeeks: 6 };
+  const strengthDone = { id: "sess-1", type: "strength" };
+  const cardioDone = { id: "sess-2", type: "cardio" };
+
+  it("a planned training day opens its plan", () => {
+    const r = dayCellRole(block, "strength", null);
+    assert.equal(r.actionable, true);
+    assert.equal(r.orphanDone, false);
+    assert.equal(r.kind, "strength");
+  });
+  it("a planned rest day is not actionable", () => {
+    assert.equal(dayCellRole(block, "rest", null).actionable, false);
+  });
+  it("a date outside every block stays empty", () => {
+    const r = dayCellRole(null, "none", null);
+    assert.equal(r.actionable, false);
+    assert.equal(r.orphanDone, false);
+  });
+  it("a logged day whose block was deleted is STILL openable", () => {
+    // The regression this exists for: delete a block five days in and those five
+    // completed days became blank, unclickable "No plan" squares. The sessions
+    // were never deleted — they were just unreachable, which reads the same.
+    const r = dayCellRole(null, "none", strengthDone);
+    assert.equal(r.actionable, true, "a session you logged must never become unreachable");
+    assert.equal(r.orphanDone, true, "and it opens its own summary, not a plan that is gone");
+    assert.equal(r.kind, "strength", "it colours by what was actually done");
+  });
+  it("an orphaned run reads as a run", () => {
+    assert.equal(dayCellRole(null, "none", cardioDone).kind, "cardio");
+  });
+  it("a logged day that still has its block keeps the planned route", () => {
+    const r = dayCellRole(block, "strength", strengthDone);
+    assert.equal(r.orphanDone, false, "the block is still there — open the plan, not the summary");
+    assert.equal(r.actionable, true);
+  });
+  it("a session with no recorded type still gets a cell", () => {
+    assert.equal(dayCellRole(null, "none", { id: "s" }).kind, "strength");
+  });
+});
+
 group("units — display only, storage stays metric", () => {
   const metric = { units: { weight: "kg", length: "cm", distance: "km" } };
   const imperial = { units: { weight: "lb", length: "in", distance: "mi" } };
@@ -1032,6 +1410,28 @@ group("units — the ambient profile drives every read-only string", () => {
     assert.equal(isStockRack(oddBar, METRIC_EQUIPMENT), false);
     assert.equal(isStockRack(null, METRIC_EQUIPMENT), false);
     assert.equal(isStockRack(metricPlace, null), false);
+  });
+  it("the plates-on-the-bar chip can be moved BOTH ways", () => {
+    // The bug this exists for: the imperial test was `|bar - 20.41| < 0.5`, and
+    // the metric bar is 20 kg — 0.41 kg away, inside the tolerance. Every rack
+    // read as imperial, so "Pounds" was permanently lit and tapping "Metric"
+    // wrote a 20 kg bar that classified as imperial again. The chip looked dead.
+    const metricPlace = { name: "Gym", ...rackFields(METRIC_EQUIPMENT) };
+    const imperialPlace = { name: "Gym", ...rackFields(IMPERIAL_EQUIPMENT) };
+    assert.equal(isImperialRack(imperialPlace), true);
+    assert.equal(isImperialRack(metricPlace), false, "a 20 kg bar is not a 45 lb bar");
+    // the two bars are close enough that any absolute tolerance ≥0.42 fails here
+    assert.ok(Math.abs(IMPERIAL_EQUIPMENT.barWeightKg - METRIC_EQUIPMENT.barWeightKg) < 0.5,
+      "the two stock bars really are inside half a kilo of each other");
+    // and the round trip the user actually performs must stick
+    const toggled = { ...imperialPlace, ...rackFields(METRIC_EQUIPMENT) };
+    assert.equal(isImperialRack(toggled), false, "tapping Metric must survive the next read");
+    const back = { ...toggled, ...rackFields(IMPERIAL_EQUIPMENT) };
+    assert.equal(isImperialRack(back), true);
+    // an edited bar still lands on exactly one side rather than neither
+    assert.equal(isImperialRack({ barWeightKg: 15 }), false);    // women's bar
+    assert.equal(isImperialRack({ barWeightKg: 25 }), true);     // nearer the 45 lb
+    assert.equal(isImperialRack({}), false);                     // no bar → metric default
   });
   it("re-basing yields kit that physically exists", () => {
     const imperial = { units: { weight: "lb", length: "in", distance: "mi" } };

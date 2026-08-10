@@ -101,6 +101,45 @@ export function metaFor(program, id) {
     || { name: id, cue: "", implement: "dumbbell_pair" };
 }
 
+// EQUAL ALTERNATIVES for a lift you can't do today — the "the rack is taken,
+// give me something that trains the same thing" question, as opposed to the
+// "this gym has no barbell at all" question the rest of this module answers.
+//
+// Two sources, in this order, because they fail in opposite directions:
+//   1. SUB_CANDIDATES — hand-picked 1:1 matches with a SEED_RATIO, so the load
+//      carries across correctly. Best answers, but only ~11 lifts have one.
+//   2. Same movement pattern from the library. Covers everything else; ranked to
+//      prefer the same role (a compound swapped for an accessory is not an equal
+//      alternative, however well it matches the pattern) and then the harder,
+//      more compound option.
+// Anything the place can't load never appears — an alternative you can't perform
+// is worse than no suggestion, because it costs a tap to discover.
+//
+// `pool` is library entries already filtered to this place. `available` widens
+// the availability test to ids outside the library (the substitute-only lifts in
+// SUB_EXERCISES), which is where most of the curated matches live — filtering
+// those against `pool` alone would silently drop the best suggestions.
+export function alternativesFor(originalId, { pool = [], available = null, limit = 8 } = {}) {
+  const usable = available || new Set(pool.map((e) => e.id));
+  const out = [];
+  const push = (id) => {
+    if (id && id !== originalId && usable.has(id) && !out.includes(id)) out.push(id);
+  };
+
+  for (const id of candidatesFor(originalId)) push(id);
+
+  const orig = libraryById(originalId);
+  if (orig) {
+    const score = (e) => (e.role === orig.role ? 2 : 0)
+      + (e.role === "compound" ? 1 : 0)
+      + (!!e.unilateral === !!orig.unilateral ? 0.5 : 0);
+    pool.filter((e) => e.pattern === orig.pattern && e.id !== originalId)
+      .sort((a, b) => score(b) - score(a))
+      .forEach((e) => push(e.id));
+  }
+  return out.slice(0, limit);
+}
+
 // Suggested starting load for a substitute, from the planned load × ratio,
 // rounded to the actual location's equipment. Bodyweight → 0.
 export function seedSubLoad(originalId, subId, plannedLoad, subImplement, location, equip) {

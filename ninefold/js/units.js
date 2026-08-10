@@ -189,6 +189,22 @@ export function isStockRack(place, equip) {
   return p.length === q.length && p.every((v, i) => near(v, q[i]));
 }
 
+// WHICH SYSTEM IS THIS RACK FROM? — a two-way question, answered by comparing.
+//
+// This was written as `|bar - 20.41| < 0.5`, and the tolerance was the bug: the
+// olympic bar is 45 lb = 20.41 kg and the metric bar is 20 kg, which are 0.41 kg
+// apart. A metric rack therefore satisfied the imperial test, "Pounds" was lit
+// permanently, and the Metric chip could not be selected — tapping it wrote a
+// 20 kg bar that the very next read classified as imperial again.
+//
+// An absolute tolerance can't separate two values that close. Asking which of
+// the two the bar is NEARER to always answers, always answers exactly one way,
+// and stays right for a rack whose bar has been edited to something in between.
+export function isImperialRack(place) {
+  const bar = (place && place.barWeightKg) || 0;
+  return Math.abs(bar - IMPERIAL_EQUIPMENT.barWeightKg) < Math.abs(bar - METRIC_EQUIPMENT.barWeightKg);
+}
+
 // The kit fields a re-base replaces — everything that names a real object.
 export const rackFields = (equip) => ({
   barWeightKg: equip.barWeightKg, ezBarWeightKg: equip.ezBarWeightKg,

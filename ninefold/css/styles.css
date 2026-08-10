@@ -241,6 +241,10 @@ button { font-family: inherit; font-size: 1rem; cursor: pointer; border: none; }
 .btn.ghost { background: transparent; border-color: transparent; }
 .btn.outline { background: transparent; }
 .btn.danger { color: var(--red); }
+/* A disabled action stays legible rather than vanishing: "− Set" switches off
+   once every set is logged, and a control that disappears reads as a bug. */
+.btn:disabled { opacity: .34; }
+.btn:disabled:active { transform: none; }
 .btn-row { display: flex; gap: 10px; }
 .btn-row > .btn { flex: 1; min-width: 0; }   /* allow shrink so a long label can't force horizontal overflow */
 

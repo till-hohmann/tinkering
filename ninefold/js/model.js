@@ -146,6 +146,28 @@ export function programForDate(programs, isoDate) {
   return inRange[0] || null;
 }
 
+// What a calendar day IS, given the block that plans it and the session logged
+// on it — either of which may be absent, and the two absences mean opposite
+// things.
+//
+// The month grid used to derive everything from the block: no block, no cell.
+// That is right for an unplanned future date and wrong for a past one you
+// trained, and deleting a block turns the second into the first. Sessions
+// outlive blocks on purpose (`deleteProgram` never touches them), so five
+// completed days of a deleted six-week block became five blank squares — the
+// log intact, unreachable, and indistinguishable from deleted.
+//
+// A logged day therefore stands on its own: it takes its colour from what was
+// actually done rather than what was planned, and it stays openable.
+export function dayCellRole(program, planType, session) {
+  const orphanDone = !!session && !program;
+  return {
+    orphanDone,
+    kind: orphanDone ? (session.type || "strength") : planType,
+    actionable: (!!program && (planType === "cardio" || planType === "strength")) || orphanDone,
+  };
+}
+
 // --- Energy balance vs the recomp deficit target (programming audit) -----
 // balance = calories IN − WHOOP day-burn OUT (negative = in a deficit).
 // target = desired daily deficit (positive kcal). Returns a verdict for the

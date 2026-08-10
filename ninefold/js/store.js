@@ -273,6 +273,16 @@ export async function deleteProgram(programId) {
   return (await db.getAll("programs")).length;
 }
 
+// Save an edit to a block you are already running. Deliberately NOT importProgram:
+// that one re-decides which block is active and pins it, which is right for a file
+// you just imported and wrong for a plan correction made from inside a session —
+// adjusting Wednesday's set count must not silently repoint the whole app.
+export async function saveProgram(program) {
+  await db.put("programs", program);
+  pushCloud();
+  return program;
+}
+
 export async function importProgram(program, makeActive = true) {
   await db.put("programs", program);
   if (makeActive) {

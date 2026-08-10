@@ -3,7 +3,8 @@
 
 import { getActiveProgram, getProgram, resolveDay, saveSession, exerciseHistory, getLastLocation, setLastLocation, setBodyweight,
   getDraft, setDraft, clearDraft , exerciseHistoryAcross, getAllPrograms, equipmentForProgram,
-  getStretchProg, setStretchProg } from "../store.js";
+  getStretchProg, setStretchProg, saveProgram } from "../store.js";
+import { deviationQuestions, applyTemplateDecisions, stampEffort, YES, NO, CONSIDER } from "../deviations.js";
 import { getProfile, patchProfile, placeNames, withPlace } from "../profile.js";
 import { applyStretchTargets, applyStretchResults } from "../stretch.js";
 import { todayISO } from "../model.js";
@@ -195,9 +196,13 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
     }
   });
 
+  // What the session did differently from its plan, captured live by runStrength
+  // and asked about after the notes screen. Held on the draft so an interruption
+  // and resume doesn't quietly forget it.
   const strengthPhase = (loc, rd) =>
     new Promise((res, rej) => runStrength(stage, program, day, weekday, srcIso, loc || template.location, {
-      onComplete: res, readiness: rd, adhocPlace,
+      onComplete: (results, deviations) => { draft.deviations = deviations; res(results); },
+      readiness: rd, adhocPlace,
       startIndex: resuming ? (draft._exIndex || 0) : 0,
       seed: resuming ? draft.strengthResult : null,
       // persist after each exercise so an interruption keeps the logged sets
@@ -317,6 +322,19 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
     // notes
     await notes(stage, draft);
 
+    // Did today match the plan? Only asked when it didn't — see templateQuestions.
+    // Deliberately AFTER the notes screen and before the save, so a "yes" is
+    // written to the block in the same breath as the session it came from.
+    const qs = deviationQuestions(draft.deviations, program);
+    if (qs.length) {
+      const answers = await templateQuestions(stage, qs);
+      draft.strengthResult = stampEffort(draft.strengthResult, qs, answers);
+      const patched = applyTemplateDecisions(program, qs, answers,
+        { weekday, fromWeek: M.weekNumberFor(program, srcIso) });
+      if (patched !== program) await saveProgram(patched);
+      persist();
+    }
+
     // finishing Saturday completes the week → show the weekly wrap-up
     return finalizeAndSave(draft);
   } catch (e) {
@@ -388,6 +406,54 @@ function intro(stage, { program, template, week, day, weekNumber, actualLoc, sub
     const bar = addActionBar(
       el("button.btn.primary.big.block", { onclick: () => { unlockAudio(); bar.remove(); res(); } },
         hasWarm ? "Start warm-up" : "Start"));
+  });
+}
+
+// --- "Should today's changes stick?" -----------------------------------------
+// Shown only when the session actually deviated from its plan, which is why it
+// can afford to be a full screen rather than a toast: it never appears after an
+// ordinary workout, so it never becomes something to swipe away unread.
+//
+// Every row defaults to CONSIDER. The default matters more than the options do:
+// "no" throws the information away and "yes" rewrites the block, and neither is
+// a safe thing to do to someone who tapped through without reading.
+function templateQuestions(stage, questions) {
+  return new Promise((res) => {
+    clear(stage);
+    const answers = {};
+    for (const q of questions) answers[q.key] = CONSIDER;
+
+    const rows = questions.map((q) => {
+      const opts = [
+        [YES, q.yesLabel],
+        [NO, "Just for today"],
+        [CONSIDER, "Not in the plan, but remember it"],
+      ];
+      const seg = el("div.list", { style: "margin-top:9px" });
+      const paint = () => seg.replaceChildren(...opts.map(([val, label]) =>
+        el("button.item" + (answers[q.key] === val ? ".on" : ""), { style: "text-align:left",
+          "aria-pressed": answers[q.key] === val ? "true" : "false",
+          onclick: () => { answers[q.key] = val; paint(); } }, [
+          el("div.meta", {}, [el("div.t", { text: label })]),
+          answers[q.key] === val ? el("span.badge.accent", { text: "✓" }) : null,
+        ].filter(Boolean))));
+      paint();
+      return el("div.card", { style: "margin-top:12px" }, [
+        el("div", { style: "font-weight:700", text: q.question }),
+        el("p.note", { style: "margin:6px 0 0", text: q.kind === "added"
+          ? "Adding it applies from next week onward — the session you just did is already logged either way."
+          : "Changing it applies from next week onward. Either way today is logged as you did it." }),
+        seg,
+      ]);
+    });
+
+    stage.appendChild(el("div", {}, [
+      el("h1", { text: "One thing before the summary" }),
+      el("p.dim", { text: "Today didn't match the plan. Worth keeping?" }),
+      ...rows,
+    ]));
+    const bar = addActionBar(el("button.btn.primary.big.block",
+      { onclick: () => { bar.remove(); res(answers); } }, "Done"));
   });
 }
 

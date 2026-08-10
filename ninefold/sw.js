@@ -1,8 +1,23 @@
 // sw.js — offline-first service worker (requirements §2/§4).
 // Cache-first for the app shell so the app opens with zero network.
 // Bump CACHE when shipping changes so clients pick up new files.
+//
+// EVERY MODULE UNDER js/ BELONGS IN SHELL, and a test enforces it.
+//
+// The fetch handler runtime-caches whatever it fetches, which made an omission
+// here invisible: a module left out still worked, because opening the screen
+// that used it cached it. Then `activate` deletes the previous cache on every
+// release — so after an update, the only thing on the device is SHELL. Open the
+// app offline at that moment and any missing module 404s into the SPA fallback,
+// which answers a module request with HTML and takes the whole app down until
+// the phone is back online.
+//
+// Twenty-three modules had drifted off this list by v166, `profile.js` and
+// `units.js` among them, i.e. the boot path. It never showed up because it needs
+// an update and an offline open in the same short window — which is the exact
+// situation of someone who trains while travelling.
 
-const CACHE = "fittrack-v166";
+const CACHE = "fittrack-v167";
 const SHELL = [
   "./",
   "./index.html",
@@ -59,6 +74,29 @@ const SHELL = [
   "./js/views/mobility.js",
   "./js/views/mobsummary.js",
   "./js/views/exercise.js",
+  "./js/builder/adaptations.js",
+  "./js/builder/generate.js",
+  "./js/changelog.js",
+  "./js/components/place-editor.js",
+  "./js/components/sound.js",
+  "./js/config.js",
+  "./js/deviations.js",
+  "./js/equipment.js",
+  "./js/exercise-library.js",
+  "./js/health/apple-import.js",
+  "./js/health/apple.js",
+  "./js/health/index.js",
+  "./js/health/none.js",
+  "./js/health/whoop.js",
+  "./js/mobility-program.js",
+  "./js/plan-csv.js",
+  "./js/profile.js",
+  "./js/stretch.js",
+  "./js/theme.js",
+  "./js/units.js",
+  "./js/version.js",
+  "./js/views/builder.js",
+  "./js/views/welcome.js",
   "./data/program-1.json",
   "./data/program-2.json",
   "./icons/icon.svg",

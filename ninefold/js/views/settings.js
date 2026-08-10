@@ -6,7 +6,8 @@ import { getActiveProgram, getAllPrograms, getAllSessions, importProgram, restor
   getZoneBounds, setZoneBounds, syncedPrefs, getVO2maxLog, addVO2max,
   getBodyweight, setBodyweight, getProteinPerKg, setProteinPerKg,
   getDeficitTarget, setDeficitTarget, getMeasurementsLog, addMeasurement,
-  getDexaLog, addDexaScan, deleteProgram } from "../store.js";
+  getDexaLog, addDexaScan, deleteProgram, saveProgram } from "../store.js";
+import { toCSV, fromCSV, applyPlanCSV, diffPlans } from "../plan-csv.js";
 import { todayISO } from "../model.js";
 import * as M from "../model.js";
 import { buildBackup, buildMarkdownLog, shareOrDownload } from "../export.js";
@@ -533,6 +534,122 @@ export async function renderSettings() {
     setTimeout(() => go("#/"), 800);
   }
 
+  // --- the block as a spreadsheet ---------------------------------------------
+  // A generated six-week block is 40-odd days of prescriptions that, until now,
+  // could only be audited by tapping through them one at a time on a phone. So
+  // in practice nobody checked the generator's work. One row per exercise per
+  // day, openable in Excel or Numbers, sortable, editable, and importable back.
+  const planStatus = el("p.note", { style: "margin-top:8px;min-height:1em" });
+
+  async function doPlanExport(p) {
+    const safe = (p.name || "block").replace(/[^\w-]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+    const res = await shareOrDownload(`ninefold-plan-${safe}.csv`, toCSV(p), "text/csv");
+    if (res !== "cancelled") planStatus.textContent = `Exported “${p.name}” (${res}).`;
+  }
+
+  const planInput = el("input", { type: "file", accept: "text/csv,.csv", style: "display:none" });
+  planInput.addEventListener("change", async () => {
+    const f = planInput.files[0];
+    planInput.value = "";                 // so re-picking the same file fires again
+    if (!f) return;
+    planStatus.textContent = "Reading…";
+    try {
+      const parsed = fromCSV(await f.text());
+      if (!parsed.ok) { planStatus.textContent = parsed.warnings[0]; return; }
+      // Which block is this? Matched by name, because that is the column the
+      // user can see and edit. No match means it can only be a new block.
+      const target = programs.find((p) => (p.name || "") === parsed.meta.name) || null;
+      planStatus.textContent = "";
+      await planImportSheet(parsed, target);
+    } catch (e) { planStatus.textContent = "Couldn't read that file: " + e.message; }
+  });
+
+  // NOTHING IS WRITTEN BEFORE THIS SHEET IS ANSWERED. An import that silently
+  // succeeds is indistinguishable from one that silently mangled a hand-edited
+  // file, so the changes are named first and the destructive option is never the
+  // default — see the "ask each time" decision.
+  function planImportSheet(parsed, target) {
+    return new Promise((res) => {
+      const preview = target
+        ? diffPlans(target, applyPlanCSV(target, parsed, { mode: "update" }))
+        : [];
+      const ov = el("div.sheet");
+      const close = () => { ov.remove(); res(); };
+
+      const changeList = !target
+        ? el("p.note", { style: "margin-top:0", text:
+            `No block here is called “${parsed.meta.name || "—"}”, so this can only be added as a new one.` })
+        : preview.length
+        ? el("div", {}, [
+            el("p.note", { style: "margin-top:0", text: `${preview.length} change${preview.length === 1 ? "" : "s"} to “${target.name}”:` }),
+            el("div.list", { style: "margin-top:8px;max-height:38vh;overflow:auto" },
+              preview.slice(0, 60).map((c) => el("div.item", {}, [el("div.meta", {}, [el("div.s", { text: c })])]))),
+            preview.length > 60 ? el("p.note", { text: `…and ${preview.length - 60} more.` }) : null,
+          ].filter(Boolean))
+        : el("p.note", { style: "margin-top:0", text: "This file matches the block exactly — importing it changes nothing." });
+
+      const warn = parsed.warnings.length
+        ? el("div.card", { style: "margin-top:10px;border-color:var(--amber)" }, [
+            el("div.label", { text: "Worth a look first" }),
+            ...parsed.warnings.slice(0, 6).map((w) => el("p.note", { style: "margin:4px 0", text: w })),
+          ])
+        : null;
+
+      const apply = async (mode) => {
+        try {
+          const base = mode === "update" ? target : (target || {});
+          const id = mode === "new" ? `prog-csv-${Date.now().toString(36)}` : undefined;
+          const next = applyPlanCSV(base, parsed, { mode, id });
+          if (mode === "new") await importProgram(next, true);
+          else await saveProgram(next);
+          ov.remove();
+          planStatus.textContent = mode === "new"
+            ? `Added “${next.name}” as a new block.`
+            : `Updated “${next.name}” — ${preview.length} change${preview.length === 1 ? "" : "s"}.`;
+          redraw();
+          res();
+        } catch (e) { planStatus.textContent = "Import failed: " + e.message; ov.remove(); res(); }
+      };
+
+      ov.appendChild(el("div.sheet-card", {}, [
+        el("div.sheet-grip"),
+        el("div.label", { style: "margin-bottom:6px", text: "Import plan" }),
+        changeList,
+        warn,
+        el("button.btn.block", { style: "margin-top:12px", disabled: !target,
+          onclick: () => apply("update") }, "Update this block"),
+        el("p.note", { style: "margin:6px 0 0", text: target
+          ? "Keeps the block's logged sessions, routines and equipment — only the prescriptions change."
+          : "Only possible when the file's block name matches one you already have." }),
+        el("button.btn.block", { style: "margin-top:10px", onclick: () => apply("new") }, "Add as a new block"),
+        el("p.note", { style: "margin:6px 0 0", text: "Leaves the original untouched." }),
+        el("button.btn.ghost.block", { style: "margin-top:10px", onclick: close }, "Cancel"),
+      ]));
+      ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+      document.body.appendChild(ov);
+    });
+  }
+
+  const planCard = el("div.card", {}, [
+    el("div.label", { style: "margin-bottom:8px", text: "Training plan (.csv)" }),
+    el("p.note", { style: "margin-top:0", text:
+      "Export a block as a spreadsheet to check it over, edit the sets, reps or exercises, and import it back. One row per exercise per day." }),
+    el("div.list", { style: "margin-top:10px" }, [...programs]
+      .sort((a, b) => ((a.startDate || "") < (b.startDate || "") ? -1 : 1))
+      .map((p) =>
+      el("button.item", { style: "text-align:left", onclick: () => doPlanExport(p) }, [
+        el("div.meta", {}, [
+          el("div.t", { text: p.name || p.id }),
+          el("div.s", { text: [p.lengthWeeks ? p.lengthWeeks + " weeks" : "",
+            program && p.id === program.id ? "current" : ""].filter(Boolean).join(" · ") }),
+        ]),
+        el("span.badge", { text: "Export" }),
+      ]))),
+    el("button.btn.block", { style: "margin-top:10px", onclick: () => planInput.click() }, "Import edited plan…"),
+    planInput,
+    planStatus,
+  ]);
+
   const importInput = el("input", { type: "file", accept: "application/json,.json", style: "display:none" });
   importInput.addEventListener("change", async () => {
     const f = importInput.files[0]; if (!f) return;
@@ -619,7 +736,15 @@ export async function renderSettings() {
           onclick: async () => {
             if (armed !== p.id) {
               armed = p.id;
-              delStatus.textContent = `Delete “${p.name}”? Tap Confirm. Logged sessions are kept.`;
+              // Say the NUMBER, not "sessions are kept". Someone five days into a
+              // six-week block is deleting the plan for the other 37 days and
+              // wants to know those five survive it — a generic reassurance reads
+              // like boilerplate, "your 5 logged sessions stay" is a promise you
+              // can check afterwards (they stay in Progress, History and the
+              // calendar, which now opens them without their block).
+              const kept = logged.filter((s) => s.programId === p.id).length;
+              delStatus.textContent = `Delete “${p.name}”? Tap Confirm. `
+                + (kept ? `Your ${kept} logged session${kept === 1 ? "" : "s"} stay${kept === 1 ? "s" : ""}.` : "Nothing has been logged against it.");
               paintDel();
               return;
             }
@@ -1081,6 +1206,8 @@ export async function renderSettings() {
       ]),
       status,
     ]),
+
+    planCard,
 
     el("div.card", {}, [
       el("div.label", { style: "margin-bottom:8px", text: "Import / restore" }),

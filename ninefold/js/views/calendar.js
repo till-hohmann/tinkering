@@ -4,7 +4,7 @@
 // so today (a rest day) shows as rest and you can page months into the future.
 
 import { getAllPrograms, resolveDay, getAllSessions, mobilityDoneDates } from "../store.js";
-import { todayISO, WEEKDAYS, programForDate, weekNumberFor, weekdayOf } from "../model.js";
+import { todayISO, WEEKDAYS, programForDate, weekNumberFor, weekdayOf, dayCellRole } from "../model.js";
 import { isMobilityDay } from "../mobility.js";
 import { el, mount, go } from "../ui.js";
 
@@ -82,10 +82,15 @@ export async function renderCalendar(monthKey) {
       optional = !!(r.template && r.template.optional);
     }
     const isToday = iso === today;
-    const done = !!doneByDate[iso];
-    const actionable = !!prog && (type === "cardio" || type === "strength");
+    const doneSession = doneByDate[iso] || null;
+    const done = !!doneSession;
+
+    // A day you trained outlives the block that planned it — see dayCellRole.
+    // An orphaned session opens its own summary, which resolves exercise names
+    // through the library rather than the program that is no longer there.
+    const { orphanDone, kind, actionable } = dayCellRole(prog, type, doneSession);
     const cls = ".cal-cell"
-      + (type === "cardio" ? ".cardio" : type === "strength" ? ".strength" : type === "rest" ? ".rest" : ".empty")
+      + (kind === "cardio" ? ".cardio" : kind === "strength" ? ".strength" : kind === "rest" ? ".rest" : ".empty")
       + (isToday ? ".today" : "") + (optional ? ".opt" : "") + (done ? ".done" : "");
     const inner = [el("span.cal-num", { text: String(d) })];
     if (done) inner.push(el("span.cal-mark", { text: "✓" }));
@@ -93,9 +98,11 @@ export async function renderCalendar(monthKey) {
     // mobility & stability day marker: violet dot, filled once done that day
     if (isMobilityDay(weekdayOf(iso)))
       inner.push(el("span.cal-mobdot" + (mobDone.has(iso) ? ".on" : "")));
+    const aria = `${iso}, ${orphanDone ? (kind === "cardio" ? "run logged" : "session logged") : label}`;
     const node = actionable
-      ? el("button" + cls, { "aria-label": `${iso}, ${label}`, onclick: () => go(`#/day/${prog.id}/${weekNumber}/${wd}`) }, inner)
-      : el("div" + cls, { "aria-label": `${iso}, ${label}` }, inner);
+      ? el("button" + cls, { "aria-label": aria,
+          onclick: () => go(orphanDone ? `#/summary/${doneSession.id}` : `#/day/${prog.id}/${weekNumber}/${wd}`) }, inner)
+      : el("div" + cls, { "aria-label": aria }, inner);
     return { node, iso, prog };
   }
 

@@ -71,13 +71,33 @@ const allAtLeast = (ex, reps) => { const w = workSets(ex); return w.length > 0 &
 // stops the engine under-loading clean-but-easy sets (the Week-1/2 finding).
 function effortReserve(ex) {
   const ts = topSet(ex);
-  if (ts && ts.rir != null) return Math.max(0, Math.min(4, ts.rir));
+  const base = ts && ts.rir != null ? Math.max(0, Math.min(4, ts.rir)) : inferredReserve(ex);
+  return Math.max(0, Math.min(4, base + volumeSignal(ex)));
+}
+function inferredReserve(ex) {
   const reps = workSets(ex).map((s) => s.reps);
   if (reps.length < 2) return 1;
   const decay = Math.max(...reps) - Math.min(...reps);
   if (decay <= 0) return 2;   // no decay → clearly had ~2+ in reserve
   if (decay === 1) return 1;
   return 0;                   // big decay → was at/near failure
+}
+
+// SETS YOU CHOSE NOT TO PROGRAM, still worth reading.
+//
+// When a session deviates from its prescribed set count, the end-of-workout
+// question offers "no, but consider it next time" — this is what that means.
+// The two directions genuinely mean opposite things and must not be collapsed:
+// finishing a fourth set at the prescribed load says the load was conservative,
+// while stopping at two says it wasn't there that day. So the reserve moves with
+// the sign, by one step only — this is a nudge to a load prescription, not a
+// verdict, and the top set remains the primary evidence.
+//
+// Nothing is stamped unless the user explicitly picked that option, so a session
+// they answered "no" to reads exactly as it did before this existed.
+function volumeSignal(ex) {
+  const extra = (ex && ex.extraSets) || 0;
+  return extra > 0 ? 1 : extra < 0 ? -1 : 0;
 }
 
 // --- equipment-aware rounding -------------------------------------------------

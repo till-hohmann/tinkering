@@ -13,6 +13,12 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 167, notes: [
+    "During a workout you can now swap an exercise for one that trains the same thing, add any exercise from the full list, and add or drop a set.",
+    "If a session didn't match the plan, the app asks once at the end whether to keep the change, ignore it, or just bear it in mind next time.",
+    "A gym set up with pound plates can now be switched back to metric.",
+    "A block can be exported as a spreadsheet, edited, and imported back — useful for checking a plan over before you start it.",
+  ] },
   { v: 166, notes: [
     "This card. When the app updates it will tell you what changed, once, and only when there is something worth saying.",
   ] },
