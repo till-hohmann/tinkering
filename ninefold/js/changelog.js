@@ -13,6 +13,11 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 170, notes: [
+    "The block builder now shows which of your picks actually shapes the lifting — with the reps, rest and effort it means — and says so when a second choice won't change anything.",
+    "Generated blocks are checked before you start them: weekly sets per muscle, rep ranges suited to their job, rest matched to the loads, and nothing left untrained. Anything it can't fix, it names.",
+    "A new block now varies its exercises from your last two, and tells you if something has been getting skipped across blocks.",
+  ] },
   { v: 167, notes: [
     "During a workout you can now swap an exercise for one that trains the same thing, add any exercise from the full list, and add or drop a set.",
     "If a session didn't match the plan, the app asks once at the end whether to keep the change, ignore it, or just bear it in mind next time.",

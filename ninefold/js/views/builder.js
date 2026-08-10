@@ -188,6 +188,52 @@ function stepPriorities(body) {
 
     const analysis = analysePriorities(S.priorities);
     const notes = [];
+
+    // WHICH PICK ACTUALLY SHAPES THE LIFTING, said out loud.
+    //
+    // Only the FIRST strength-family choice (skill / speed / power / strength)
+    // sets the reps, the rest and the effort; any later one is discarded
+    // outright. That was invisible, and it cost a real user a whole block: she
+    // picked Skill & technique and then Strength, got a block built entirely to
+    // skill's parameters — 40-70% of max, 4-6 reps in reserve — and this screen
+    // congratulated her with "these work well together". They didn't work
+    // together. The second one did nothing.
+    //
+    // So the governing pick is named, with the numbers it implies, before she
+    // leaves the screen. The numbers are the point: "3-5 reps, 60-120 s rest,
+    // 40-70% of max" is recognisably not a strength prescription, where the
+    // name "Skill & technique" alone is easy to read as a warm-up flavour.
+    const strengthPicks = S.priorities.filter(isStrength);
+    const governing = strengthPicks[0] ? adaptationById(strengthPicks[0]) : null;
+    if (governing) {
+      const bits = [];
+      if (governing.reps) bits.push(`${governing.reps[0]}-${governing.reps[1]} reps`);
+      if (governing.restSec) bits.push(`${governing.restSec[0]}-${governing.restSec[1]}s rest`);
+      if (governing.intensityPct) bits.push(`${governing.intensityPct[0]}-${governing.intensityPct[1]}% of max`);
+      notes.push(el("div.card.tight", { style: "margin-top:0" }, [
+        el("div.label", { text: "Your lifting will be built as" }),
+        el("div", { style: "font-weight:700;margin-top:5px", text: governing.name }),
+        el("div.s", { style: "margin-top:3px", text: bits.join(" · ") }),
+      ]));
+    }
+
+    // A second strength-family pick is not a blend — it is ignored. Say so, and
+    // make it one tap to fix rather than something to work out and re-do.
+    if (strengthPicks.length > 1) {
+      const ignored = strengthPicks.slice(1);
+      notes.push(el("p.note.warn", { style: "margin-top:10px", text:
+        `${ignored.map((id) => adaptationById(id).short).join(" and ")} `
+        + `${ignored.length === 1 ? "is" : "are"} picked but won't change the plan — only ${governing.short} shapes the sets, reps and rest.` }));
+      for (const id of ignored) {
+        notes.push(el("button.btn.block", { style: "margin-top:8px", onclick: () => {
+          // Promote: move it to the front of the strength family, keeping
+          // everything else in the order it was picked.
+          S.priorities = [id, ...S.priorities.filter((x) => x !== id)];
+          render();
+        } }, `Make ${adaptationById(id).short} the main one instead`));
+      }
+    }
+
     if (S.priorities.length === 0) {
       notes.push(el("p.note", { text: "Pick at least one. Two is the sweet spot — one thing you're chasing and one you're protecting." }));
     }
@@ -198,7 +244,11 @@ function stepPriorities(body) {
       notes.push(el("p.note.warn", { text:
         `${adaptationById(c.a).short} + ${adaptationById(c.b).short}: ${c.advice}` }));
     }
-    if (S.priorities.length >= 2 && !analysis.conflicting.length && !analysis.tooMany) {
+    // Only claim two picks work together when they BOTH do something. Two
+    // strength-family picks sit closest of all on the spectrum and score as the
+    // most compatible pair there is, which is exactly how this message came to
+    // reassure someone about a choice that was being thrown away.
+    if (S.priorities.length >= 2 && strengthPicks.length <= 1 && !analysis.conflicting.length && !analysis.tooMany) {
       notes.push(el("p.note", { style: "color:var(--accent)", text: "These work well together — they sit close on the adaptation spectrum, so they won't fight each other." }));
     }
     warn.replaceChildren(...notes);

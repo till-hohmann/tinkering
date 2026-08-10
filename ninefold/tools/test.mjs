@@ -494,6 +494,42 @@ group("builder QC — the block that shipped must never generate again", () => {
   });
 });
 
+group("builder — only the first strength pick shapes the lifting", () => {
+  // Not a bug, but invisible, and that cost a real user a block: she picked
+  // Skill & technique and then Strength, and the whole plan was built to skill's
+  // parameters while the priorities screen told her the two "work well
+  // together". These pin the behaviour so the screen's new wording stays true.
+  const place = { name: "Gym", implements: [...FULL_GYM, SURVEYED], barWeightKg: 20, ezBarWeightKg: 7.5,
+    barbellPlatesKg: [25, 20, 15, 10, 5, 2.5, 1.25], ezBarPlatesKg: [10, 5, 2.5, 1.25],
+    cable: { minKg: 2.5, maxKg: 120, stepKg: 2.5 }, dumbbells: { minKg: 2.5, maxKg: 50, stepKg: 2.5 } };
+  const restOfFirstCompound = (priorities) => {
+    const r = generateProgram({ name: "T", startDate: "2026-08-10", lengthWeeks: 4, priorities,
+      mandatoryDays: 5, optionalDays: 1, cardioPerWeek: 1, places: [place] });
+    const p = r.program || r;
+    for (const wd of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) {
+      const d = p.weeks[0].days[wd];
+      const e = d && (d.exercises || []).find((x) => x.role === "compound");
+      if (e) return e.restSeconds;
+    }
+    return null;
+  };
+
+  it("a later strength-family pick changes nothing at all", () => {
+    assert.equal(restOfFirstCompound(["skill", "strength"]), restOfFirstCompound(["skill"]),
+      "adding Strength after Skill must be a no-op — if this ever changes, the screen's wording is wrong");
+  });
+  it("promoting it changes the whole block", () => {
+    const asSkill = restOfFirstCompound(["skill", "strength"]);
+    const asStrength = restOfFirstCompound(["strength", "skill"]);
+    assert.notEqual(asSkill, asStrength, "the promote button has to actually do something");
+    assert.ok(asStrength >= 150, `promoted to Strength, heavy compounds rest ${asStrength}s`);
+  });
+  it("a cardio pick alongside does not touch the lifting", () => {
+    // Only the strength FAMILY competes for this slot; cardio picks are separate.
+    assert.equal(restOfFirstCompound(["strength", "long_endurance"]), restOfFirstCompound(["strength"]));
+  });
+});
+
 group("builder — a block knows what came before it", () => {
   const place = { name: "Gym", implements: [...FULL_GYM, SURVEYED], barWeightKg: 20, ezBarWeightKg: 7.5,
     barbellPlatesKg: [25, 20, 15, 10, 5, 2.5, 1.25], ezBarPlatesKg: [10, 5, 2.5, 1.25],
