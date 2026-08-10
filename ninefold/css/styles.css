@@ -587,6 +587,23 @@ img.exphoto { object-fit: cover; border-radius: inherit; background: var(--bg-el
 
 /* --- Routine engine --- */
 .routine-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+/* Swap / Later / Add, in the header beside the jump navigator. Sized to sit
+   with .navbadge but tinted with the accent so the three things that CHANGE the
+   workout read as actions rather than as more chrome — they used to be
+   borderless ghost buttons under the photograph, where they were both easy to
+   miss and below the fold exactly when needed.
+   `gap: 6px` and the tighter padding keep all four on one line at 375px, which
+   is the width that matters; `white-space: nowrap` stops "⇄ Swap" wrapping to
+   two lines and shoving the navigator off the row. */
+.exact {
+  display: inline-flex; align-items: center; white-space: nowrap;
+  font: inherit; font-size: .74rem; font-weight: 700; letter-spacing: .01em;
+  padding: 6px 10px; border-radius: var(--pill); cursor: pointer;
+  background: var(--accent-ghost); color: var(--accent);
+  border: 1px solid rgba(47,230,166,.28);
+}
+.exact:active { transform: scale(.95); }
+@media (max-width: 359px) { .exact { padding: 6px 8px; font-size: .7rem; } }
 .progress { height: 7px; background: var(--bg-elev2); border-radius: var(--pill); overflow: hidden; margin: 4px 0 16px; }
 .progress-fill { height: 100%; background: var(--accent); width: 0; border-radius: var(--pill); transition: width .4s var(--ease); }
 .routine-illo { width: 150px; height: 150px; margin: 8px auto 0; color: var(--accent); }

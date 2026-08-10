@@ -630,25 +630,9 @@ export async function renderSettings() {
     });
   }
 
-  const planCard = el("div.card", {}, [
-    el("div.label", { style: "margin-bottom:8px", text: "Training plan (.csv)" }),
-    el("p.note", { style: "margin-top:0", text:
-      "Export a block as a spreadsheet to check it over, edit the sets, reps or exercises, and import it back. One row per exercise per day." }),
-    el("div.list", { style: "margin-top:10px" }, [...programs]
-      .sort((a, b) => ((a.startDate || "") < (b.startDate || "") ? -1 : 1))
-      .map((p) =>
-      el("button.item", { style: "text-align:left", onclick: () => doPlanExport(p) }, [
-        el("div.meta", {}, [
-          el("div.t", { text: p.name || p.id }),
-          el("div.s", { text: [p.lengthWeeks ? p.lengthWeeks + " weeks" : "",
-            program && p.id === program.id ? "current" : ""].filter(Boolean).join(" · ") }),
-        ]),
-        el("span.badge", { text: "Export" }),
-      ]))),
-    el("button.btn.block", { style: "margin-top:10px", onclick: () => planInput.click() }, "Import edited plan…"),
-    planInput,
-    planStatus,
-  ]);
+  // (The export/import controls themselves live on the blocks card below — see
+  // the comment there. Only the plumbing is up here, because it has to be
+  // defined before that card is built.)
 
   const importInput = el("input", { type: "file", accept: "application/json,.json", style: "display:none" });
   importInput.addEventListener("change", async () => {
@@ -683,10 +667,23 @@ export async function renderSettings() {
   seg.appendChild(mkOpt("loud", "Always audible"));
   const testBtn = el("button.btn.block", { style: "margin-top:12px", onclick: () => testAudio() }, "▶ Test voice cue");
 
-  // Program selection: Automatic (by date) or pin a specific block. Only useful
-  // with more than one program loaded.
+  // ONE CARD FOR THE BLOCKS, because there is only one list of blocks.
+  //
+  // Export/import started life down in "Data & backup" next to the JSON backup,
+  // which is where it belongs by file type and nowhere near where you think
+  // about it. Everything you do TO a block — pick which one runs, export it to
+  // check it over, put the edited version back, throw it away — is the same
+  // train of thought, and it was split across two screens' worth of scrolling
+  // with the block list rendered twice.
+  //
+  // So: one list, each row carrying both of its actions.
+  //
+  // The card is no longer conditional on owning several blocks. Only the
+  // SELECTOR needs more than one; export and import are just as useful to
+  // someone auditing the first block the builder ever made them — which is
+  // exactly when a generated plan most deserves checking.
   let programCard = null;
-  if (programs.length > 1) {
+  {
     const ordered = [...programs].sort((a, b) => ((a.startDate || "") < (b.startDate || "") ? -1 : 1));
     // Wrapping chips (not a fixed segmented control) so it can't overflow the card
     // as more blocks are added. Labels are "Block N" by chronological order.
@@ -696,7 +693,7 @@ export async function renderSettings() {
     // the first place. Positional labels are the wrong answer: you have to count
     // them against the list to know which is which, and the numbers move when a
     // block is deleted. The Plan tab already uses this control.
-    const pseg = el("div.selectwrap", {}, [
+    const pseg = programs.length > 1 ? el("div.selectwrap", {}, [
       el("select.progselect", { "aria-label": "Which block to run",
         onchange: async (e) => {
           if (e.target.value === "__auto") await setAutoProgram();
@@ -707,7 +704,7 @@ export async function renderSettings() {
         ...ordered.map((p) => el("option",
           { value: p.id, selected: !sel.auto && sel.activeId === p.id ? true : null }, p.name || p.id)),
       ]),
-    ]);
+    ]) : null;
 
     // Deleting a block. Needed the moment the builder existed: a trial block you
     // no longer want otherwise sits in the calendar forever. Sessions are kept —
@@ -731,6 +728,13 @@ export async function renderSettings() {
           el("div.s", { text: [when ? "from " + when : "", p.lengthWeeks ? p.lengthWeeks + " weeks" : "",
             program && p.id === program.id ? "current" : ""].filter(Boolean).join(" · ") }),
         ]),
+        // Hidden while the row is armed: a two-tap delete confirm sitting next to
+        // a one-tap Export is a mis-tap waiting to happen, and the moment you are
+        // deciding whether to destroy a block is the wrong moment to offer a
+        // second, unrelated action.
+        isArmed ? null : el("button.btn.ghost", { style: "padding:6px 12px;font-size:.8rem",
+          "aria-label": "Export " + (p.name || "block") + " as a spreadsheet",
+          onclick: () => doPlanExport(p) }, "Export"),
         el("button.btn" + (isArmed ? ".danger" : ".ghost"), { style: "padding:6px 12px;font-size:.8rem",
           "aria-label": (isArmed ? "Confirm delete " : "Delete ") + (p.name || "block"),
           onclick: async () => {
@@ -756,18 +760,24 @@ export async function renderSettings() {
                 : "Couldn't delete that block.";
             }
           } }, isArmed ? "Confirm" : "Delete"),
-      ]);
+      ].filter(Boolean));
     }));
     paintDel();
 
     programCard = el("div.card", {}, [
-      el("div.label", { style: "margin-bottom:8px", text: "Program selection" }),
-      pseg,
-      el("p.note", { style: "margin-top:10px", text: sel.auto
-        ? "Automatic: the app switches to each block on its start date."
-        : `Pinned to “${program ? program.name : "?"}”. Switch back to Auto to follow the calendar.` }),
-      el("div.label", { style: "margin:18px 2px 0", text: "Delete a block" }),
+      ...(pseg ? [
+        el("div.label", { style: "margin-bottom:8px", text: "Which block runs" }),
+        pseg,
+        el("p.note", { style: "margin-top:10px", text: sel.auto
+          ? "Automatic: the app switches to each block on its start date."
+          : `Pinned to “${program ? program.name : "?"}”. Switch back to Auto to follow the calendar.` }),
+      ] : []),
+      el("div.label", { style: pseg ? "margin:18px 2px 0" : "margin:0 2px 0", text: "Your blocks" }),
+      el("p.note", { style: "margin-top:4px", text:
+        "Export a block as a spreadsheet to check it over — one row per exercise per day — then edit the sets, reps or exercises and import it back." }),
       delList, delStatus,
+      el("button.btn.block", { style: "margin-top:4px", onclick: () => planInput.click() }, "Import edited plan…"),
+      planInput, planStatus,
     ]);
   }
 
@@ -1206,8 +1216,6 @@ export async function renderSettings() {
       ]),
       status,
     ]),
-
-    planCard,
 
     el("div.card", {}, [
       el("div.label", { style: "margin-bottom:8px", text: "Import / restore" }),

@@ -539,9 +539,26 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     paintRx();
 
     // --- header ---
+    //
+    // Swap / Later / Add sit UP HERE, alongside the jump navigator, rather than
+    // in a row under the photograph. They belong together: all four change what
+    // you are about to do rather than record what you just did, and the three
+    // that were below the image were both easy to miss and a scroll away at the
+    // moment you need them — standing at a machine someone else is using.
+    //
+    // Given their own chip style, not `.btn.ghost`, because a borderless button
+    // reads as decoration next to a photograph.
+    const headActions = canEdit ? [
+      el("button.exact", { "aria-label": "Swap this exercise", onclick: () => swapExercise() }, "⇄ Swap"),
+      exIndex < exercises.length - 1
+        ? el("button.exact", { "aria-label": "Do this exercise later", onclick: () => doLater() }, "↓ Later")
+        : null,
+      el("button.exact", { "aria-label": "Add an exercise", onclick: () => addExercise() }, "+ Add"),
+    ].filter(Boolean) : [];
     container.appendChild(el("div.routine-head", {}, [
       el("button.btn.ghost", { style: "padding:0", "aria-label": "Exit logging", onclick: () => maybeExit() }, "✕"),
       el("span.spacer"),
+      ...headActions,
       el("button.badge.navbadge", { "aria-label": "Jump to another exercise", onclick: () => openNav() }, `≡  ${exIndex + 1}/${exercises.length}`),
     ]));
     container.appendChild(el("div.progress", {}, [el("div.progress-fill", { style: `width:${(exIndex / exercises.length) * 100}%` })]));
@@ -568,14 +585,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
         : anchorWeight(program, rx.exerciseId) != null ? el("div.rx", { text: "Week-1 anchor: " + program.loadAnchors[rx.exerciseId] }) : null,
     ]));
 
-    // on-the-fly: swap this lift, defer it, or add one (gym reality)
-    if (canEdit) container.appendChild(el("div.btn-row", { style: "margin-top:8px" }, [
-      el("button.btn.ghost", { style: "flex:1;min-height:38px;font-size:.8rem", "aria-label": "Swap this exercise", onclick: () => swapExercise() }, "⇄ Swap"),
-      exIndex < exercises.length - 1
-        ? el("button.btn.ghost", { style: "flex:1;min-height:38px;font-size:.8rem", "aria-label": "Do this exercise later", onclick: () => doLater() }, "↓ Later")
-        : null,
-      el("button.btn.ghost", { style: "flex:1;min-height:38px;font-size:.8rem", "aria-label": "Add an exercise", onclick: () => addExercise() }, "+ Add"),
-    ]));
+    // (Swap / Later / Add moved into the header above, next to the navigator.)
 
     // --- the coach's call + muscles worked, side by side: the session-target
     //     box on the left, a compact front+back muscle body on the right ---
