@@ -23,13 +23,14 @@ import { roundLoad, loadCeiling, nextLoadUp, rackAt, recommend } from "../js/pro
 import { deviationQuestions, applyTemplateDecisions, stampEffort, YES, NO, CONSIDER } from "../js/deviations.js";
 import { toCSV, fromCSV, applyPlanCSV, diffPlans } from "../js/plan-csv.js";
 import { BUILD_CONFIG, hasBackup, hasWhoop } from "../js/config.js";
-import { EXERCISE_LIBRARY, checkLibrary, availableAt, pickForPattern } from "../js/exercise-library.js";
+import { EXERCISE_LIBRARY, checkLibrary, availableAt, pickForPattern, qualityOf } from "../js/exercise-library.js";
 import { FULL_GYM, EXERCISE_NEEDS, stationsKnown, canDoHere, SURVEYED, IMPLEMENTS, STATIONS, PRESETS } from "../js/equipment.js";
 import { MUSCLE_MAP } from "../js/volume.js";
 import { EXERCISE_ANATOMY } from "../js/exercise-anatomy.js";
 import { hasIllustration } from "../js/illustrations.js";
-import { compatibility, interference, analysePriorities, blockShape } from "../js/builder/adaptations.js";
-import { generateProgram, spreadDays } from "../js/builder/generate.js";
+import { compatibility, interference, analysePriorities, blockShape, isStrength } from "../js/builder/adaptations.js";
+import { generateProgram, spreadDays, summariseHistory } from "../js/builder/generate.js";
+import { auditBlock, parseReps } from "../js/builder/quality.js";
 import { THEMES, themeById, DEFAULT_THEME } from "../js/theme.js";
 import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT, METRIC_EQUIPMENT,
   defaultEquipmentFor, plateLabel, plateColor, weightLabel, isImperialWeight, setDisplayProfile,
@@ -372,6 +373,169 @@ group("service worker — offline-first means every module is precached", () => 
     const version = readFileSync(new URL("../js/version.js", import.meta.url), "utf8")
       .match(/APP_VERSION = "(v\d+)"/)[1];
     assert.equal(cache, version, "sw.js CACHE and js/version.js APP_VERSION are out of step");
+  });
+});
+
+group("builder QC — the block that shipped must never generate again", () => {
+  // Every assertion here is a defect found by auditing a real block a real user
+  // was handed. The block was named "Strength kickstarter"; its parameters were
+  // the SKILL adaptation's, because priorities.find() takes the first of the
+  // strength family and Skill & technique is the first row in the list.
+  const place = { name: "Gym", implements: [...FULL_GYM, SURVEYED], barWeightKg: 20, ezBarWeightKg: 7.5,
+    barbellPlatesKg: [25, 20, 15, 10, 5, 2.5, 1.25], ezBarPlatesKg: [10, 5, 2.5, 1.25],
+    cable: { minKg: 2.5, maxKg: 120, stepKg: 2.5 }, dumbbells: { minKg: 2.5, maxKg: 50, stepKg: 2.5 } };
+  const gen = (over = {}) => {
+    const r = generateProgram({ name: "T", startDate: "2026-08-10", lengthWeeks: 4,
+      priorities: ["hypertrophy"], mandatoryDays: 5, optionalDays: 1, cardioPerWeek: 1, places: [place], ...over });
+    return r.program || r;
+  };
+
+  it("isolation work is never prescribed in a strength rep range", () => {
+    // The shipped block had leg extensions, calf raises, flies and curls at 5-6
+    // reps for four weeks because accessories inherited the adaptation's span.
+    for (const priorities of [["strength"], ["skill", "strength"], ["power"], ["hypertrophy"]]) {
+      const p = gen({ priorities });
+      for (const w of p.weeks) for (const d of Object.values(w.days)) for (const e of d.exercises || []) {
+        if (e.role === "compound" || e.role === "core") continue;
+        const r = parseReps(e.repRange);
+        if (!r) continue;
+        assert.ok(r.hi >= 8, `${priorities}: ${e.exerciseId} at ${e.repRange} — isolation below 8 reps`);
+      }
+    }
+  });
+  it("a heavy compound always gets real rest, whatever asked for it", () => {
+    // skill's restSec tops out at 120 s, and 3-5 reps on 120 s is not the
+    // session the prescription claims.
+    for (const priorities of [["skill", "strength"], ["strength"], ["power"]]) {
+      const p = gen({ priorities });
+      for (const d of Object.values(p.weeks[0].days)) for (const e of d.exercises || []) {
+        const r = parseReps(e.repRange);
+        if (e.role !== "compound" || !r || r.hi > 5) continue;
+        assert.ok(e.restSeconds >= 150, `${priorities}: ${e.exerciseId} ${e.repRange} on ${e.restSeconds}s`);
+      }
+    }
+  });
+  it("two arm slots are not two curls", () => {
+    // Direct arm work was 17.5 biceps sets against 0 triceps: pickForPattern
+    // penalised repeating an EXERCISE, never a muscle, and every curl in the
+    // library sorts before every extension.
+    const p = gen();
+    const direct = { Biceps: 0, Triceps: 0 };
+    for (const d of Object.values(p.weeks[0].days)) for (const e of d.exercises || []) {
+      const map = MUSCLE_MAP[e.exerciseId] || {};
+      for (const m of ["Biceps", "Triceps"]) if (map[m] >= 1) direct[m] += e.prescribedSets;
+    }
+    assert.ok(direct.Biceps > 0 && direct.Triceps > 0,
+      `biceps ${direct.Biceps}, triceps ${direct.Triceps} — one arm muscle got nothing`);
+  });
+  it("two core slots are not the same core exercise twice over", () => {
+    const p = gen();
+    const quals = new Set();
+    let slots = 0;
+    for (const d of Object.values(p.weeks[0].days)) for (const e of d.exercises || []) {
+      if (e.role !== "core") continue;
+      slots++;
+      const q = qualityOf(e.exerciseId);
+      if (q) quals.add(q);
+    }
+    if (slots >= 2) assert.ok(quals.size >= 2, `${slots} core slots covering only ${[...quals]}`);
+  });
+  it("no muscle group is left untrained", () => {
+    for (const days of [3, 4, 5]) {
+      const p = gen({ mandatoryDays: days + 1, cardioPerWeek: 1 });
+      const res = auditBlock(p, { adaptation: "hypertrophy" });
+      const c = res.checks.find((x) => x.id === "coverage.untrained");
+      assert.ok(c.ok, `${days} days: ${c.message}`);
+    }
+  });
+  it("peak volume stays inside the productive range", () => {
+    // 27.5 quad sets against a MAV of 16 is what an uncapped ramp produces.
+    for (const days of [3, 4, 5]) for (const weeks of [4, 6, 8]) {
+      const p = gen({ mandatoryDays: days + 1, lengthWeeks: weeks });
+      const res = auditBlock(p, { adaptation: "hypertrophy" });
+      const c = res.checks.find((x) => x.id === "volume.over_mav");
+      assert.ok(c.ok, `${days}d ${weeks}w: ${c.message}`);
+    }
+  });
+  it("more than one set is never added to an exercise at once", () => {
+    for (const weeks of [4, 6, 8]) {
+      const res = auditBlock(gen({ lengthWeeks: weeks }), { adaptation: "hypertrophy" });
+      const c = res.checks.find((x) => x.id === "progression.ramp");
+      assert.deepEqual(c.detail.bigJumps, [], `${weeks}w: ${c.message}`);
+    }
+  });
+  it("a second cardio day becomes intervals, not a second easy run", () => {
+    // No hard aerobic session is the one omission with a mortality signal.
+    const p = gen({ mandatoryDays: 6, cardioPerWeek: 2 });
+    const cardio = Object.values(p.weeks[0].days).filter((d) => d.type === "cardio");
+    assert.equal(cardio.length, 2);
+    assert.ok(cardio.some((d) => /zone 4|hard/i.test(d.prescription)), cardio.map((d) => d.prescription).join(" | "));
+  });
+  it("but an explicit cardio choice is never overridden", () => {
+    const r = generateProgram({ name: "T", startDate: "2026-08-10", lengthWeeks: 4,
+      priorities: ["hypertrophy", "long_endurance"], mandatoryDays: 6, optionalDays: 0,
+      cardioPerWeek: 2, places: [place] });
+    const cardio = Object.values((r.program || r).weeks[0].days).filter((d) => d.type === "cardio");
+    assert.equal(cardio.filter((d) => /zone 4|hard/i.test(d.prescription)).length, 0,
+      "the user asked for Zone 2 — say the VO2 gap, don't silently fix it");
+    assert.ok(r.floorGaps.some((g) => /hard aerobic/i.test(g)), "…and it must still be named");
+  });
+  it("the whole input space generates without an error-level defect", () => {
+    let checked = 0;
+    for (const priorities of [["strength"], ["hypertrophy"], ["skill", "strength"], ["muscular_endurance"]])
+      for (const days of [3, 4, 5]) for (const weeks of [4, 6]) for (const cardio of [1, 2]) {
+        const p = gen({ priorities, mandatoryDays: days + cardio, cardioPerWeek: cardio, lengthWeeks: weeks });
+        const res = auditBlock(p, { adaptation: priorities.find(isStrength) || "hypertrophy" });
+        assert.deepEqual(res.errors.map((e) => e.id), [],
+          `${priorities}/${days}d/${weeks}w/${cardio}c: ${res.errors.map((e) => e.message).join("; ")}`);
+        checked++;
+      }
+    assert.ok(checked >= 48, `only ${checked} combinations checked`);
+  });
+});
+
+group("builder — a block knows what came before it", () => {
+  const place = { name: "Gym", implements: [...FULL_GYM, SURVEYED], barWeightKg: 20, ezBarWeightKg: 7.5,
+    barbellPlatesKg: [25, 20, 15, 10, 5, 2.5, 1.25], ezBarPlatesKg: [10, 5, 2.5, 1.25],
+    cable: { minKg: 2.5, maxKg: 120, stepKg: 2.5 }, dumbbells: { minKg: 2.5, maxKg: 50, stepKg: 2.5 } };
+  const gen = (over = {}) => {
+    const r = generateProgram({ name: "T", startDate: "2026-08-10", lengthWeeks: 6, priorities: ["hypertrophy"],
+      mandatoryDays: 5, optionalDays: 0, cardioPerWeek: 1, places: [place], ...over });
+    return r.program || r;
+  };
+
+  it("with no history it behaves exactly as before", () => {
+    const a = gen(), b = gen({ previousBlocks: [] });
+    assert.deepEqual(Object.keys(a.exercises).sort(), Object.keys(b.exercises).sort());
+  });
+  it("a second block varies the movements from the first", () => {
+    const first = gen();
+    const second = gen({ startDate: "2026-09-21", previousBlocks: [first] });
+    const a = new Set(Object.keys(first.exercises)), b = new Set(Object.keys(second.exercises));
+    const shared = [...b].filter((id) => a.has(id));
+    assert.ok(shared.length < b.size,
+      "the second block reused every single lift — running the app twice gives the same plan");
+  });
+  it("variety never costs coverage", () => {
+    // The nudge must not push the picker onto the wrong movement to be different.
+    const first = gen();
+    const second = gen({ startDate: "2026-09-21", previousBlocks: [first] });
+    const res = auditBlock(second, { adaptation: "hypertrophy" });
+    assert.deepEqual(res.errors.map((e) => e.id), [], res.errors.map((e) => e.message).join("; "));
+  });
+  it("a muscle skipped across blocks is named", () => {
+    // Two blocks that never train calves should say so on the third.
+    const stripped = (p) => ({ ...p, weeks: p.weeks.map((w) => ({ ...w, days: Object.fromEntries(
+      Object.entries(w.days).map(([k, d]) => [k, d.type !== "strength" ? d : { ...d,
+        exercises: (d.exercises || []).filter((e) => !(MUSCLE_MAP[e.exerciseId] || {}).Calves) }])) })) });
+    const past = [stripped(gen()), stripped(gen())];
+    const r = generateProgram({ name: "T3", startDate: "2026-11-02", lengthWeeks: 6, priorities: ["hypertrophy"],
+      mandatoryDays: 5, optionalDays: 0, cardioPerWeek: 1, places: [place], previousBlocks: past });
+    assert.ok(r.history.neglected.includes("Calves"), `neglected: ${r.history.neglected}`);
+  });
+  it("summarising history is safe on junk input", () => {
+    assert.equal(summariseHistory().blocks, 0);
+    assert.equal(summariseHistory([null, {}, { weeks: [] }]).blocks, 1);
   });
 });
 

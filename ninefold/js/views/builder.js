@@ -28,8 +28,9 @@
 
 import { el, mount, go, backBtn, addActionBar, clear } from "../ui.js";
 import { ADAPTATIONS, byId as adaptationById, analysePriorities, compatibility,
-  BLOCK_SHAPES, isCardio } from "../builder/adaptations.js";
+  BLOCK_SHAPES, isCardio, isStrength } from "../builder/adaptations.js";
 import { generateProgram } from "../builder/generate.js";
+import { auditBlock } from "../builder/quality.js";
 import { getProfile, patchProfile } from "../profile.js";
 import { defaultEquipmentFor, weightValue, weightToKg, weightLabel, distanceValue, distanceLabel } from "../units.js";
 import { FULL_GYM } from "../equipment.js";
@@ -61,6 +62,7 @@ function freshState(profile) {
     afterLastBlock: null,
     profile,
     result: null,
+    audit: null,
   };
 }
 
@@ -438,7 +440,7 @@ function prettyDate(iso) {
   return new Date(y, m - 1, d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 }
 
-function buildAndReview() {
+async function buildAndReview() {
   // The mobility answer is a PROFILE setting, not part of the block: the routine
   // runs on its own short schedule alongside whatever block is current, and the
   // "What you track" toggle is the same switch. Saying yes here turns it on.
@@ -446,6 +448,17 @@ function buildAndReview() {
   // The wizard's own answers win: the profile copy may be a step behind, since
   // patchProfile is fire-and-forget.
   const places = S.places && S.places.length ? S.places : ((S.profile && S.profile.places) || []);
+  // Blocks already run, oldest→newest. They bias exercise selection away from
+  // what the last two blocks used and surface anything the sequence has been
+  // quietly skipping — see summariseHistory. Best-effort: a block still
+  // generates fine if this read fails.
+  let previousBlocks = [];
+  try {
+    previousBlocks = (await getAllPrograms())
+      .filter((p) => p.startDate && p.startDate < S.startDate)
+      .sort((a, b) => (a.startDate < b.startDate ? -1 : 1));
+  } catch { /* first block, or storage unavailable */ }
+
   S.result = generateProgram({
     name: S.name, startDate: S.startDate, lengthWeeks: S.lengthWeeks,
     priorities: S.priorities,
@@ -453,7 +466,12 @@ function buildAndReview() {
     places,
     blockShapeId: S.blockShapeId,
     goalText: S.goalText,
+    previousBlocks,
   });
+  // Grade the finished block against the same landmarks the Progress tab uses.
+  // Shown, not hidden: the generator can now be wrong in ways the user is better
+  // placed to judge than it is (one cardio day is a choice; 27 quad sets is not).
+  S.audit = auditBlock(S.result.program, { adaptation: S.priorities.find(isStrength) || "hypertrophy" });
   next();
 }
 
@@ -507,6 +525,49 @@ function stepReview(body) {
       el("div.label", { text: "Below the health floor" }),
       el("p.note", { style: "margin-top:4px", text: "Not wrong — just what this block gives up. You can train around it outside the plan." }),
       ...r.floorGaps.map((w) => el("p.note", { style: "margin-top:8px", text: "· " + w })),
+    ]));
+  }
+
+  // --- what the plan checks say --------------------------------------------
+  // The block is graded against the same volume landmarks the Progress tab
+  // draws. Shown here rather than kept internal, because the failure this
+  // prevents was invisible by construction: every stage of the generator was
+  // individually sensible and the finished plan was not, and nobody could see
+  // that without adding up the week by hand.
+  const audit = S.audit;
+  if (audit) {
+    const rows = [];
+    for (const c of audit.errors) rows.push(["var(--red)", "✕", c.message]);
+    for (const c of audit.warnings) rows.push(["var(--amber)", "!", c.message]);
+    if (!rows.length) {
+      body.append(el("div.card", { style: "margin-top:12px;border-color:rgba(47,230,166,.35)" }, [
+        el("div.row", { style: "align-items:center;gap:8px" }, [
+          el("span.badge.accent", { text: "✓" }),
+          el("div.label", { style: "color:var(--accent)", text: "Plan checks passed" })]),
+        el("p.note", { style: "margin-top:8px", text:
+          "Weekly volume per muscle sits inside the productive range, rep ranges suit their role, rest matches the loads, and nothing is left untrained." }),
+      ]));
+    } else {
+      body.append(el("div.card", { style: "margin-top:12px" }, [
+        el("div.label", { text: "Plan checks" }),
+        el("p.note", { style: "margin-top:4px", text: audit.errors.length
+          ? "Some of this is worth fixing before you start — go back and change an answer, or build again."
+          : "Nothing wrong, but here is what this block trades away." }),
+        ...rows.map(([colour, glyph, msg]) => el("div.row", { style: "align-items:flex-start;gap:8px;margin-top:9px" }, [
+          el("span", { style: `color:${colour};font-weight:800;line-height:1.5`, text: glyph }),
+          el("p.note", { style: "margin:0", text: msg }),
+        ])),
+      ]));
+    }
+  }
+
+  // Anything the SEQUENCE of blocks has been skipping, as opposed to this one.
+  if (r.history && r.history.neglected && r.history.neglected.length) {
+    body.append(el("div.card", { style: "margin-top:12px;border-color:var(--amber)" }, [
+      el("div.label", { style: "color:var(--amber)", text: "Across your blocks" }),
+      el("p.note", { style: "margin-top:8px", text:
+        `${r.history.neglected.join(", ")} ${r.history.neglected.length === 1 ? "has" : "have"} been getting very little across your last ${r.history.blocks} block${r.history.blocks === 1 ? "" : "s"}. `
+        + "One block can't cover everything, but a year of them should." }),
     ]));
   }
 

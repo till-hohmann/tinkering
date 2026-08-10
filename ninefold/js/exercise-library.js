@@ -124,7 +124,7 @@ export const EXERCISE_LIBRARY = [
   E("face_pull", "Face Pull", "cable", "pull_h", "accessory",
     { cue: "High elbows, pull to the forehead, rotate out" }),
   E("db_reverse_fly", "Reverse Fly", "dumbbell_pair", "delt", "accessory",
-    { cue: "Soft elbows, lead with the pinkies" }),
+    { tags: ["rear-delt"], cue: "Soft elbows, lead with the pinkies" }),
 
   // ---- upper: vertical pull ----
   E("lat_pulldown", "Lat Pulldown", "cable", "pull_v", "compound",
@@ -138,17 +138,17 @@ export const EXERCISE_LIBRARY = [
 
   // ---- upper: isolation ----
   E("db_lateral_raise", "Lateral Raise", "dumbbell_pair", "delt", "accessory",
-    { cue: "Lead with the elbows, stop at shoulder height" }),
+    { tags: ["lateral-delt"], cue: "Lead with the elbows, stop at shoulder height" }),
   E("ez_curl", "EZ-bar Curl", "ez_bar", "arm", "accessory",
-    { cue: "Elbows pinned, control the negative" }),
+    { tags: ["biceps"], cue: "Elbows pinned, control the negative" }),
   E("db_curl", "Dumbbell Curl", "dumbbell_pair", "arm", "accessory",
-    { cue: "Supinated, no swinging" }),
+    { tags: ["biceps"], cue: "Supinated, no swinging" }),
   E("db_hammer_curl", "Hammer Curl", "dumbbell_pair", "arm", "accessory",
-    { cue: "Neutral grip, thumbs up" }),
+    { tags: ["biceps"], cue: "Neutral grip, thumbs up" }),
   E("triceps_pushdown", "Triceps Pushdown", "cable", "arm", "accessory",
-    { cue: "Elbows at the ribs, full lockout" }),
+    { tags: ["triceps"], cue: "Elbows at the ribs, full lockout" }),
   E("overhead_triceps_ext", "Overhead Triceps Extension", "dumbbell_single", "arm", "accessory",
-    { cue: "Deep stretch behind the head, elbows narrow" }),
+    { tags: ["triceps"], cue: "Deep stretch behind the head, elbows narrow" }),
 
   // ---- core ----
   E("cable_pallof", "Cable Pallof Press", "cable", "core", "core",
@@ -156,11 +156,11 @@ export const EXERCISE_LIBRARY = [
   E("bw_pallof", "Anti-rotation Hold", "bodyweight", "core", "core",
     { cue: "Brace hard and refuse to twist", tags: ["anti-rotation", "timed"] }),
   E("dead_bug", "Dead Bug", "bodyweight", "core", "core",
-    { cue: "Low back flat, slow opposite arm and leg", tags: ["timed"] }),
+    { cue: "Low back flat, slow opposite arm and leg", tags: ["anti-extension", "timed"] }),
   E("side_plank", "Side Plank", "bodyweight", "core", "core",
-    { uni: true, cue: "Straight line, hips high", tags: ["timed"] }),
+    { uni: true, cue: "Straight line, hips high", tags: ["anti-lateral", "timed"] }),
   E("bird_dog", "Bird Dog", "bodyweight", "core", "core",
-    { uni: true, cue: "Hips level, reach long", tags: ["timed"] }),
+    { uni: true, cue: "Hips level, reach long", tags: ["anti-rotation", "timed"] }),
   E("core_circuit", "Core Circuit", "bodyweight", "core", "core",
     { cue: "Move through the holds without resting", tags: ["timed"] }),
 
@@ -248,9 +248,9 @@ export const EXERCISE_LIBRARY = [
   E("chest_supported_row", "Chest-supported Row", "dumbbell_pair", "pull_h", "accessory",
     { cue: "On an incline bench - takes the lower back out of it" }),
   E("band_pull_apart", "Band Pull-apart", "bodyweight", "delt", "accessory",
-    { cue: "Straight arms, squeeze the shoulder blades together" }),
+    { tags: ["rear-delt"], cue: "Straight arms, squeeze the shoulder blades together" }),
   E("face_pull_band", "Band Face Pull", "bodyweight", "delt", "accessory",
-    { cue: "High elbows, pull to the forehead, rotate out" }),
+    { tags: ["rear-delt"], cue: "High elbows, pull to the forehead, rotate out" }),
   // ---- carries, traps, arms ----
   E("db_shrug", "Dumbbell Shrug", "dumbbell_pair", "trap", "accessory",
     { cue: "Straight up, pause, no rolling" }),
@@ -259,38 +259,38 @@ export const EXERCISE_LIBRARY = [
   E("farmers_carry", "Farmer\u2019s Carry", "dumbbell_pair", "carry", "accessory",
     { cue: "Heavy, tall, breathe - grip and trunk under real load" }),
   E("cable_lateral_raise", "Cable Lateral Raise", "cable", "delt", "accessory",
-    { uni: true, cue: "Constant tension where dumbbells go light at the bottom" }),
+    { tags: ["lateral-delt"], uni: true, cue: "Constant tension where dumbbells go light at the bottom" }),
   E("preacher_curl", "Preacher Curl", "ez_bar", "arm", "accessory",
-    { cue: "Upper arm pinned - the elbow cannot cheat" }),
+    { tags: ["biceps"], cue: "Upper arm pinned - the elbow cannot cheat" }),
   E("cable_curl", "Cable Curl", "cable", "arm", "accessory",
-    { cue: "Tension all the way through" }),
+    { tags: ["biceps"], cue: "Tension all the way through" }),
   E("incline_db_curl", "Incline Dumbbell Curl", "dumbbell_pair", "arm", "accessory",
-    { cue: "Arms behind the body - biggest long-head stretch" }),
+    { tags: ["biceps"], cue: "Arms behind the body - biggest long-head stretch" }),
   E("concentration_curl", "Concentration Curl", "dumbbell_single", "arm", "accessory",
-    { uni: true, cue: "Elbow braced on the thigh, slow" }),
+    { tags: ["biceps"], uni: true, cue: "Elbow braced on the thigh, slow" }),
   E("reverse_curl", "Reverse Curl", "ez_bar", "arm", "accessory",
-    { cue: "Overhand grip - brachioradialis and forearms" }),
+    { tags: ["biceps"], cue: "Overhand grip - brachioradialis and forearms" }),
   E("wrist_curl", "Wrist Curl", "dumbbell_pair", "arm", "accessory",
-    { cue: "Forearms on the thighs, small range, high reps" }),
+    { tags: ["biceps"], cue: "Forearms on the thighs, small range, high reps" }),
   E("skullcrusher", "Skullcrusher", "ez_bar", "arm", "accessory",
-    { cue: "Elbows still, bar to the forehead" }),
+    { tags: ["triceps"], cue: "Elbows still, bar to the forehead" }),
   E("db_skullcrusher", "Dumbbell Skullcrusher", "dumbbell_pair", "arm", "accessory",
-    { cue: "Neutral grip, easier on the elbows" }),
+    { tags: ["triceps"], cue: "Neutral grip, easier on the elbows" }),
   E("cable_overhead_ext", "Cable Overhead Extension", "cable", "arm", "accessory",
-    { cue: "Deep stretch behind the head" }),
+    { tags: ["triceps"], cue: "Deep stretch behind the head" }),
   // ---- core ----
   E("hanging_knee_raise", "Hanging Knee Raise", "bodyweight", "core", "core",
-    { cue: "Curl the pelvis up - no swinging" }),
+    { tags: ["anti-extension"], cue: "Curl the pelvis up - no swinging" }),
   E("ab_wheel", "Ab Wheel Rollout", "bodyweight", "core", "core",
-    { cue: "Ribs down, go only as far as you can hold the brace" }),
+    { tags: ["anti-extension"], cue: "Ribs down, go only as far as you can hold the brace" }),
   E("cable_woodchop", "Cable Woodchop", "cable", "core", "core",
-    { uni: true, cue: "Rotate from the trunk, arms just carry the handle" }),
+    { tags: ["anti-rotation"], uni: true, cue: "Rotate from the trunk, arms just carry the handle" }),
   E("russian_twist", "Russian Twist", "bodyweight", "core", "core",
-    { cue: "Slow rotation, chest tall" }),
+    { tags: ["anti-rotation"], cue: "Slow rotation, chest tall" }),
   E("plank", "Plank", "bodyweight", "core", "core",
-    { tags: ["isometric", "timed"], cue: "One straight line, glutes and ribs both switched on" }),
+    { tags: ["anti-extension", "isometric", "timed"], cue: "One straight line, glutes and ribs both switched on" }),
   E("hollow_hold", "Hollow Hold", "bodyweight", "core", "core",
-    { tags: ["isometric", "timed"], cue: "Low back flat on the floor throughout" }),
+    { tags: ["anti-extension", "isometric", "timed"], cue: "Low back flat on the floor throughout" }),
 ];
 
 export const byId = (id) => EXERCISE_LIBRARY.find((e) => e.id === id) || null;
@@ -318,17 +318,41 @@ export function availableAt(implementsAtPlace) {
 // an incline or a T-bar on the second upper day rather than the same bench
 // twice. A 0.6 penalty is smaller than the compound bonus, so a fresh compound
 // beats a repeated one while a compound still always beats an accessory.
-export function pickForPattern(pattern, pool, { preferUnilateral = false, exclude = [], usedThisWeek = [] } = {}) {
+export function pickForPattern(pattern, pool, { preferUnilateral = false, exclude = [],
+    usedThisWeek = [], qualitiesUsed = [], deprioritise = [] } = {}) {
   const ex = new Set(exclude);
   const used = new Set(usedThisWeek);
+  const quals = new Set(qualitiesUsed);
+  const stale = new Set(deprioritise);
   const candidates = pool.filter((e) => e.pattern === pattern && !ex.has(e.id));
   if (!candidates.length) return null;
   const score = (e) => (e.role === "compound" ? 2 : 0)
     + (preferUnilateral && e.unilateral ? 1 : 0)
     + (e.implement === "barbell" ? 0.5 : 0)
-    - (used.has(e.id) ? 0.6 : 0);
+    - (used.has(e.id) ? 0.6 : 0)
+    // A PATTERN IS NOT ALWAYS ONE JOB. `arm` holds biceps and triceps, `core`
+    // holds anti-rotation, anti-extension and anti-lateral, `delt` holds side
+    // and rear. Penalising only a repeated exercise id meant two arm slots
+    // reliably became two different CURLS — a real block shipped with 17.5
+    // biceps sets and zero direct triceps — and two core slots became two
+    // anti-rotation holds. The penalty has to outweigh every other term, or a
+    // barbell curl still beats a triceps pushdown.
+    - (qualityOf(e) && quals.has(qualityOf(e)) ? 3 : 0)
+    // Lifts the previous block already used, so consecutive blocks vary.
+    // Deliberately small: variety is worth less than picking the right movement,
+    // and it must never override the quality rule above.
+    - (stale.has(e.id) ? 0.4 : 0);
   return candidates.slice().sort((a, b) => score(b) - score(a))[0];
 }
+
+// The sub-job an exercise does inside its pattern, where the pattern covers
+// several. Null for patterns that are one job (a squat is a squat).
+export const QUALITY_TAGS = new Set(["anti-rotation", "anti-extension", "anti-lateral",
+  "biceps", "triceps", "lateral-delt", "rear-delt"]);
+export const qualityOf = (e) => {
+  const lib = typeof e === "string" ? byId(e) : e;
+  return (lib && (lib.tags || []).find((t) => QUALITY_TAGS.has(t))) || null;
+};
 
 // Integrity check, called by the test suite. Every catalogue entry must resolve
 // in every downstream table, or the exercise renders as a blank card and its
