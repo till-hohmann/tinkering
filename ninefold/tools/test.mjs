@@ -2143,6 +2143,58 @@ group("yoga — every pose can be pictured, and none borrows another's", () => {
   });
 });
 
+group("stretches — skipping is not failing", () => {
+  // Reported: stretch targets appeared to reset at the start of a new block.
+  // They carry over correctly — the state is global and keyed by the stretch's
+  // own id, and those ids have not changed since v138. What reset them was the
+  // Skip button, which logged the elapsed time (about a second) as if it were a
+  // hold. Under 70% of target re-bases to what you held, floored at 15s.
+  const learned = {
+    couch_stretch:     { targetSec: 55, streak: 0, lastActual: 55 },
+    dead_hang:         { targetSec: 45, streak: 0, lastActual: 45 },
+    adductor_rockback: { targetSec: 50, streak: 0, lastActual: 50 },
+  };
+  const items = [
+    { id: "couch_stretch", name: "Hip flexor stretch", mode: "timed", durationSeconds: 55, bilateral: true },
+    { id: "dead_hang", name: "Dead hang", mode: "timed", durationSeconds: 45 },
+    { id: "adductor_rockback", name: "Adductor rock-back", mode: "timed", durationSeconds: 50, bilateral: true },
+  ];
+
+  it("a near-zero hold really does collapse a learned target — which is why Skip must not log one", () => {
+    // The engine is RIGHT to do this: pressing "end hold" at 1s means 1s. The
+    // protection has to live at the recording boundary, not in here. Pinned so
+    // the danger stays visible if anyone re-wires Skip.
+    const holds = items.map((it) => ({ id: it.id, side: it.bilateral ? "Left" : null,
+      targetSec: it.durationSeconds, heldSec: 1 }));
+    const { state } = applyStretchResults(learned, items, holds);
+    assert.deepEqual(Object.values(state).map((v) => v.targetSec), [STRETCH_MIN, STRETCH_MIN, STRETCH_MIN]);
+  });
+
+  it("Skip logs nothing", () => {
+    const src = readFileSync(new URL("../js/views/routine.js", import.meta.url), "utf8");
+    const skip = src.slice(src.indexOf('"Skip ›"') - 400, src.indexOf('"Skip ›"') + 20);
+    assert.ok(!/recordHold/.test(skip.split("//").filter((l) => !l.trim().startsWith(" ")).join("")),
+      "the Skip button must not record a hold — skipping is navigation, not a measurement");
+    assert.match(src, /el\("button\.btn", \{ onclick: \(\) => goto\(idx \+ 1\) \}, "Skip ›"\)/);
+  });
+
+  it("what IS a measurement still records", () => {
+    const src = readFileSync(new URL("../js/views/routine.js", import.meta.url), "utf8");
+    // the explicit "end hold — log my time" button, a full completion, and the
+    // end of an Extend. Three, and only three.
+    assert.equal((src.match(/recordHold\(/g) || []).length - 1, 3,
+      "recordHold should have exactly three callers: end-hold, natural completion, stop-extend");
+  });
+
+  it("targets survive a new block", () => {
+    // Same ids in every block, so a fresh program inherits what was learned.
+    const target = (state, it) => stretchTarget(state, it);
+    assert.equal(target(learned, items[0]), 55);
+    assert.equal(target({}, items[0]), 55);           // falls back to the plan's own number
+    assert.equal(target(learned, { id: "brand_new", durationSeconds: 30 }), 30);
+  });
+});
+
 group("yoga — the teacher finishes a sentence before starting the next thought", () => {
   // A transition is 3-5 seconds. The passage spoken over it — the pose's name and
   // how to get into it — is 8-10. So on most poses the arrive half is STILL

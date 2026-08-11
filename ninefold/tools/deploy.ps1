@@ -124,7 +124,12 @@ $wrangler = Join-Path $root "node_modules\.bin\wrangler.cmd"
 if (Test-Path $wrangler) {
   & $wrangler pages deploy $stage --project-name $project --branch main --commit-dirty=true
 } else {
-  & npx --yes "wrangler@4" pages deploy $stage --project-name $project --branch main --commit-dirty=true
+  # PINNED, NOT "wrangler@4". On 2026-08-11 the newest 4.x published a dependency
+  # on miniflare@5.20260804.1-alpha, which does not exist on the registry — npm
+  # failed with ETARGET and the deploy died on a floating range, with nothing in
+  # this repo having changed. A deploy that can be broken by someone else's
+  # publish is not a deploy you can rely on. Bump this deliberately.
+  & npx --yes "wrangler@4.120.1" pages deploy $stage --project-name $project --branch main --commit-dirty=true
 }
 $code = $LASTEXITCODE
 

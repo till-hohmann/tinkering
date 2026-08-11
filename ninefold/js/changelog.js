@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 182, notes: [
+    "Fixed: tapping Skip on a stretch logged it as a hold you'd managed for about a second, and the progression engine read that as failing it — so one pass of Skip through a cool-down dropped every stretch back to the 15-second minimum. Skip is navigation now; only finishing a hold, or the 'end hold — log my time' button, moves the target.",
+  ] },
   { v: 181, notes: [
     "Fixed: on most poses the teacher was still telling you how to get in when the hold began, and the alignment cues started underneath — two voices at once, which sounded like the instructions repeating. She now finishes the sentence before moving on.",
   ] },

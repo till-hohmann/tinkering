@@ -280,7 +280,19 @@ export function runRoutine(container, def, program, opts = {}) {
     el("div.btn-row", { style: "margin-top:10px" }, [
       el("button.btn", { onclick: () => goto(idx - 1) }, "‹ Back"),
       el("button.btn", { onclick: () => { if (steps[idx] && steps[idx].type !== "checklist" && !extending) { curExtra += 15; buildTimeline(); } } }, "+15s"),
-      el("button.btn", { onclick: () => { recordHold(segMs / 1000); goto(idx + 1); } }, "Skip ›"),
+      // ⚠ SKIP RECORDS NOTHING. It used to log the elapsed time — about a second,
+      // because that is when you press it — and the progression engine reads
+      // anything under 70% of target as "re-base to what you held", flooring it
+      // at STRETCH_MIN. So ONE pass of Skip through a cool-down collapsed every
+      // learned target to 15 seconds: hip flexor 55 → 15, dead hang 45 → 15,
+      // adductor 50 → 15. Reported as the stretches resetting at the start of a
+      // new block, which is exactly when you skip through an unfamiliar
+      // cool-down to see what is in it.
+      //
+      // Skipping is NAVIGATION, not a measurement. The measurement button is
+      // "✋ End hold — log my time", which exists precisely to say "this is what
+      // I managed" — and that one still records, because there it is meant.
+      el("button.btn", { onclick: () => goto(idx + 1) }, "Skip ›"),
     ]),
   ]);
 
