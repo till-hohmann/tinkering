@@ -413,10 +413,10 @@ export function runRoutine(container, def, program, opts = {}) {
     // practice paused still lands you on a pose, and that pose's guidance is
     // what Resume owes you; speaking it now would make the pause button mean
     // "pause everything except the talking".
-    const say = (parts) => {
+    const say = (parts, opts) => {
       if (!parts || !parts.length) return false;
       if (paused) stageNarration(narrate.level, parts);
-      else speak(narrate.level, parts);
+      else speak(narrate.level, parts, opts);
       return true;
     };
     if (step.type === "transition") {
@@ -425,9 +425,15 @@ export function runRoutine(container, def, program, opts = {}) {
     }
     // A catch-up on a hold gets the WHOLE passage: the moving half was never
     // said, so starting at the alignment cues would skip the pose's own name.
-    say((!catchUp && saidArriveAt === key)
-      ? narrate.settleFor(step, idx)
-      : narrate.entryFor(step, idx));
+    // ⚠ THE SETTLE HALF QUEUES BEHIND THE ARRIVE HALF. A transition is 3-5
+    // seconds and the passage spoken over it runs 8-10, so on most poses the
+    // "how to get into it" line is still going when the hold begins. It cannot
+    // be cut here — cutting happens on a pose CHANGE and this is the same pose —
+    // so starting the alignment cues immediately just layered a second voice
+    // over the first. Wait for it, the way a teacher does.
+    const settling = !catchUp && saidArriveAt === key;
+    say(settling ? narrate.settleFor(step, idx) : narrate.entryFor(step, idx),
+      settling ? { queue: true } : undefined);
   }
   // Which pose has already had its "moving into X, do this to get there" half
   // spoken during the transition, so the hold picks up from the refinements.

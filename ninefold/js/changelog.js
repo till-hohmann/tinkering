@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 181, notes: [
+    "Fixed: on most poses the teacher was still telling you how to get in when the hold began, and the alignment cues started underneath — two voices at once, which sounded like the instructions repeating. She now finishes the sentence before moving on.",
+  ] },
   { v: 180, notes: [
     "Fixed: list rows drawn as buttons — the day rows in your week plan, the Settings toggles, the yoga practice list — were printing their titles in near-black on a dark card. Barely readable, and it had been that way a while.",
     "All text in the app now meets the WCAG AA contrast standard, in every theme. Quiet text is lighter than it was; that is what full AA costs on a near-black background.",

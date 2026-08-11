@@ -138,6 +138,9 @@ export function resumeNarration() {
   return true;
 }
 
+/** The sequence currently speaking, so a queued passage can wait for its turn. */
+let inFlight = Promise.resolve();
+
 /**
  * Speak a passage, one sentence-clip after another.
  *
@@ -145,25 +148,55 @@ export function resumeNarration() {
  * back, pause and the wall-clock catch-up all need the teacher to stop talking
  * about a pose you are no longer in. Each clip checks the token it started with
  * and bails if the practice has moved on.
+ *
+ * ⚠ `queue: true` WAITS ITS TURN INSTEAD OF CUTTING IN, and the alignment half
+ * of a pose needs it. A transition is 3-5 seconds; the passage spoken over it —
+ * the pose's name and how to get into it — is 8 to 10. Measured across a
+ * fifteen-minute practice, FOURTEEN OF NINETEEN poses had more to say than
+ * their transition had room for, Bharadvaja's twist by 3.6 seconds.
+ *
+ * When the hold then began, the settle half started immediately. It could not
+ * cut the arrive half off, because cutting only happens on a POSE CHANGE
+ * (stopNarration) and this is the same pose — so the un-cancelled clip kept
+ * playing underneath. Two voices at once, the second saying "lift through the
+ * spine" while the first was still saying how to sit down. Reported from the
+ * mat as the instructions being given twice.
+ *
+ * Queueing is also just what a teacher does: finish telling you how to get in,
+ * then start refining. A stop or a genuinely new pose still pre-empts — the
+ * token is re-checked after the wait, so a queued passage that has been
+ * overtaken never speaks at all.
  */
-export async function speak(level, parts, { gap = 0.25, from = 0 } = {}) {
+export async function speak(level, parts, { gap = 0.25, from = 0, queue = false } = {}) {
   // The membership set belongs to ONE level. Testing a beginner sentence against
   // the advanced manifest would quietly skip every line as "never rendered".
   if (!available || manifestLevel !== level || !audioAvailable()) return;
-  const token = ++sequenceToken;
-  const list = parts || [];
-  for (let i = from; i < list.length; i++) {
-    if (token !== sequenceToken) return;
-    // Recorded BEFORE the clip plays, so a stop lands on the sentence that was
-    // actually cut rather than on the one after it.
-    pending = { level, parts: list, i };
-    const id = await clipId(list[i].text);
-    if (!available.has(id)) continue;           // never rendered — skip it silently
-    const buf = await fetchClip(level, id);
-    if (!buf || token !== sequenceToken) continue;
-    await speakClip.play(buf, gap);
-    if (token !== sequenceToken) return;
-  }
-  // Ran to the end: there is nothing left to resume.
-  if (token === sequenceToken) pending = null;
+  const prior = inFlight;
+  const askedAt = sequenceToken;
+  const run = (async () => {
+    if (queue) {
+      await prior.catch(() => {});
+      // Overtaken while waiting — a skip, a pause, a new pose. Say nothing: what
+      // we were queued behind is no longer the thing on screen.
+      if (sequenceToken !== askedAt) return;
+    }
+    const token = ++sequenceToken;
+    const list = parts || [];
+    for (let i = from; i < list.length; i++) {
+      if (token !== sequenceToken) return;
+      // Recorded BEFORE the clip plays, so a stop lands on the sentence that was
+      // actually cut rather than on the one after it.
+      pending = { level, parts: list, i };
+      const id = await clipId(list[i].text);
+      if (!available.has(id)) continue;           // never rendered — skip it silently
+      const buf = await fetchClip(level, id);
+      if (!buf || token !== sequenceToken) continue;
+      await speakClip.play(buf, gap);
+      if (token !== sequenceToken) return;
+    }
+    // Ran to the end: there is nothing left to resume.
+    if (token === sequenceToken) pending = null;
+  })();
+  inFlight = run;
+  return run;
 }

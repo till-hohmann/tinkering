@@ -2143,6 +2143,57 @@ group("yoga — every pose can be pictured, and none borrows another's", () => {
   });
 });
 
+group("yoga — the teacher finishes a sentence before starting the next thought", () => {
+  // A transition is 3-5 seconds. The passage spoken over it — the pose's name and
+  // how to get into it — is 8-10. So on most poses the arrive half is STILL
+  // SPEAKING when the hold begins, and the settle half must wait rather than
+  // start underneath it. Reported from the mat as the entry instructions being
+  // given twice; it was two voices at once.
+  const ARRIVE = new Set(["name", "enter", "salutation"]);
+  it("most poses have more to say than their transition has room for", () => {
+    // ~2.6 words a second at the rendered rate, plus the gap between sentences.
+    const speech = (parts) => parts.reduce((s, p) => s + p.text.split(/\s+/).length / 2.6 + 0.25, 0);
+    const flow = generateFlow({ intent: "wake_up", minutes: 15, level: "beginner", limits: [], seed: 7 });
+    let over = 0, total = 0;
+    for (let i = 0; i < flow.items.length; i++) {
+      const it = flow.items[i];
+      if (it.salutation) continue;
+      total++;
+      const parts = entryScript({ asanaId: it.asanaId, side: it.bilateral ? "Left" : null,
+        holdBreaths: it.holdBreaths, durationSeconds: it.durationSeconds, dynamic: it.dynamic },
+        "beginner", i).parts.filter((p) => ARRIVE.has(p.role));
+      const trans = it.transitionSeconds != null ? it.transitionSeconds : 5;
+      if (speech(parts) > trans) over++;
+    }
+    // Not a defect to fix by lengthening transitions — it is the condition the
+    // queueing exists for. Asserted so nobody "tidies away" the queue believing
+    // the overlap is hypothetical.
+    assert.ok(over > total / 3,
+      `only ${over}/${total} poses overrun their transition — if this is now rare, re-check whether queueing is still needed`);
+  });
+  it("the split still puts nothing in both halves", () => {
+    for (const level of ["beginner", "advanced", "expert"]) {
+      for (const a of ASANAS.slice(0, 40)) {
+        const parts = entryScript({ asanaId: a.id, side: a.bilateral ? "Left" : null,
+          holdBreaths: 5, durationSeconds: 30 }, level, 3).parts;
+        const arrive = parts.filter((p) => ARRIVE.has(p.role)).map((p) => p.text);
+        const settle = parts.filter((p) => !ARRIVE.has(p.role)).map((p) => p.text);
+        const both = arrive.filter((t) => settle.includes(t));
+        assert.deepEqual(both, [], `${a.id}/${level}: sentence in both halves`);
+      }
+    }
+  });
+  it("the hold queues, and only the hold", () => {
+    const src = readFileSync(new URL("../js/views/routine.js", import.meta.url), "utf8");
+    assert.match(src, /settling \? \{ queue: true \} : undefined/,
+      "the settle half must queue behind the arrive half");
+    const nar = readFileSync(new URL("../js/yoga/narrate.js", import.meta.url), "utf8");
+    // A queued passage that gets overtaken must say nothing at all.
+    assert.match(nar, /if \(sequenceToken !== askedAt\) return;/,
+      "a queued passage must re-check the token after waiting");
+  });
+});
+
 group("yoga — the orb is something to breathe with, not a timer in disguise", () => {
   const BS = 6;
   it("empty at the bottom of the exhale, full at the top of the inhale", () => {
