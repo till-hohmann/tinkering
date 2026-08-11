@@ -13,6 +13,11 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 175, notes: [
+    "In yoga, the teacher now tells you how to get into a pose WHILE you're moving into it, during the get-into-position countdown, and saves the alignment cues for once you're there.",
+    "All spoken cues and countdowns are louder — about 7 dB up — and where your phone supports it the music dips for the length of each cue instead of the cue competing with it. The run countdown was getting lost under music.",
+    "Cue volume is now a setting, from Soft to Over the beat. Profile → Audio.",
+  ] },
   { v: 174, notes: [
     "If the spoken guidance hasn't been built on an install, the Yoga tab now says so instead of just running silent.",
   ] },

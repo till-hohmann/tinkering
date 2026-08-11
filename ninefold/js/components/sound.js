@@ -23,6 +23,18 @@ import { el } from "../ui.js";
 let ctx = null;
 let enabled = true;
 let mode = "mix";
+// HOW FAR THE CUES SIT ABOVE THE MUSIC. Reported from a run: the countdown ticks
+// vanished under heavy beats. "A bit louder" is not a number anyone can guess
+// for someone else's headphones, so it is a setting — with a louder default than
+// the old fixed level, which was demonstrably too quiet.
+export const CUE_LEVELS = [
+  { id: "soft",   label: "Soft",          mul: 0.7, note: "Barely there — for quiet rooms." },
+  { id: "normal", label: "Normal",        mul: 1.3, note: "Clear over podcasts and light music." },
+  { id: "loud",   label: "Loud",          mul: 2.1, note: "Cuts through most music. The default." },
+  { id: "max",    label: "Over the beat", mul: 3.4, note: "For loud headphones and heavy tracks." },
+];
+let cueVol = "loud";
+const cueLevel = () => CUE_LEVELS.find((l) => l.id === cueVol) || CUE_LEVELS[2];
 let keepAlive = null;           // silent looping source that keeps the iOS audio session alive
 const RAW = new Map();          // clip name -> ArrayBuffer (prefetched over network)
 const buffers = new Map();      // clip name -> decoded AudioBuffer
@@ -32,6 +44,7 @@ const VOICE_CLIPS = ["position", "stretch", "easy-jog", "speed-up", "slow-down",
 
 try { const s = localStorage.getItem("fit-sound"); if (s != null) enabled = s !== "0"; } catch {}
 try { const m = localStorage.getItem("fit-audiomode"); if (m) mode = m; } catch {}
+try { const v = localStorage.getItem("fit-cuevol"); if (v && CUE_LEVELS.some((l) => l.id === v)) cueVol = v; } catch {}
 
 // Warm the network cache immediately (decoding needs a user-gesture-unlocked ctx).
 VOICE_CLIPS.forEach(async (name) => {
@@ -95,10 +108,11 @@ function persistAudio() {
   try {
     localStorage.setItem("fit-sound", enabled ? "1" : "0");
     localStorage.setItem("fit-audiomode", mode);
+    localStorage.setItem("fit-cuevol", cueVol);
   } catch {}
   // Fire-and-forget: these setters are synchronous by contract and a settings
   // toggle must never wait on a database write.
-  import("../store.js").then((s) => s.setAudioPrefs({ enabled, mode })).catch(() => {});
+  import("../store.js").then((s) => s.setAudioPrefs({ enabled, mode, cueVol })).catch(() => {});
 }
 
 /** Adopt restored settings. Does NOT re-persist — the caller is the backup. */
@@ -106,10 +120,13 @@ export function applyAudioPrefs(p) {
   if (!p || typeof p !== "object") return false;
   if (typeof p.enabled === "boolean") enabled = p.enabled;
   if (p.mode === "loud" || p.mode === "mix") mode = p.mode;
+  if (p.cueVol && CUE_LEVELS.some((l) => l.id === p.cueVol)) cueVol = p.cueVol;
   try {
     localStorage.setItem("fit-sound", enabled ? "1" : "0");
     localStorage.setItem("fit-audiomode", mode);
+    localStorage.setItem("fit-cuevol", cueVol);
   } catch {}
+  applyCueVolume();
   try { applySession(); } catch {}
   return true;
 }
@@ -119,6 +136,14 @@ export function setSoundEnabled(on) {
   persistAudio();
 }
 export function isSoundEnabled() { return enabled; }
+
+export function getCueVolume() { return cueVol; }
+export function setCueVolume(id) {
+  if (!CUE_LEVELS.some((l) => l.id === id)) return;
+  cueVol = id;
+  applyCueVolume();
+  persistAudio();
+}
 
 export function getAudioMode() { return mode; }
 export function setAudioMode(m) {
@@ -179,11 +204,14 @@ export function say(name, { gain = 1.4 } = {}) {
   const play = () => {
     const buf = buffers.get(name);
     if (!buf) { preloadVoice(); tone(760, 0.16, 0.25); return; }
+    const out = cueBus();
+    if (!out) return;
+    duck(buf.duration);
     const src = ctx.createBufferSource();
     const g = ctx.createGain();
     g.gain.value = gain;
     src.buffer = buf;
-    src.connect(g).connect(ctx.destination);
+    src.connect(g).connect(out);
     try { src.start(); } catch {}
   };
   if (ctx.state !== "running") { ctx.resume().then(play).catch(() => {}); }
@@ -207,15 +235,71 @@ export async function testAudio() {
   }
 }
 
+// --- the cue bus ------------------------------------------------------------
+//
+// EVERY CUE GOES THROUGH ONE GAIN AND ONE LIMITER, and this exists because cues
+// were drowning in the music. A 0.18-gain tick under heavy beats is inaudible,
+// and the old structure gave no way to fix that: each cue built its own gain
+// straight onto the destination, so "louder" meant editing eight call sites and
+// hoping none of them clipped.
+//
+// Two things make the cue cut through:
+//
+//   1. THIS BUS. One place to raise the level, with a compressor after it so
+//      raising it distorts nothing. The music never passes through here — it is
+//      played by the OS, not by us — so the limiter only ever shapes our own
+//      sounds.
+//   2. DUCKING. iOS exposes an audio-session type called "transient", which is
+//      built for exactly this: it dips other audio for the length of a short
+//      sound and restores it afterwards. That is far better than shouting over
+//      the music, and where it is unsupported the bus gain still does the job.
+let bus = null;
+function cueBus() {
+  if (!ctx) return null;
+  if (bus) return bus;
+  const g = ctx.createGain();
+  const comp = ctx.createDynamicsCompressor();
+  // A limiter, not a compressor in the musical sense: hold the peaks so a raised
+  // level never clips, and leave everything below the threshold untouched.
+  comp.threshold.value = -10;
+  comp.knee.value = 6;
+  comp.ratio.value = 12;
+  comp.attack.value = 0.003;
+  comp.release.value = 0.15;
+  g.connect(comp).connect(ctx.destination);
+  bus = g;
+  applyCueVolume();
+  return bus;
+}
+function applyCueVolume() {
+  if (bus) bus.gain.value = cueLevel().mul;
+}
+
+/**
+ * Dip the music for the length of a cue.
+ *
+ * `transient` ducks other audio and restores it; the timer is a trailing
+ * restore, so a run of narration clips ducks ONCE rather than pumping the music
+ * up and down between every sentence.
+ */
+let duckTimer = null;
+function duck(seconds = 1.2) {
+  setSessionType("transient");
+  clearTimeout(duckTimer);
+  duckTimer = setTimeout(() => { duckTimer = null; applySession(); }, Math.max(400, seconds * 1000 + 350));
+}
+
 // --- tonal cues ----------------------------------------------------------
 function beepRaw(freq, dur, gainVal) {
   if (!ctx) return;
+  const out = cueBus();
+  if (!out) return;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.frequency.value = freq;
   osc.type = "sine";
   gain.gain.value = gainVal;
-  osc.connect(gain).connect(ctx.destination);
+  osc.connect(gain).connect(out);
   const t = ctx.currentTime;
   osc.start(t);
   gain.gain.setValueAtTime(gainVal, t);
@@ -229,10 +313,14 @@ function tone(freq, dur = 0.12, vol = 0.25) {
   beepRaw(freq, dur, vol);
 }
 
-export const cueTick = () => tone(660, 0.08, 0.18);
-export const cueItemStart = () => tone(880, 0.12, 0.22);
-export const cueItemEnd = () => tone(520, 0.16, 0.22);
-export const cueRoutineDone = () => { tone(660, 0.12); setTimeout(() => tone(990, 0.2), 130); };
+// Raised at source as well as through the bus. The countdown tick was the one
+// reported as inaudible under music, and it was also the quietest thing here —
+// a 0.08 s blip at 0.18 gain. It is now the longest and loudest of the three,
+// because it is the cue you act on.
+export const cueTick = () => { duck(0.3); return tone(660, 0.11, 0.42); };
+export const cueItemStart = () => { duck(0.3); return tone(880, 0.14, 0.4); };
+export const cueItemEnd = () => { duck(0.35); return tone(520, 0.18, 0.4); };
+export const cueRoutineDone = () => { duck(0.6); tone(660, 0.14, 0.42); setTimeout(() => tone(990, 0.22, 0.42), 130); };
 
 // --- breath pacer (yoga) ---------------------------------------------------
 // A hold in yoga is counted in BREATHS, not seconds, so the player marks the
@@ -295,7 +383,9 @@ function breath(f0, f1, dur, peak, attack) {
     gain.gain.setValueAtTime(0.0001, t);
     gain.gain.exponentialRampToValueAtTime(peak, t + dur * attack);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(bp).connect(gain).connect(ctx.destination);
+    const out = cueBus();
+    if (!out) return;
+    src.connect(bp).connect(gain).connect(out);
     src.start(t);
     src.stop(t + dur + 0.05);
   } catch {}
@@ -327,13 +417,17 @@ export const speakClip = {
     return new Promise((resolve) => {
       if (!enabled || !ctx || !buf) return resolve();
       try {
-        applySession();
         if (ctx.state !== "running") ctx.resume();
+        const out = cueBus();
+        if (!out) return resolve();
+        // Duck for this clip plus the gap, so a run of sentences dips the music
+        // once instead of pumping it between every line.
+        duck(buf.duration + gapSeconds);
         const src = ctx.createBufferSource();
         const g = ctx.createGain();
-        g.gain.value = 1.25;
+        g.gain.value = 1.15;
         src.buffer = buf;
-        src.connect(g).connect(ctx.destination);
+        src.connect(g).connect(out);
         speaking.push(src);
         src.onended = () => {
           speaking = speaking.filter((s) => s !== src);

@@ -352,6 +352,13 @@ export function runRoutine(container, def, program, opts = {}) {
   let narrationOn = false;
   if (narrate) loadNarration(narrate.level).then((ok) => { narrationOn = ok; });
   let saidExitFor = -1;
+  // Which pose the narrator is currently talking about. A transition and its
+  // hold are ONE pose, so this is what stops the entry passage being restarted
+  // (or cut off mid-sentence) when the hold begins.
+  let spokenPose = null;
+  // Which pose has already had its "moving into X, do this to get there" half
+  // spoken during the transition, so the hold picks up from the refinements.
+  let saidArriveAt = null;
 
   const breathSeconds = def.breathSeconds || 0;
   const isBreathPaced = (step) => !!(breathSeconds && step && step.type === "timed"
@@ -446,16 +453,48 @@ export function runRoutine(container, def, program, opts = {}) {
     const kind = cueKindOf(step.item);
     // WITH A NARRATOR, SHE IS THE CUE. The old behaviour borrowed the warm-up's
     // "stretch" clip for every pose, which announced "stretch" over a warrior.
-    if (narrate && narrationOn && step.type === "timed") {
-      stopNarration();
-      haptic(15);
-      saidExitFor = -1;
+    //
+    // AND SHE SPEAKS DURING THE TRANSITION, not once you are already in the pose.
+    // "Get into position" is precisely the window where being told how to get
+    // into position is useful; saying it after you have arrived is instructions
+    // for something you have already done. The hold then begins with the pose
+    // already explained, and the voice carries on into it if there is more to
+    // say — which is what a teacher does.
+    //
+    // Keyed on the POSE, not the step: a transition and its hold are one pose,
+    // so the narration starts at the transition and is NOT restarted or cut off
+    // when the hold begins.
+    // THE PASSAGE IS SPLIT ACROSS THE TWO STEPS, the way a teacher splits it:
+    //
+    //   transition  "Now we're moving into pigeon. Bring your right shin
+    //                forward..."          — said WHILE you move
+    //   hold        "Angle the front shin. Hips square..."
+    //                                     — said once you are in the shape
+    //
+    // Playing the whole passage at the transition would not fit: a transition is
+    // four to twelve seconds and the passage is twenty-five, so the alignment
+    // cues would land long after you had settled. Playing it all at the hold was
+    // the old behaviour, and told you how to get into a pose you were already in.
+    const poseKey = step.item && (step.item.itemId || step.item.id) + "|" + (step.side || "");
+    if (narrate && narrationOn && (step.type === "transition" || step.type === "timed")) {
+      const newPose = poseKey !== spokenPose;
+      if (newPose) { stopNarration(); spokenPose = poseKey; saidArriveAt = null; saidExitFor = -1; }
       if (!stepOpts.silent) {
-        const parts = narrate.entryFor(step, idx);
-        if (parts) speak(narrate.level, parts);
+        if (step.type === "transition") {
+          const parts = narrate.arriveFor(step, idx);
+          if (parts && parts.length) { speak(narrate.level, parts); saidArriveAt = poseKey; }
+        } else {
+          // No transition step for this pose (a linked salutation, or a zero
+          // transition) means nothing has been said yet — so say all of it.
+          const parts = saidArriveAt === poseKey
+            ? narrate.settleFor(step, idx)
+            : narrate.entryFor(step, idx);
+          if (parts && parts.length) speak(narrate.level, parts);
+        }
       }
-      // Warm the NEXT pose's clips while this one is being held, so the voice
-      // never waits on the network in the middle of a practice.
+      haptic(step.type === "transition" ? 10 : 15);
+      // Warm the NEXT pose's clips while this one runs, so the voice never waits
+      // on the network in the middle of a practice.
       const nx = steps[idx + 1] && steps[idx + 1].type === "transition" ? steps[idx + 2] : steps[idx + 1];
       if (nx && nx.type === "timed") prefetch(narrate.level, narrate.entryFor(nx, idx + 1) || []);
     }
@@ -540,6 +579,10 @@ export function runRoutine(container, def, program, opts = {}) {
   function goto(next) {
     if (next < 0) next = 0;
     if (next >= steps.length) return done();
+    // A deliberate jump re-announces, even to the pose we were just in — that is
+    // what "‹ Back" is FOR when you missed what she said.
+    spokenPose = null;
+    saidArriveAt = null;
     paused = false; pauseBtn.textContent = "Pause"; lastTs = 0;
     enterStep(next);   // says the new step's cue live + refreshes the lock timeline
   }

@@ -2013,6 +2013,41 @@ group("yoga — the narration has no silent gaps", () => {
   });
 });
 
+group("yoga — the passage splits across the transition without losing a word", () => {
+  // The entry passage is spoken in two halves: naming and how to arrive WHILE
+  // you move, alignment and options once you are in the shape. A role missing
+  // from both halves is a line that is simply never said, and nothing else would
+  // notice — the practice would just be quietly less useful.
+  const ARRIVE_ROLES = new Set(["name", "enter", "salutation"]);
+  it("arrive + settle is exactly the whole passage, in order", () => {
+    for (const level of ["beginner", "advanced", "expert"]) {
+      for (const a of ASANAS) {
+        const parts = entryScript({ asanaId: a.id, side: a.bilateral ? "Left" : null,
+          holdBreaths: 5, durationSeconds: 25 }, level, 0).parts;
+        const arrive = parts.filter((p) => ARRIVE_ROLES.has(p.role));
+        const settle = parts.filter((p) => !ARRIVE_ROLES.has(p.role));
+        assert.deepEqual([...arrive, ...settle].map((p) => p.text), parts.map((p) => p.text),
+          `${a.id} @ ${level}: the split reorders or drops a line`);
+      }
+    }
+  });
+  it("the moving half names the pose and says how to get there", () => {
+    for (const a of ASANAS) {
+      const parts = entryScript({ asanaId: a.id, holdBreaths: 5, durationSeconds: 25 }, "advanced", 0).parts;
+      const arrive = parts.filter((p) => ARRIVE_ROLES.has(p.role));
+      assert.ok(arrive.some((p) => p.role === "name"), `${a.id}: nothing names the pose while you move into it`);
+      assert.ok(arrive.length >= 2, `${a.id}: the moving half is only ${arrive.length} line(s)`);
+    }
+  });
+  it("the settled half always ends by saying how long you are staying", () => {
+    for (const a of ASANAS) {
+      const parts = entryScript({ asanaId: a.id, holdBreaths: 5, durationSeconds: 25 }, "advanced", 0).parts;
+      const settle = parts.filter((p) => !ARRIVE_ROLES.has(p.role));
+      assert.equal(settle[settle.length - 1].role, "hold", `${a.id}: the hold length is not the last thing said`);
+    }
+  });
+});
+
 group("yoga — a salutation is one step, not six countdowns", () => {
   const f = generateFlow({ intent: "strong_flow", minutes: 45, limits: [], level: "advanced", seed: 4242 });
   it("produces no five-second poses", () => {

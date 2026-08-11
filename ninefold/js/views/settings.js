@@ -11,7 +11,8 @@ import { toCSV, fromCSV, applyPlanCSV, diffPlans } from "../plan-csv.js";
 import { todayISO } from "../model.js";
 import * as M from "../model.js";
 import { buildBackup, buildMarkdownLog, shareOrDownload } from "../export.js";
-import { isSoundEnabled, setSoundEnabled, getAudioMode, setAudioMode, testAudio } from "../components/sound.js";
+import { isSoundEnabled, setSoundEnabled, getAudioMode, setAudioMode, testAudio,
+  CUE_LEVELS, getCueVolume, setCueVolume } from "../components/sound.js";
 import { zonesFromBounds, DEFAULT_ZONE_BOUNDS } from "../cardio-intel.js";
 import { provider, has, resetProviderCache, PROVIDERS, CAP,
   recoveryToday, bestWorkoutFor, body as trackerBody, vo2max as healthVO2max } from "../health/index.js";
@@ -665,6 +666,32 @@ export async function renderSettings() {
   };
   seg.appendChild(mkOpt("mix", "Mix with music"));
   seg.appendChild(mkOpt("loud", "Always audible"));
+  // HOW FAR THE CUES SIT ABOVE THE MUSIC. Reported from a run: the countdown
+  // ticks vanished under heavy beats. Where the platform supports it the music
+  // is also DUCKED for the length of a cue, which beats shouting over it — but
+  // headphones and tracks differ enough that the level stays a choice.
+  let cvol = getCueVolume();
+  const cseg = el("div.segmented");
+  const cnote = el("p.note", { style: "margin:8px 2px 0" });
+  const paintCue = () => {
+    const lvl = CUE_LEVELS.find((l) => l.id === cvol);
+    cnote.textContent = lvl ? lvl.note : "";
+  };
+  for (const lvl of CUE_LEVELS) {
+    const b = el("button" + (cvol === lvl.id ? ".on" : ""), {}, lvl.label);
+    b.onclick = () => {
+      cvol = lvl.id; setCueVolume(lvl.id);
+      [...cseg.children].forEach((c) => c.classList.toggle("on", c === b));
+      paintCue();
+      testAudio();          // hear the change immediately, which is the point
+    };
+    cseg.appendChild(b);
+  }
+  paintCue();
+  const cueVolRow = el("div", { style: "margin-top:14px" }, [
+    el("div.label", { text: "Cue volume" }), cseg, cnote,
+  ]);
+
   const testBtn = el("button.btn.block", { style: "margin-top:12px", onclick: () => testAudio() }, "▶ Test voice cue");
 
   // ONE CARD FOR THE BLOCKS, because there is only one list of blocks.
@@ -1205,6 +1232,8 @@ export async function renderSettings() {
       el("div.label", { style: "margin:16px 0 8px", text: "When music is playing" }),
       seg,
       el("p.note", { style: "margin-top:10px", text: "Cues play while the screen is on — the app keeps the screen awake during a workout, so just don't press the power button. Mix blends cues over your music without interrupting it (iOS can't deliver cues once the phone is hard-locked, and silences blended cues on the mute switch). Always audible keeps cues audible even on the mute switch, but pauses your music." }),
+      cueVolRow,
+      el("p.note", { style: "margin-top:8px", text: "Where your phone supports it the music is also dipped for the length of each cue, rather than the cue simply competing with it. Tapping a level plays a sample." }),
       testBtn,
     ]),
 

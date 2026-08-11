@@ -572,11 +572,19 @@ export async function renderYogaSession(intentId, minutesStr, seedStr) {
     }, levelId, i).parts;
   };
 
+  // The passage splits by ROLE, which is what makes the transition/hold split
+  // possible: naming the pose and how to arrive in it belong to the movement,
+  // the alignment and the options belong to the shape once you are in it.
+  const ARRIVE_ROLES = new Set(["name", "enter", "salutation"]);
+  const half = (roles, want) => (step, i) => (scriptFor(step, i) || []).filter((p) => roles.has(p.role) === want);
+
   runRoutine(stage, toRoutineDef(flow), null, {
     title: intent.label,
     narrate: {
       level: levelId,
       entryFor: scriptFor,
+      arriveFor: half(ARRIVE_ROLES, true),
+      settleFor: half(ARRIVE_ROLES, false),
       exitFor: (step, i) => exitScript({ asanaId: step.item && step.item.id }, levelId, i).parts,
     },
     onComplete: async ({ completed }) => {
