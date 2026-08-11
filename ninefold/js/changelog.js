@@ -13,6 +13,12 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 172, notes: [
+    "Fixed: the button that starts a yoga practice was missing until you tapped something, and then sat underneath the tab bar where you couldn't reach it.",
+    "The sequence now opens as its shape — how long each part takes and what the peak is — with the full pose list one tap away. A 45-minute flow was five screens of scrolling before you could start it.",
+    "Once you've said what you're protecting, that question folds away to a single line instead of asking again every time.",
+    "The practice screen fits on one screen again, including on a smaller phone.",
+  ] },
   { v: 171, notes: [
     "There is a Yoga tab. You say what you want from a practice and how long you have, and it composes one — warm-up, build, a peak pose it has actually prepared you for, its counter-pose, and a savasana in proportion to the session.",
     "Holds are counted in breaths rather than seconds, with a soft tone marking the inhale and the exhale.",

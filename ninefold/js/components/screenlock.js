@@ -99,7 +99,9 @@ export function closeScreenLock() { if (current) current.close(); }
 // routine header — labeled (not a bare icon) so it's easy to find mid-workout.
 export function lockButton() {
   const btn = el("button.btn.ghost", { "aria-label": "Lock screen",
-    style: "gap:6px;padding:0 12px;min-height:40px;white-space:nowrap", onclick: () => showScreenLock() });
+    // 44px, the iOS minimum. It sits in the practice/run header, where a missed
+    // tap costs you the hold you were in.
+    style: "gap:6px;padding:0 12px;min-height:44px;white-space:nowrap", onclick: () => showScreenLock() });
   const ic = padlock(); ic.style.width = ic.style.height = "18px"; ic.style.flex = "none";
   btn.appendChild(ic);
   btn.appendChild(document.createTextNode("Lock"));

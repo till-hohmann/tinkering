@@ -75,6 +75,10 @@
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Fallback only — showTabs() measures the real bar and overwrites this, because
+     the true height moves with the safe area, the font size and the narrow-screen
+     media query. A hardcoded 64 against a real 69 put the sticky CTA's background
+     9px underneath the tab bar. */
   --tabbar-h: 64px;
   --tap: 48px;
 
@@ -140,7 +144,7 @@ html { overflow-x: clip; }
 .app { min-height: 100dvh; overflow-x: clip; }
 .view {
   max-width: 580px; margin: 0 auto;
-  padding: calc(var(--safe-top) + 20px) 16px calc(var(--safe-bottom) + var(--tabbar-h) + 28px);
+  padding: calc(var(--safe-top) + 20px) 16px calc(var(--tabbar-h) + 28px);
 }
 
 /* --- Typography --- */
@@ -257,6 +261,16 @@ button { font-family: inherit; font-size: 1rem; cursor: pointer; border: none; }
 }
 .actionbar .inner { max-width: 580px; margin: 0 auto; width: 100%; display: flex; gap: 10px; }
 .actionbar .btn { flex: 1; }
+/* A STICKY CTA ON A TABBED SCREEN HAS TO SIT ABOVE THE TAB BAR.
+   Both are position:fixed bottom:0, and the tab bar's z-index (80) beats the
+   action bar's (50) — so the primary button of the screen rendered UNDERNEATH
+   the navigation and could not be tapped. It went unnoticed for seven releases
+   because every previous addActionBar() caller is a full-screen flow that hides
+   the tab bar; the Yoga tab is the first screen to have both. */
+body.has-tabs .actionbar { bottom: var(--tabbar-h); padding-bottom: 14px; }
+/* ...and the last card has to clear BOTH bars, or the content it hides is the
+   thing the button acts on. */
+body.has-tabs.has-actionbar .view { padding-bottom: calc(var(--tabbar-h) + 104px); }
 
 /* --- Bottom tab bar (persistent global nav) --- */
 .tabbar {
@@ -304,7 +318,7 @@ button.item:active { transform: scale(0.985); }
 /* --- Misc --- */
 .backbtn {
   display: inline-flex; align-items: center; gap: 2px;
-  min-height: 40px; padding: 4px 10px 4px 0; margin: 0 0 6px;
+  min-height: 44px; padding: 4px 10px 4px 0; margin: 0 0 6px;   /* 44px: iOS minimum tap target */
   border: none; background: transparent; color: var(--text-dim);
   font-weight: 700; font-size: 1rem;
 }
@@ -484,7 +498,9 @@ img.exphoto { object-fit: cover; border-radius: inherit; background: var(--bg-el
 .delta.flat { color: var(--text-dim); background: var(--bg-elev2); }
 
 /* small icon button (mute toggle etc.) */
-.icbtn { min-height: 40px; width: 44px; padding: 0; background: transparent; border: none;
+/* 44px square: these are the lock and mute controls in the practice header, and
+   a missed tap there costs you the pose you were holding. */
+.icbtn { min-height: 44px; width: 44px; padding: 0; background: transparent; border: none;
   display: inline-flex; align-items: center; justify-content: center; }
 .icbtn:active { transform: scale(.9); }
 
@@ -670,10 +686,38 @@ img.exphoto { object-fit: cover; border-radius: inherit; background: var(--bg-el
 .poserow .posesans { font-size: 0.7rem; color: var(--text-faint); font-style: italic; }
 .poserow .posehold { font-size: 0.76rem; color: var(--text-dim); white-space: nowrap; }
 /* An error-level QC finding is the one thing here that stops you starting. */
+/* Arc summary: one row per phase, the peak picked out. */
+.phaserow { display: flex; align-items: baseline; gap: 10px; padding: 7px 0;
+  border-bottom: 1px solid var(--line-soft); }
+.phaserow:last-child { border-bottom: none; }
+.phaserow .phasename { font-size: .72rem; text-transform: uppercase; letter-spacing: .09em;
+  font-weight: 800; color: var(--text-faint); width: 84px; flex: 0 0 84px; }
+.phaserow .phasedetail { flex: 1; min-width: 0; font-size: .9rem; }
+.phaserow .phasetime { font-size: .8rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.phaserow.ispeak .phasename, .phaserow.ispeak .phasedetail { color: var(--accent); font-weight: 700; }
 .card.bad { border-color: rgba(244,63,94,.45); background: rgba(244,63,94,.06); }
 .note.bad { color: #fb7185; }
 
 /* --- yoga: the three lines the practice needs and a workout doesn't --- */
+/* THE PRACTICE SCREEN MUST NOT SCROLL. You are on a mat looking at it from a
+   metre away; anything below the fold does not exist. Adding the Sanskrit and
+   the modification lines pushed a screen that previously fitted to 916px inside
+   844 — so the figure and the ring give the space back. They are a simple line
+   drawing and a countdown, and both read fine smaller; the words don't. */
+.yogaplayer .routine-illo { width: 116px; height: 116px; margin-top: 2px; }
+.yogaplayer .timer-wrap { width: 208px; height: 208px; margin: 10px auto 4px; }
+.yogaplayer .timer-big { font-size: 4rem; }
+.yogaplayer .routine-name { margin: 4px auto 0; min-height: 26px; }
+/* A small phone (iPhone SE, 667px) has to fit the same six lines, so the figure
+   and the ring give up more. Measured, not guessed: the SE overflowed by 111px,
+   64 of which was bottom padding reserved for a tab bar the player hides. */
+@media (max-height: 720px) {
+  .yogaplayer .routine-illo { width: 64px; height: 64px; margin-top: 0; }
+  .yogaplayer .timer-wrap { width: 152px; height: 152px; margin: 4px auto 2px; }
+  .yogaplayer .timer-big { font-size: 2.9rem; }
+  .yogaplayer .routine-name { min-height: 22px; }
+  .yogaplayer .sanskrit { margin-bottom: 2px; }
+}
 /* Sanskrit sits under the English name, quiet — it names the pose without
    competing with it, and it is what a class you have been to will have used. */
 .sanskrit { font-style: italic; opacity: .75; }

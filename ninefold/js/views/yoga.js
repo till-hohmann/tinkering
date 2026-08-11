@@ -130,8 +130,15 @@ export async function renderYoga() {
     }, "Compose a practice"));
   };
 
-  paint();
+  // MOUNT FIRST, THEN PAINT. mount() clears the previous screen's sticky CTA —
+  // it has to, or every screen inherits the last one's button — so calling it
+  // AFTER paint() destroyed the action bar paint() had just created. The picker
+  // therefore had no primary button at all until you happened to tap an intent
+  // chip, which re-ran paint() and put it back. That is the bug that made the
+  // start button impossible to find, and the tab-bar overlap merely made the
+  // button you eventually summoned unreachable as well.
   mount([el("h1", { text: "Yoga" }), body]);
+  paint();
 }
 
 function estimateAshtangaMinutes(prefs) {
@@ -163,8 +170,17 @@ function accountingCard(intent) {
   ]);
 }
 
+/**
+ * THIS IS A SET-ONCE ANSWER, so it stops taking a screen and a half once it has
+ * been given. Seven full-width explanatory chips are right the first time and
+ * noise on the twentieth visit — the picker was 2.5 screens tall and most of it
+ * was this card restating what a knee is. Answered, it collapses to a line.
+ */
 function limitationsCard(profile, limits, repaint) {
-  const chips = LIMITATION_KEYS.map((k) =>
+  let open = limits.length === 0;
+  const card = el("div.card");
+
+  const chips = () => LIMITATION_KEYS.map((k) =>
     el("button.chip" + (limits.includes(k) ? ".on" : ""), {
       onclick: async () => {
         const next = limits.includes(k) ? limits.filter((x) => x !== k) : [...limits, k];
@@ -172,17 +188,37 @@ function limitationsCard(profile, limits, repaint) {
         const p = await getProfile();
         const { saveProfile } = await import("../profile.js");
         await saveProfile({ ...p, limitations: next });
-        repaint();
+        open = true;
+        paint();
       },
     }, [
       el("span.chiptitle", { text: LIMITATIONS[k].label }),
       el("span.chipsub", { text: LIMITATIONS[k].note }),
     ]));
-  return el("div.card", {}, [
-    el("h2", { text: "Anything you're protecting?" }),
-    el("p.note", { text: "Yoga's two documented injury sites are the knee — deep flexion with rotation, which is lotus and full pigeon — and the sacroiliac joint, which is the asymmetric open-hip shapes. Whatever you tick here is an input to the sequence, not a filter afterwards." }),
-    el("div.chipgrid.lim", {}, chips),
-  ]);
+
+  function paint() {
+    if (!open) {
+      card.replaceChildren(
+        el("div.row", {}, [
+          el("div", { style: "flex:1;min-width:0" }, [
+            el("div.label", { text: "Protecting" }),
+            el("div.note", { style: "margin-top:3px",
+              text: limits.map((k) => LIMITATIONS[k].label).join(", ") }),
+          ]),
+          el("button.btn", { style: "padding:8px 14px", onclick: () => { open = true; paint(); } }, "Change"),
+        ]));
+      return;
+    }
+    card.replaceChildren(
+      el("h2", { text: "Anything you're protecting?" }),
+      el("p.note", { text: "Yoga's two documented injury sites are the knee — deep flexion with rotation, which is lotus and full pigeon — and the sacroiliac joint, which is the asymmetric open-hip shapes. Whatever you tick here is an input to the sequence, not a filter afterwards." }),
+      el("div.chipgrid.lim", {}, chips()),
+      limits.length ? el("button.btn.block", { style: "margin-top:10px",
+        onclick: () => { open = false; paint(); } }, "Done") : null,
+    );
+  }
+  paint();
+  return card;
 }
 
 // --- the review screen -------------------------------------------------------
@@ -242,10 +278,22 @@ export async function renderYogaBuild(intentId, minutesStr, seedStr) {
     el("p.note.dim", { text: "The order of the series is untouched. Only the postures your limitations rule out have been swapped in place." }),
   ]) : null;
 
+  // THE SEQUENCE IS SUMMARISED, NOT DUMPED.
+  //
+  // A 45-minute flow is 75 rows and five and a half screens of scrolling, which
+  // is not a preview — it is a wall you swipe past to reach the button. What
+  // someone actually wants before starting is the SHAPE: how long each part of
+  // the arc takes, and what the peak is. The poses are one tap away for anyone
+  // who wants to read them, and the tap is remembered.
   const list = el("div.card", {}, [
     el("h2", { text: "The sequence" }),
-    ...phaseSections(flow),
+    ...phaseSummary(flow, prefs.expandSequence),
   ]);
+
+  // mount() BEFORE addActionBar() — mount clears the previous screen's sticky
+  // CTA, so building the bar first means building it and then deleting it. See
+  // the note in renderYoga().
+  mount([backBtn("Yoga", "#/yoga"), head, qc, exCard, subCard, list].filter(Boolean));
 
   addActionBar(
     el("button.btn.block", {
@@ -256,14 +304,46 @@ export async function renderYogaBuild(intentId, minutesStr, seedStr) {
       onclick: () => go(`#/yoga/do/${intentId}/${minutes}/${seed}`),
     }, "Start"),
   );
-
-  mount([backBtn("Yoga", "#/yoga"), head, qc, exCard, subCard, list].filter(Boolean));
 }
 
 const PHASE_LABEL = {
   centering: "Settle", warmup: "Warm up", build: "Build", peak: "Peak",
   counter: "Counter", cool: "Cool down", savasana: "Savasana",
 };
+
+/**
+ * The arc as one row per phase — duration, pose count, and the peak named — with
+ * a disclosure that swaps in the full pose list. Collapsed is the default because
+ * the shape is what you check before starting; the poses are what you read if you
+ * are curious, and curiosity is the rarer case.
+ */
+function phaseSummary(flow, expanded) {
+  const order = ["centering", "warmup", "build", "peak", "counter", "cool", "savasana"];
+  const rows = [];
+  for (const p of order) {
+    const items = (flow.items || []).filter((it) => it.phase === p);
+    if (!items.length) continue;
+    const secs = items.reduce((s, it) => s + (it.durationSeconds + it.transitionSeconds) * (it.bilateral ? 2 : 1), 0);
+    // Linked salutation steps are movements inside a round, not poses to count.
+    const posesN = items.filter((it) => !it.linked).length;
+    const detail = p === "peak" ? items[0].name
+      : p === "savasana" ? "Rest"
+      : `${posesN} pose${posesN === 1 ? "" : "s"}`;
+    rows.push(el("div.phaserow" + (p === "peak" ? ".ispeak" : ""), {}, [
+      el("div.phasename", { text: PHASE_LABEL[p] || p }),
+      el("div.phasedetail", { text: detail }),
+      el("div.phasetime", { text: mmss(secs) }),
+    ]));
+  }
+  const body = el("div", {}, expanded ? phaseSections(flow) : rows);
+  const toggle = el("button.btn.block", { style: "margin-top:12px", onclick: async () => {
+    await setYogaPrefs({ expandSequence: !expanded });
+    body.replaceChildren(...(!expanded ? phaseSections(flow) : rows));
+    toggle.textContent = !expanded ? "Hide the poses" : `Show all ${flow.items.filter((i) => !i.linked).length} poses`;
+    expanded = !expanded;
+  } }, expanded ? "Hide the poses" : `Show all ${flow.items.filter((i) => !i.linked).length} poses`);
+  return [body, toggle];
+}
 
 function phaseSections(flow) {
   const out = [];
@@ -329,7 +409,9 @@ export async function renderYogaSession(intentId, minutesStr, seedStr) {
         seed,
       });
 
-  const stage = el("div");
+  // `.yogaplayer` scopes the tighter sizing that keeps the practice screen on one
+  // screen — see the note in styles.css.
+  const stage = el("div.yogaplayer");
   mount([stage]);
   runRoutine(stage, toRoutineDef(flow), null, {
     title: intent.label,

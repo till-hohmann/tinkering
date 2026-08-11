@@ -47,6 +47,7 @@ export function mount(children) {
   const view = document.getElementById("view");
   clear(view);
   document.querySelectorAll(".actionbar, .resttimer, canvas").forEach((n) => n.remove());
+  document.body.classList.remove("has-actionbar");
   appendChildren(view, children);
   window.scrollTo(0, 0);
   // view-enter motion (skipped under reduced-motion / no WAAPI)
@@ -84,6 +85,9 @@ export function addActionBar(...btns) {
   if (old) old.remove();
   const bar = el("div.actionbar", {}, [el("div.inner", {}, btns)]);
   document.body.appendChild(bar);
+  // Tells the stylesheet to lift the bar clear of the tab bar and to give the
+  // view enough bottom padding that the last card isn't hidden behind both.
+  document.body.classList.add("has-actionbar");
   return bar;
 }
 
@@ -169,10 +173,26 @@ export function showTabs(activeKey) {
       ])))]);
     document.body.appendChild(bar);
   }
+  document.body.classList.add("has-tabs");
+  // Publish the bar's REAL height so the sticky CTA and the view's bottom padding
+  // sit exactly on top of it rather than on an assumption about it.
+  //
+  // Measured SYNCHRONOUSLY, not in requestAnimationFrame. rAF does not run in a
+  // backgrounded tab, so the deferred version silently left the fallback in place
+  // — which is the whole class of bug this is fixing. Reading offsetHeight forces
+  // one layout; that is a fair price for a number that is always right.
+  const h = bar.offsetHeight;
+  if (h) document.documentElement.style.setProperty("--tabbar-h", h + "px");
   bar.querySelectorAll(".tab").forEach((t, i) => t.classList.toggle("active", visible[i] && visible[i][0] === activeKey));
 }
 
 export function hideTabs() {
   const bar = document.querySelector(".tabbar");
   if (bar) bar.remove();
+  document.body.classList.remove("has-tabs");
+  // ZERO, not "unset". Removing the property let it fall back to the 64px default,
+  // so every full-screen flow reserved bottom padding for a tab bar that is not
+  // there — 64px of dead space on exactly the screens that need it most. The
+  // guided practice player overflowed a small phone by almost precisely this.
+  document.documentElement.style.setProperty("--tabbar-h", "0px");
 }
