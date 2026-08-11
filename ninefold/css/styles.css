@@ -20,13 +20,13 @@
 
   /* ink */
   --text: #f1f4f9;
-  --text-dim: #8b93a1;
+  --text-dim: #adb4c1;
   /* ⚠ THE PRE-THEME FALLBACK ONLY. js/theme.js sets every one of these on
      documentElement at boot, so ITS values are what actually paint — editing
      this block alone changes nothing, which is exactly how the first attempt at
      the contrast fix measured as having done nothing at all. Kept in step with
      the Aurora theme; the reasoning lives next to THEMES. */
-  --text-faint: #6d7481;
+  --text-faint: #8b929f;
 
   /* BRAND accent — themeable. Decoration only: CTAs, rings, glows, progress.
      js/theme.js overrides these on the root element. */
@@ -233,7 +233,17 @@ button.navbadge:active { transform: scale(.95); }
 .card-head .label { flex: 1; }
 
 /* --- Buttons --- */
-button { font-family: inherit; font-size: 1rem; cursor: pointer; border: none; }
+/* ⚠ color: inherit — THE RESET WAS MISSING IT, AND BUTTONS DEFAULT TO BLACK.
+   The UA gives every <button> `color: buttontext`, so any button used as a
+   SURFACE rather than as a control — a list row, a tappable card — painted its
+   text near-black on a dark card. `.item .meta .t` only sets font-weight, so it
+   inherited that: the Plan week's day names, the Settings toggle rows, the Yoga
+   tab's practice list and the stat numbers on Today's yoga card were all
+   rendering at about 1.17 contrast. `.s` was fine only because it happens to
+   set a colour of its own, which is what kept the bug from being obvious.
+   Every button that wants a specific colour (.btn, .btn.primary, .tab,
+   button.navbadge) already declares one and still wins. */
+button { font-family: inherit; font-size: 1rem; color: inherit; cursor: pointer; border: none; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-height: var(--tap); padding: 0 18px; border-radius: var(--radius-sm);
@@ -704,10 +714,12 @@ img.exphoto { object-fit: cover; border-radius: inherit; background: var(--bg-el
   background: var(--bg-elev2); border: 1px solid var(--line-soft); color: var(--text);
   border-radius: 14px; padding: 10px 11px; min-height: 56px; transition: border-color .15s, background .15s; }
 .chip .chiptitle { font-weight: 700; font-size: 0.9rem; }
-/* --text-dim, not --text-faint: this is the line that says what "Wind down"
-   or "SI joint" actually MEANS, which is the whole reason the chip is two
-   lines. Explanatory text does not belong on the decorative tier. */
-.chip .chipsub { font-size: 0.7rem; color: var(--text-dim); line-height: 1.35; }
+/* Back on --text-faint, where it was designed to be. It was moved to --text-dim
+   only because faint was below AA at the time; now that all three tiers clear
+   4.5 the quietest one is a legitimate home for a subtitle again — and the new
+   faint (#8b929f) is almost exactly the old dim, so this lands where the chip
+   always looked. */
+.chip .chipsub { font-size: 0.7rem; color: var(--text-faint); line-height: 1.35; }
 .chip.on { border-color: var(--accent); background: rgba(47,230,166,.09); }
 .chip.on .chiptitle { color: var(--accent); }
 .chip:active { transform: scale(.97); }

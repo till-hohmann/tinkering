@@ -142,20 +142,30 @@ export const locationBadge = (loc) => el("span.badge" + placeTint(loc), { text: 
 const TAB_ICONS = {
   today: "M4 11l8-7 8 7M6 9.5V19h12V9.5M10 19v-5h4v5",
   plan: "M4 8h16v12H4zM4 8V5h16v3M8 3v4M16 3v4M8 12h8M8 16h5",
-  // ॐ. Five strokes, in the order the glyph is written: the upper curl, the big
-  // lower bowl, the tail hooking right and down, the crescent, and the bindu
-  // above it (a zero-length round-capped segment — a dot needs no arc).
+  // ॐ, in the six strokes the glyph is actually made of:
+  //   1. the upper curl — the top bowl of the "3"
+  //   2. the long lower sweep, open to the RIGHT (a crescent, not a closed bowl)
+  //   3. the wave leaving the waist to the right
+  //   4. the large CLOSED loop on the right
+  //   5. the crescent (chandra), opening upward, above the loop
+  //   6. the bindu — a zero-length round-capped segment; a dot needs no arc
   //
-  // DRAWN, NOT SET IN A FONT. The character depends on a Devanagari face being
-  // installed, and where one is it arrives at whatever weight that font chose —
-  // beside five 2px stroke icons that reads as a paste-in. This was built
-  // against the real glyph rasterised from the system font and checked at the
-  // size it actually renders (25px, 2px stroke), where it comes out at 19% ink
-  // against 16% for the seated figure it replaces and 23% for the Today icon.
-  yoga: "M11.1 10.8 C10.4 9.3 7.3 9.4 7.0 11.2 C6.8 12.6 8.9 13.1 10.0 13.5 " +
-        "C7.1 13.7 4.5 15.1 4.5 17.5 C4.5 20.0 7.1 21.4 9.7 20.6 C11.6 19.9 12.3 18.1 11.4 16.7 " +
-        "M10.0 13.5 C13.1 12.8 16.3 13.2 17.7 14.7 C19.0 16.1 18.6 18.5 16.8 19.4 " +
-        "M11.6 6.3 C12.8 8.7 16.8 8.7 18.0 6.3 M14.8 2.7 L14.85 2.7",
+  // ⚠ STROKE 4 IS THE ONE THE FIRST ATTEMPT GOT WRONG. It drew a small hook off
+  // to the right, which is not what ॐ looks like: the right-hand loop is a big
+  // closed oval, roughly the same visual mass as the lower sweep, and getting it
+  // small turns the whole character into something else.
+  //
+  // DRAWN, NOT SET IN A FONT. The character needs a Devanagari face installed,
+  // and where one exists it arrives at whatever weight that font chose — beside
+  // five 2px stroke icons that reads as a paste-in. Built against the real glyph
+  // rasterised from the system font and checked at the size it renders: 22% ink
+  // against 23% for both Today and Progress.
+  yoga: "M5.8 9.6 C6.2 7.5 10.6 7.1 11.6 9.3 C12.2 10.5 11.0 11.3 10.0 11.8 " +
+        "C6.5 12.2 2.2 14.3 1.9 17.7 C1.6 20.8 4.3 22.6 7.2 22.4 C10.1 22.2 12.2 20.3 12.1 17.9 " +
+        "M10.0 11.8 C12.0 12.0 13.4 12.4 15.4 13.0 " +
+        "M18.7 11.6 C21.2 11.6 22.6 13.9 22.6 16.8 C22.6 19.8 21.0 21.8 18.7 21.8 " +
+        "C16.3 21.8 14.8 19.8 14.8 16.8 C14.8 13.9 16.2 11.6 18.7 11.6 Z " +
+        "M13.7 4.6 C14.8 7.6 20.0 7.6 21.1 4.6 M17.4 2.2 L17.45 2.2",
   progress: "M4 20V4M4 20h16M8 20v-7M13 20V8M18 20v-10",
   body: "M4 8h16M4 8v8M4 16h16M20 8v8M8 8v3M12 8v4M16 8v3",   // tape measure = body composition
   profile: "M12 11.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM5 20a7 7 0 0114 0",

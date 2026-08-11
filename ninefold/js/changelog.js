@@ -13,6 +13,11 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 180, notes: [
+    "Fixed: list rows drawn as buttons — the day rows in your week plan, the Settings toggles, the yoga practice list — were printing their titles in near-black on a dark card. Barely readable, and it had been that way a while.",
+    "All text in the app now meets the WCAG AA contrast standard, in every theme. Quiet text is lighter than it was; that is what full AA costs on a near-black background.",
+    "The Yoga tab icon is a proper ॐ now — the previous one had a small hook where the character has a large closed loop.",
+  ] },
   { v: 179, notes: [
     "The yoga section has its own look now. Warm light for choosing a practice and browsing what you've done; deep indigo for the practice itself, because two of the nine intents are Wind down and Before bed and a white screen at 22:00 helps nobody.",
     "The Yoga tab icon is ॐ.",
