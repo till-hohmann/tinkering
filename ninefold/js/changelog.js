@@ -13,6 +13,10 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 176, notes: [
+    "Fixed: a yoga practice could open by saying \"stretch\" instead of naming the first pose, and then stay silent for the whole session. If the app had ever been opened before the voice was published, it kept believing there was no voice.",
+    "Pausing a practice now stops the teacher mid-sentence. Resuming picks the pose back up rather than talking over where you already are.",
+  ] },
   { v: 175, notes: [
     "In yoga, the teacher now tells you how to get into a pose WHILE you're moving into it, during the get-into-position countdown, and saves the alignment cues for once you're there.",
     "All spoken cues and countdowns are louder — about 7 dB up — and where your phone supports it the music dips for the length of each cue instead of the cue competing with it. The run countdown was getting lost under music.",

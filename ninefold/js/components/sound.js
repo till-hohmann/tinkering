@@ -428,19 +428,27 @@ export const speakClip = {
         g.gain.value = 1.15;
         src.buffer = buf;
         src.connect(g).connect(out);
-        speaking.push(src);
+        // The resolver is kept WITH the source. stopAll() has to settle it, or
+        // the sequence awaiting this clip never continues and never unwinds —
+        // one abandoned async function per pause, holding its whole closure.
+        const entry = { src, resolve };
+        speaking.push(entry);
         src.onended = () => {
-          speaking = speaking.filter((s) => s !== src);
+          speaking = speaking.filter((e) => e !== entry);
           setTimeout(resolve, gapSeconds * 1000);
         };
         src.start();
       } catch { resolve(); }
     });
   },
-  /** Cut the teacher off — the practice has moved on. */
+  /** Cut the teacher off — the practice has moved on, or has been paused. */
   stopAll() {
-    for (const s of speaking) { try { s.onended = null; s.stop(); } catch {} }
+    const pending = speaking;
     speaking = [];
+    for (const e of pending) {
+      try { e.src.onended = null; e.src.stop(); } catch {}
+      try { e.resolve(); } catch {}     // let the awaiting sequence unwind and exit
+    }
   },
 };
 

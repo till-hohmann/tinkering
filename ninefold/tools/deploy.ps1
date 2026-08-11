@@ -116,7 +116,10 @@ if (-not $bake) {
 # the latter fails SILENTLY under PowerShell (a native failure does not trip
 # ErrorActionPreference=Stop), printing "Deployed" without having uploaded
 # anything. Auth lives in your global wrangler config, not in node_modules.
-$project = if ($env:NINEFOLD_PROJECT) { $env:NINEFOLD_PROJECT } else { "ninefold" }
+# The Pages project is still named fitness-tracker: the APP was renamed to
+# Ninefold, the DEPLOYMENT was not. Renaming the project would mint a new
+# *.pages.dev host and orphan every installed PWA, so it stays as it is.
+$project = if ($env:NINEFOLD_PROJECT) { $env:NINEFOLD_PROJECT } else { "fitness-tracker" }
 $wrangler = Join-Path $root "node_modules\.bin\wrangler.cmd"
 if (Test-Path $wrangler) {
   & $wrangler pages deploy $stage --project-name $project --branch main --commit-dirty=true

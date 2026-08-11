@@ -17,6 +17,7 @@
 // by using speechSynthesis here.
 
 import { speakClip, audioAvailable } from "../components/sound.js";
+import { APP_VERSION } from "../version.js";
 
 const BASE = "./audio/yoga";
 /** clipId -> decoded AudioBuffer. Small; a practice touches ~120 of them. */
@@ -42,7 +43,22 @@ async function clipId(text) {
 export async function loadNarration(level) {
   if (manifestLevel === level && available) return true;
   try {
-    const res = await fetch(`${BASE}/${level}/manifest.json`, { cache: "force-cache" });
+    // ⚠ VERSIONED, AND NOT force-cache. THE SAME TRAP, THE SAME FILE NAME, TWICE.
+    //
+    // js/version.js already carries the post-mortem: `img/exercises/manifest.json`
+    // keeps its name across releases, so a stale copy was served for a build that
+    // had shipped 72 new renders and every anatomy card silently fell back. This
+    // is that bug again. `cache: "force-cache"` PINS whatever was fetched first —
+    // including, on a device that opened the app before the audio was deployed, a
+    // 404. Narration would then be permanently "unavailable" on that device, the
+    // player would fall through to the legacy cue chain, and the practice would
+    // open by saying "stretch" over a seated centering. Which is exactly what was
+    // reported from the mat.
+    //
+    // The CLIPS keep force-cache and should: their filenames are a hash of their
+    // own contents, so the URL changes whenever the audio does. Only this
+    // manifest is unhashed, so only this one needs the version.
+    const res = await fetch(`${BASE}/${level}/manifest.json?v=${APP_VERSION}`);
     if (!res.ok) { available = null; return false; }
     const m = await res.json();
     available = new Set(Object.keys(m.clips || {}));
@@ -76,7 +92,7 @@ async function fetchClip(level, id) {
  * practice — the one thing that would make it feel broken.
  */
 export async function prefetch(level, parts) {
-  if (!available) return;
+  if (!available || manifestLevel !== level) return;
   for (const p of parts || []) {
     const id = await clipId(p.text);
     if (available.has(id)) fetchClip(level, id);
@@ -96,7 +112,9 @@ export function stopNarration() { sequenceToken++; speakClip.stopAll(); }
  * and bails if the practice has moved on.
  */
 export async function speak(level, parts, { gap = 0.25 } = {}) {
-  if (!available || !audioAvailable()) return;
+  // The membership set belongs to ONE level. Testing a beginner sentence against
+  // the advanced manifest would quietly skip every line as "never rendered".
+  if (!available || manifestLevel !== level || !audioAvailable()) return;
   const token = ++sequenceToken;
   for (const p of parts || []) {
     if (token !== sequenceToken) return;

@@ -209,6 +209,23 @@ export function runRoutine(container, def, program, opts = {}) {
     pauseBtn.textContent = paused ? "Resume" : "Pause";
     lastTs = 0;                       // drop the gap accumulated while paused
     if (paused) clearRunTimeline(); else buildTimeline();
+
+    // PAUSE MEANS PAUSE, INCLUDING THE VOICE. It kept talking through a pause,
+    // which is wrong on its face — you paused for a reason, and being lectured
+    // about hip alignment while you answer the door is the opposite of what the
+    // button is for.
+    if (narrate) {
+      if (paused) {
+        stopNarration();
+      } else if (narrationOn && step.type === "timed") {
+        // Resuming re-says the pose, because you stopped in the middle of being
+        // told something and the rest of it is gone. Only when there is enough
+        // left to be worth hearing — on the last few seconds of a hold it would
+        // be noise, and the exit call is about to land anyway.
+        const left = curDur() - segMs / 1000;
+        if (left > 8) { spokenPose = null; sayEntry(step, { catchUp: true }); }
+      }
+    }
   };
 
   // --- hold tracking (opts.trackHolds — the mobility progression engine) -----
@@ -350,12 +367,44 @@ export function runRoutine(container, def, program, opts = {}) {
   // warm-ups, which keep their own short cues.
   const narrate = opts.narrate || null;
   let narrationOn = false;
-  if (narrate) loadNarration(narrate.level).then((ok) => { narrationOn = ok; });
+  if (narrate) loadNarration(narrate.level).then((ok) => {
+    narrationOn = ok;
+    // THE MANIFEST IS A FETCH; STEP 0 IS NOT.
+    //
+    // enterStep(0) runs synchronously at startup, so the first pose was reached
+    // before this resolved — the narrator wasn't "on" yet, the step fell through
+    // to the legacy cue chain, and the practice opened by announcing "stretch"
+    // over a seated centering. Speak it now that we can, provided the practice
+    // is still sitting on the pose that missed out.
+    if (ok && !finished && spokenPose === null) {
+      const step = steps[idx];
+      if (step && (step.type === "transition" || step.type === "timed")) sayEntry(step, { catchUp: true });
+    }
+  });
   let saidExitFor = -1;
   // Which pose the narrator is currently talking about. A transition and its
   // hold are ONE pose, so this is what stops the entry passage being restarted
   // (or cut off mid-sentence) when the hold begins.
   let spokenPose = null;
+  const poseKeyOf = (step) =>
+    step && step.item ? (step.item.itemId || step.item.id) + "|" + (step.side || "") : null;
+  /** Say the right half for this step. The single place that decides. */
+  function sayEntry(step, { catchUp = false } = {}) {
+    if (!narrate || !narrationOn || !step) return;
+    const key = poseKeyOf(step);
+    if (key !== spokenPose) { stopNarration(); spokenPose = key; saidArriveAt = null; saidExitFor = -1; }
+    if (step.type === "transition") {
+      const parts = narrate.arriveFor(step, idx);
+      if (parts && parts.length) { speak(narrate.level, parts); saidArriveAt = key; }
+      return;
+    }
+    // A catch-up on a hold gets the WHOLE passage: the moving half was never
+    // said, so starting at the alignment cues would skip the pose's own name.
+    const parts = (!catchUp && saidArriveAt === key)
+      ? narrate.settleFor(step, idx)
+      : narrate.entryFor(step, idx);
+    if (parts && parts.length) speak(narrate.level, parts);
+  }
   // Which pose has already had its "moving into X, do this to get there" half
   // spoken during the transition, so the hold picks up from the refinements.
   let saidArriveAt = null;
@@ -475,28 +524,22 @@ export function runRoutine(container, def, program, opts = {}) {
     // four to twelve seconds and the passage is twenty-five, so the alignment
     // cues would land long after you had settled. Playing it all at the hold was
     // the old behaviour, and told you how to get into a pose you were already in.
-    const poseKey = step.item && (step.item.itemId || step.item.id) + "|" + (step.side || "");
-    if (narrate && narrationOn && (step.type === "transition" || step.type === "timed")) {
-      const newPose = poseKey !== spokenPose;
-      if (newPose) { stopNarration(); spokenPose = poseKey; saidArriveAt = null; saidExitFor = -1; }
-      if (!stepOpts.silent) {
-        if (step.type === "transition") {
-          const parts = narrate.arriveFor(step, idx);
-          if (parts && parts.length) { speak(narrate.level, parts); saidArriveAt = poseKey; }
-        } else {
-          // No transition step for this pose (a linked salutation, or a zero
-          // transition) means nothing has been said yet — so say all of it.
-          const parts = saidArriveAt === poseKey
-            ? narrate.settleFor(step, idx)
-            : narrate.entryFor(step, idx);
-          if (parts && parts.length) speak(narrate.level, parts);
-        }
-      }
+    //
+    // GATED ON `narrate`, NOT ON `narrationOn`. The manifest is a fetch and step
+    // zero is not, so gating on "the narrator has loaded" let the first pose fall
+    // through to the legacy chain below and open the practice by saying
+    // "stretch". A configured narrator owns the cues from the first frame, even
+    // in the moment before she can speak; the catch-up above fills that gap.
+    if (narrate && (step.type === "transition" || step.type === "timed")) {
+      if (!stepOpts.silent) sayEntry(step);
+      else { spokenPose = poseKeyOf(step); saidArriveAt = null; saidExitFor = -1; }
       haptic(step.type === "transition" ? 10 : 15);
       // Warm the NEXT pose's clips while this one runs, so the voice never waits
       // on the network in the middle of a practice.
-      const nx = steps[idx + 1] && steps[idx + 1].type === "transition" ? steps[idx + 2] : steps[idx + 1];
-      if (nx && nx.type === "timed") prefetch(narrate.level, narrate.entryFor(nx, idx + 1) || []);
+      if (narrationOn) {
+        const nx = steps[idx + 1] && steps[idx + 1].type === "transition" ? steps[idx + 2] : steps[idx + 1];
+        if (nx && nx.type === "timed") prefetch(narrate.level, narrate.entryFor(nx, idx + 1) || []);
+      }
     }
     else if (step.type === "transition") { if (sayLive && !narrate) say("position"); haptic(10); }
     else if (kind === "hold") { if (sayLive) say("stretch"); haptic(20); }
