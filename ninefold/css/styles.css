@@ -657,6 +657,29 @@ img.exphoto { object-fit: cover; border-radius: inherit; background: var(--bg-el
 .timer-ring.transition { background: conic-gradient(var(--amber) var(--p, 100%), var(--bg-elev2) 0);
   filter: drop-shadow(0 0 12px rgba(251,191,36,.25)); }
 .timer-big { position: relative; font-size: 4.7rem; font-weight: 800; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
+
+/* --- the breathing orb (breath-paced holds) -------------------------------
+   Shown INSTEAD of the countdown ring, never with it. The guide is the still
+   circle a full inhale reaches; the orb is what you breathe. Both sit in the
+   same .timer-wrap box as the ring, so nothing about the player's layout or
+   its measured height changes when one swaps for the other.
+
+   NO CSS TRANSITION ON THE TRANSFORM. The scale is written every frame from
+   the wall-clock loop, which is what keeps the swell locked to the breath tone;
+   a transition would add its own easing on top and drift behind the audio. */
+.breath-guide { position: absolute; inset: 6px; border-radius: 50%;
+  border: 1px dashed rgba(47,230,166,.22); }
+.breath-orb { position: absolute; inset: 6px; border-radius: 50%;
+  transform: scale(var(--s, .42)); will-change: transform;
+  background: radial-gradient(circle at 50% 42%,
+    rgba(47,230,166,.30), rgba(47,230,166,.13) 58%, rgba(47,230,166,.05) 78%);
+  border: 1.5px solid rgba(47,230,166,.52);
+  filter: drop-shadow(0 0 16px rgba(47,230,166,.22)); }
+/* The exhale cools and softens rather than changing hue — a colour that flips
+   every few seconds is a strobe at this size, and the direction is already
+   unmistakable from which way the orb is going. */
+.breath-orb.out { border-color: rgba(47,230,166,.34);
+  filter: drop-shadow(0 0 10px rgba(47,230,166,.12)); }
 /* --- Yoga tab --- */
 .btn-row.wrap { flex-wrap: wrap; }
 .btn-row.wrap > .btn { flex: 1 1 30%; }

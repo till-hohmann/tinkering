@@ -343,7 +343,16 @@ export async function mobilityDoneOn(iso) { return (await getMobilityLog()).some
 export async function mobilityDoneDates() { return new Set((await getMobilityLog()).map((e) => e.date)); }
 // --- yoga practice log -------------------------------------------------------
 // Cloud-synced via SYNCED_PREFS ("yogaLog"). One entry per completed practice:
-//   { date, intent, style, minutes, peak, substitutes, poses }
+//   { date, at, intent, style, level, minutes, peak, substitutes, poses, sequence }
+//
+// `sequence` is the asana ids in the order they were practised, and it is what
+// makes the practice worth opening afterwards — a count of poses says nothing
+// about what you did. Entries logged before it existed simply have none, and
+// the summary says so rather than pretending the practice was empty. Ids, not
+// full items: a 45-minute flow is ~40 of them, so this costs about a kilobyte
+// per practice against a 5 MB backup ceiling. Regenerating the flow from a
+// stored seed would be smaller and WRONG — a later change to the generator
+// would silently rewrite what your history says you did.
 //
 // SEVERAL PRACTICES A DAY ARE ALLOWED, which is why this does NOT replace by
 // date the way the mobility log does. A yoga session can be a standalone extra
@@ -355,18 +364,58 @@ export async function mobilityDoneDates() { return new Set((await getMobilityLog
 // null), which is what lets the week be read honestly: it counts for adherence,
 // it contributes zero hard sets, and Progress shows the resulting gap rather
 // than hiding it.
+//
+// ⚠ `at` IS THE IDENTITY, NOT `date`. Because several practices a day are
+// allowed, anything that edits or removes ONE practice has to address it by its
+// completion timestamp. A date-scoped delete would take the morning practice
+// with the evening one, silently, in exactly the case this log exists to record.
 export async function getYogaLog() { return (await db.getPref("yogaLog")) || []; }
+
+/** Newest first — what a history list wants. `getYogaLog()` stays oldest-first. */
+export async function yogaHistory() { return (await getYogaLog()).slice().reverse(); }
+
+const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.at || "") < (b.at || "") ? -1 : 1);
+
 export async function addYogaDone(iso, entry) {
   const raw = (await db.getPref("yogaLog")) || [];
   raw.push({ date: iso, at: new Date().toISOString(), ...entry });
-  raw.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  raw.sort(byDate);
   await db.setPref("yogaLog", raw); pushCloud();
   return raw;
 }
-export async function removeYogaDone(iso, at) {
-  const raw = ((await db.getPref("yogaLog")) || []).filter((e) => !(e.date === iso && (!at || e.at === at)));
-  await db.setPref("yogaLog", raw); pushCloud();
+
+/** One practice, by its completion timestamp. */
+export async function yogaEntryAt(at) {
+  return (await getYogaLog()).find((e) => e.at === at) || null;
 }
+
+/**
+ * Patch one practice in place. Returns the updated entry, or null if `at`
+ * matches nothing — which is what a summary screen opened from a stale link
+ * needs to distinguish from a practice that merely has no poses recorded.
+ *
+ * `at` is preserved even when the date moves, so the URL of an open summary
+ * stays valid across an edit.
+ */
+export async function updateYogaEntry(at, patch) {
+  const raw = (await db.getPref("yogaLog")) || [];
+  const i = raw.findIndex((e) => e.at === at);
+  if (i < 0) return null;
+  raw[i] = { ...raw[i], ...patch, at: raw[i].at };
+  raw.sort(byDate);
+  await db.setPref("yogaLog", raw); pushCloud();
+  return raw.find((e) => e.at === at) || null;
+}
+
+/** Remove one practice. Returns true if there was one to remove. */
+export async function removeYogaEntry(at) {
+  const raw = (await db.getPref("yogaLog")) || [];
+  const next = raw.filter((e) => e.at !== at);
+  if (next.length === raw.length) return false;
+  await db.setPref("yogaLog", next); pushCloud();
+  return true;
+}
+
 export async function yogaOn(iso) { return (await getYogaLog()).filter((e) => e.date === iso); }
 export async function yogaDoneDates() { return new Set((await getYogaLog()).map((e) => e.date)); }
 

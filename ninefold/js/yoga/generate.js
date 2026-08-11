@@ -513,7 +513,22 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
   fillPhase("build", usable * firstShare, { plane: first });
   const firstItems = sections.build;
   fillPhase("build", usable * (1 - firstShare), { plane: second });
-  sections.build = [...firstItems, ...sections.build, ...prepItems];
+  // ⚠ THE PREPARATION GOES INTO THE BLOCKS, NOT AFTER THEM. Appending the whole
+  // prep list to the tail undid the descent it had just built: a peak's preps
+  // are chosen for what they open, not for what plane they are in, so a standing
+  // prep for a floor peak landed on its own between floor poses. Flows came out
+  // as ...floor, floor, floor, STANDING, floor, floor, peak — four plane changes
+  // for two standing poses.
+  //
+  // Each prep now joins the block of its own plane, in its declared order, and
+  // the preps that share the peak's plane come last: you do the standing
+  // preparation while you are standing, and the practice arrives at the peak
+  // having just done the closest thing to it. Every prep is still before the
+  // peak, which is the only ordering constraint that carries meaning.
+  const prepsOn = (pl) => prepItems.filter((it) => it.plane === pl);
+  const prepRest = prepItems.filter((it) => it.plane !== first && it.plane !== second);
+  sections.build = [...firstItems, ...prepsOn(first),
+    ...sections.build, ...prepsOn(second), ...prepRest];
 
   // 4. peak
   sections.peak = peak ? [makeItem(peak, ctx, { phase: "peak", t: 1 })] : [];

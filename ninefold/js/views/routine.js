@@ -23,8 +23,9 @@ import { cueTick, cueItemStart, cueItemEnd, cueRoutineDone, say, muteToggle,
   beginRunAudio, endRunAudio, setRunTimeline, clearRunTimeline, preloadVoice, ensureAudioRunning,
   cueInhale, cueExhale } from "../components/sound.js";
 import { lockButton, closeScreenLock } from "../components/screenlock.js";
-import { breathsRemaining, breathPhaseAt, isInhale } from "../yoga/breath.js";
-import { loadNarration, narrationReady, speak, prefetch, stopNarration } from "../yoga/narrate.js";
+import { breathsRemaining, breathPhaseAt, isInhale, breathSwell } from "../yoga/breath.js";
+import { loadNarration, narrationReady, speak, prefetch, stopNarration, resumeNarration,
+  stageNarration, resetNarration } from "../yoga/narrate.js";
 
 let wakeLock = null;
 async function requestWake() {
@@ -139,7 +140,7 @@ export function cueKindOf(item) {
 
 // The breath arithmetic lives in yoga/breath.js — pure, DOM-free and tested.
 // Re-exported here because this is where callers expect to find it.
-export { breathsRemaining, breathPhaseAt, isInhale } from "../yoga/breath.js";
+export { breathsRemaining, breathPhaseAt, isInhale, breathSwell } from "../yoga/breath.js";
 
 // Each warm-up / cool-down movement gets its own movement-figure tile — the same
 // glowing, tinted-tile illustration the main lifts use — resolved from its id.
@@ -172,7 +173,7 @@ export function runRoutine(container, def, program, opts = {}) {
   registerCleanup(() => {
     if (raf) cancelAnimationFrame(raf);
     if (extendRaf) cancelAnimationFrame(extendRaf);
-    clearRunTimeline(); releaseWake(); endRunAudio(); closeScreenLock(); stopNarration();
+    clearRunTimeline(); releaseWake(); endRunAudio(); closeScreenLock(); resetNarration();
   });
 
   function fmt(s) {
@@ -198,6 +199,15 @@ export function runRoutine(container, def, program, opts = {}) {
   const roundEl = el("span.badge");
   const bar = el("div.progress-fill");
   const ring = el("div.timer-ring");
+  // THE BREATHING ORB — what a breath-paced hold gets instead of a countdown.
+  //
+  // A depleting ring is a clock with a nicer hat: it tells you how much of the
+  // pose is left, which is the one thing a breath-counted hold is deliberately
+  // NOT about. The orb is something to breathe WITH — it swells through the
+  // inhale, settles through the exhale, and the guide circle behind it is where
+  // a full breath reaches. The number in the middle still counts the breaths.
+  const orbGuide = el("div.breath-guide");
+  const orb = el("div.breath-orb");
 
   const pauseBtn = el("button.btn", {}, "Pause");
   const extendBtn = el("button.btn", { onclick: () => toggleExtend() }, "Extend");
@@ -214,17 +224,14 @@ export function runRoutine(container, def, program, opts = {}) {
     // which is wrong on its face — you paused for a reason, and being lectured
     // about hip alignment while you answer the door is the opposite of what the
     // button is for.
+    //
+    // RESUME CONTINUES THE PASSAGE, it does not restart it. The first version
+    // re-said the pose from its name down, which on a long hold meant hearing
+    // the entire entry a second time to recover the one sentence you missed.
+    // narrate.js keeps the sentence that was cut; this picks up from it.
     if (narrate) {
-      if (paused) {
-        stopNarration();
-      } else if (narrationOn && step.type === "timed") {
-        // Resuming re-says the pose, because you stopped in the middle of being
-        // told something and the rest of it is gone. Only when there is enough
-        // left to be worth hearing — on the last few seconds of a hold it would
-        // be noise, and the exit call is about to land anyway.
-        const left = curDur() - segMs / 1000;
-        if (left > 8) { spokenPose = null; sayEntry(step, { catchUp: true }); }
-      }
+      if (paused) stopNarration();
+      else resumeNarration();
     }
   };
 
@@ -283,7 +290,7 @@ export function runRoutine(container, def, program, opts = {}) {
     container.appendChild(sanskritEl);
     container.appendChild(cueEl);
     container.appendChild(easierEl);
-    container.appendChild(el("div.timer-wrap", {}, [ring, big]));
+    container.appendChild(el("div.timer-wrap", {}, [ring, orbGuide, orb, big]));
     container.appendChild(unitEl);
     container.appendChild(nextEl);
   }
@@ -393,17 +400,25 @@ export function runRoutine(container, def, program, opts = {}) {
     if (!narrate || !narrationOn || !step) return;
     const key = poseKeyOf(step);
     if (key !== spokenPose) { stopNarration(); spokenPose = key; saidArriveAt = null; saidExitFor = -1; }
+    // WHILE PAUSED, STAGE IT — DON'T SAY IT. Skipping to another pose with the
+    // practice paused still lands you on a pose, and that pose's guidance is
+    // what Resume owes you; speaking it now would make the pause button mean
+    // "pause everything except the talking".
+    const say = (parts) => {
+      if (!parts || !parts.length) return false;
+      if (paused) stageNarration(narrate.level, parts);
+      else speak(narrate.level, parts);
+      return true;
+    };
     if (step.type === "transition") {
-      const parts = narrate.arriveFor(step, idx);
-      if (parts && parts.length) { speak(narrate.level, parts); saidArriveAt = key; }
+      if (say(narrate.arriveFor(step, idx))) saidArriveAt = key;
       return;
     }
     // A catch-up on a hold gets the WHOLE passage: the moving half was never
     // said, so starting at the alignment cues would skip the pose's own name.
-    const parts = (!catchUp && saidArriveAt === key)
+    say((!catchUp && saidArriveAt === key)
       ? narrate.settleFor(step, idx)
-      : narrate.entryFor(step, idx);
-    if (parts && parts.length) speak(narrate.level, parts);
+      : narrate.entryFor(step, idx));
   }
   // Which pose has already had its "moving into X, do this to get there" half
   // spoken during the transition, so the hold picks up from the refinements.
@@ -413,11 +428,32 @@ export function runRoutine(container, def, program, opts = {}) {
   const isBreathPaced = (step) => !!(breathSeconds && step && step.type === "timed"
     && step.item.breathPaced && step.item.holdBreaths);
   let lastHalf = -1;
+  // How far the orb travels between the bottom of an exhale and the top of an
+  // inhale, as a fraction of the guide circle. Not 0→1: an orb that vanishes at
+  // the end of every exhale reads as the pacer stopping, and one that fills the
+  // guide exactly leaves nothing to breathe toward.
+  const ORB_MIN = 0.42, ORB_MAX = 0.97;
   function startBreathPacer(step) {
     lastHalf = -1;
     const on = isBreathPaced(step);
     unitEl.style.display = on ? "" : "none";
     if (on) unitEl.textContent = step.item.holdBreaths === 1 ? "breath" : "breaths";
+    // The orb and the ring are alternatives, never both.
+    orb.style.display = on ? "" : "none";
+    orbGuide.style.display = on ? "" : "none";
+    ring.style.display = on ? "none" : "";
+    if (on) orb.style.setProperty("--s", String(ORB_MIN));
+  }
+  /**
+   * Drive the orb from the same clock the audio pacer uses, so the swell and the
+   * breath sound cannot drift apart. The curve itself is in yoga/breath.js with
+   * the rest of the breath arithmetic, where it is testable — rAF does not run
+   * in a hidden preview, so anything left in here can only be read back.
+   */
+  function paintOrb(elapsedSec) {
+    const swell = breathSwell(elapsedSec, breathSeconds);
+    orb.style.setProperty("--s", (ORB_MIN + (ORB_MAX - ORB_MIN) * swell).toFixed(3));
+    orb.classList.toggle("out", !isInhale(breathPhaseAt(elapsedSec, breathSeconds)));
   }
   function paceBreath(step, elapsedSec) {
     if (!isBreathPaced(step) || paused) return;
@@ -442,6 +478,9 @@ export function runRoutine(container, def, program, opts = {}) {
       // the first breath and only turns over when that breath is done.
       big.textContent = String(breathsRemaining(rem, breathSeconds));
       paceBreath(step, elapsed);
+      // Frozen while paused: an orb still breathing at you through a pause is
+      // the same mistake as the voice still talking through one.
+      if (!paused) paintOrb(elapsed);
     } else {
       big.textContent = fmt(Math.ceil(rem));
     }
@@ -484,6 +523,7 @@ export function runRoutine(container, def, program, opts = {}) {
 
     if (step.type === "checklist") {
       ring.style.display = "none"; big.style.display = "none";
+      orb.style.display = "none"; orbGuide.style.display = "none";
       setName(step.item.name);
       renderChecklistControls();
       clearRunTimeline();              // barrier — waits for the Done tap
@@ -610,6 +650,11 @@ export function runRoutine(container, def, program, opts = {}) {
     ring.classList.remove("transition");
     ring.classList.add("extend");
     ring.style.setProperty("--p", "100%");
+    // Extending is open-ended time, not breaths — the amber ring is the whole
+    // signal that the clock has stopped counting down, so it has to be visible
+    // even on a hold that was showing the orb.
+    orb.style.display = "none"; orbGuide.style.display = "none";
+    ring.style.display = "";
     const eloop = () => {
       if (!extending) return;
       big.textContent = "+" + extFmt((performance.now() - extendStart) / 1000);
@@ -638,7 +683,7 @@ export function runRoutine(container, def, program, opts = {}) {
     closeScreenLock();
     releaseWake();
     endRunAudio();
-    stopNarration();
+    resetNarration();
     cueRoutineDone();
     clear(container);
     const msg = rounds > 1 ? `Complete (${rounds} rounds)` : "Complete";
@@ -660,7 +705,7 @@ export function runRoutine(container, def, program, opts = {}) {
     closeScreenLock();
     releaseWake();
     endRunAudio();
-    stopNarration();
+    resetNarration();
     onComplete && onComplete({ completed, holds: holdList() });
   }
 

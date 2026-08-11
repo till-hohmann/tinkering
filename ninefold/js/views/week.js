@@ -183,7 +183,10 @@ export async function renderWeek(pid, n) {
     // A yoga practice done on this day. Yoga is never SCHEDULED — it substitutes
     // or it goes on top, and which is a decision made on the day — so it only
     // ever appears here retrospectively, as a row recording what happened.
-    const yogaRows = (yogaByDate.get(dayIso) || []).map((e) => el("div.item.yogarow", {}, [
+    const yogaRows = (yogaByDate.get(dayIso) || []).map((e) => el("button.item.yogarow", {
+      style: "text-align:left",
+      onclick: () => go(`#/ysummary/${encodeURIComponent(e.at)}`),
+    }, [
       el("div.ico.illotile", { style: "padding:0;overflow:hidden" }, [illustration("padmasana")]),
       el("div.meta", {}, [
         el("div.t", { text: `${WEEKDAY_FULL[wd]} yoga` }),

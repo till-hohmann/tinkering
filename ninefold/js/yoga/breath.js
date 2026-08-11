@@ -28,3 +28,27 @@ export const breathPhaseAt = (elapsedSec, breathSeconds) =>
   breathSeconds > 0 ? Math.floor(elapsedSec / (breathSeconds / 2)) : 0;
 
 export const isInhale = (phase) => phase % 2 === 0;
+
+/**
+ * How full the breathing orb is at `elapsedSec`: 0 at the bottom of an exhale,
+ * 1 at the top of an inhale.
+ *
+ * COSINE, NOT A TRIANGLE. Linear growth turns around with a corner at the top of
+ * the inhale, which is exactly where a breath should be unhurried. `(1 - cos 2πt)
+ * / 2` is slowest at both ends and quickest through the middle, which is what a
+ * breath actually does — and being one continuous expression over the whole
+ * cycle, the inhale and the exhale cannot disagree at the join.
+ *
+ * Deliberately a function of elapsed time and nothing else: the orb, the breath
+ * tone and the remaining count all read the same clock, so they cannot drift
+ * apart across a pause, a +15s, or the screen going off and coming back.
+ *
+ * IN HERE RATHER THAN IN THE PLAYER because rAF does not run while the preview
+ * pane is hidden, so anything living in the render loop can only be verified by
+ * reading it back — the same reason breathsRemaining and breathPhaseAt are here.
+ */
+export const breathSwell = (elapsedSec, breathSeconds) => {
+  if (!(breathSeconds > 0)) return 0;
+  const t = (elapsedSec % breathSeconds) / breathSeconds;
+  return (1 - Math.cos(2 * Math.PI * t)) / 2;
+};

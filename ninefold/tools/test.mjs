@@ -44,12 +44,13 @@ import { applyStretchResults, applyStretchTargets, stretchTarget, STRETCH_MIN, S
 import { CHANGELOG, notesSince, versionNumber } from "../js/changelog.js";
 import { checkAsanas, byId as asanaById } from "../js/yoga/asanas.js";
 import { ASANA_ART_KEYS } from "../js/yoga/asana-art.js";
-import { STYLES as YOGA_STYLES } from "../js/yoga/styles.js";
+import { STYLES as YOGA_STYLES, BREATH_SECONDS_DEFAULT, BREATH_SECONDS_RANGE,
+  holdSecondsFor } from "../js/yoga/styles.js";
 import { INTENTS as YOGA_INTENTS, checkIntents, accountingFor } from "../js/yoga/intents.js";
 import { generateFlow } from "../js/yoga/generate.js";
 import { primarySeries, checkSeries } from "../js/yoga/ashtanga.js";
 import { auditFlow } from "../js/yoga/quality.js";
-import { breathsRemaining, breathPhaseAt, isInhale } from "../js/yoga/breath.js";
+import { breathsRemaining, breathPhaseAt, isInhale, breathSwell } from "../js/yoga/breath.js";
 import { checkLevels } from "../js/yoga/levels.js";
 import { checkScript, entryScript, exitScript, salutationScript, allHoldPhrases } from "../js/yoga/script.js";
 import { ASANAS } from "../js/yoga/asanas.js";
@@ -2066,6 +2067,156 @@ group("yoga — a salutation is one step, not six countdowns", () => {
     const s = salutationScript("A", 2, 5, "advanced");
     assert.ok(/Round 2/.test(s.text));
     assert.ok(/Inhale/.test(s.text) && /Exhale/.test(s.text), "the movements are called");
+  });
+});
+
+group("yoga — the breath is paced at a practised rate, not a resting one", () => {
+  // Pinned to NUMBERS, not to a direction. A test asserting "slower than before"
+  // passes forever once it has passed once; these fail if the default drifts
+  // back toward the resting respiratory range (12-20 breaths/min) that the old
+  // 5-second default sat at the top of.
+  it("a breath is 6 seconds — 10 a minute", () => {
+    assert.equal(BREATH_SECONDS_DEFAULT, 6);
+    assert.equal(60 / BREATH_SECONDS_DEFAULT, 10);
+  });
+  it("the range spans a flow pace to the resonance band, and offers nothing faster than 15/min", () => {
+    const [lo, hi] = BREATH_SECONDS_RANGE;
+    assert.equal(lo, 4);
+    assert.ok(60 / lo <= 15, `fastest offered is ${60 / lo}/min`);
+    // 4.5-7 breaths/min is where the HRV literature puts resonance; the slow end
+    // has to actually reach it or the option is decorative.
+    assert.ok(60 / hi <= 7, `slowest offered is ${60 / hi}/min, needs to reach the resonance band`);
+  });
+  it("the default puts breath-counted holds where a class holds them", () => {
+    const bs = BREATH_SECONDS_DEFAULT;
+    // Vinyasa 3-5 breaths, hatha 6-10 — the numbers those styles declare.
+    assert.equal(holdSecondsFor(YOGA_STYLES.vinyasa, { breathSeconds: bs, t: 1 }), 30);
+    assert.equal(holdSecondsFor(YOGA_STYLES.hatha, { breathSeconds: bs, t: 0 }), 36);
+    assert.equal(holdSecondsFor(YOGA_STYLES.hatha, { breathSeconds: bs, t: 1 }), 60);
+  });
+  it("time-counted styles do not move with it", () => {
+    // Yin and restorative count in minutes; a slower breath must not lengthen
+    // a five-minute shape into a seven-minute one.
+    for (const s of Object.values(YOGA_STYLES)) {
+      if (!s.holdSeconds) continue;
+      assert.equal(holdSecondsFor(s, { breathSeconds: 4, t: 0.5 }),
+        holdSecondsFor(s, { breathSeconds: 12, t: 0.5 }), `${s.id} moved with the breath rate`);
+    }
+  });
+});
+
+group("yoga — the orb is something to breathe with, not a timer in disguise", () => {
+  const BS = 6;
+  it("empty at the bottom of the exhale, full at the top of the inhale", () => {
+    assert.equal(+breathSwell(0, BS).toFixed(6), 0);          // start of the inhale
+    assert.equal(+breathSwell(BS / 2, BS).toFixed(6), 1);     // the turn
+    assert.equal(+breathSwell(BS, BS).toFixed(6), 0);         // back to the bottom
+  });
+  it("agrees with the audio pacer about which half it is in", () => {
+    // The tone and the orb read the same clock; if they ever disagreed you would
+    // be watching one breath and hearing another.
+    for (let t = 0; t < BS * 3; t += 0.25) {
+      const rising = breathSwell(t + 0.05, BS) > breathSwell(t, BS);
+      const inhaling = isInhale(breathPhaseAt(t, BS));
+      // At the exact turn the derivative flips, so only assert away from it.
+      const nearTurn = Math.abs((t % (BS / 2))) < 0.1 || Math.abs((t % (BS / 2)) - BS / 2) < 0.1;
+      if (!nearTurn) assert.equal(rising, inhaling, `t=${t}: rising=${rising} inhaling=${inhaling}`);
+    }
+  });
+  it("moves slowest at the turns and fastest through the middle", () => {
+    // This is the whole reason it is a cosine and not a triangle: a linear ramp
+    // turns around with a corner exactly where a breath should be unhurried.
+    const d = (t) => Math.abs(breathSwell(t + 0.01, BS) - breathSwell(t, BS));
+    assert.ok(d(BS / 4) > d(0.001) * 5, "the middle of the inhale outruns the turn");
+    assert.ok(d(BS / 2 - 0.02) < d(BS / 4), "it settles into the top of the inhale");
+  });
+  it("repeats every breath, at any pace", () => {
+    for (const bs of [4, 6, 8, 12]) {
+      for (const t of [0.7, 2.3, 5.1]) {
+        assert.equal(+breathSwell(t, bs).toFixed(9), +breathSwell(t + bs * 3, bs).toFixed(9));
+      }
+    }
+  });
+  it("stays in range and never divides by zero", () => {
+    for (let t = 0; t < 30; t += 0.13) {
+      const v = breathSwell(t, BS);
+      assert.ok(v >= 0 && v <= 1, `${v} out of range at ${t}`);
+    }
+    assert.equal(breathSwell(5, 0), 0);
+  });
+});
+
+group("yoga — a practice is addressed by when it finished, not by its date", () => {
+  // store.js is IndexedDB-backed and cannot be imported here, so the BEHAVIOUR
+  // was verified in the browser (create, patch, reject a bad edit, delete one of
+  // two practices on the same day, open a stale link). What is worth catching
+  // statically is the rule itself coming undone: several practices a day are
+  // allowed, so a date-scoped delete takes the morning one along with the
+  // evening one. That is a silent loss with no error and nothing to notice.
+  const store = readFileSync(new URL("../js/store.js", import.meta.url), "utf8");
+  const yogaBlock = store.slice(store.indexOf("--- yoga practice log"),
+    store.indexOf("How this person practises"));
+
+  it("every mutation of the yoga log is keyed by `at`", () => {
+    assert.ok(/export async function updateYogaEntry\(at,/.test(yogaBlock));
+    assert.ok(/export async function removeYogaEntry\(at\)/.test(yogaBlock));
+    assert.ok(/export async function yogaEntryAt\(at\)/.test(yogaBlock));
+  });
+  it("nothing deletes a whole date", () => {
+    // The old removeYogaDone(iso, at) removed EVERY entry on `iso` when `at` was
+    // omitted — one optional argument between correct and destructive.
+    assert.ok(!/removeYogaDone/.test(store), "removeYogaDone is back, and it deletes by date");
+  });
+  it("the summary screen is reachable", () => {
+    const app = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+    assert.ok(/#\\\/ysummary/.test(app), "no route to a logged practice");
+    // A practice logged from three screens and openable from none was the bug.
+    for (const f of ["views/home.js", "views/week.js", "views/yoga.js"]) {
+      const src = readFileSync(new URL(`../js/${f}`, import.meta.url), "utf8");
+      assert.ok(src.includes("#/ysummary/"), `${f} shows a practice it cannot open`);
+    }
+  });
+});
+
+group("yoga — the peak's preparation stays inside its own plane block", () => {
+  // The build descends once: standing work, then floor work (or the reverse,
+  // decided by the peak). The preps used to be appended AFTER both blocks, so a
+  // standing prep for a floor peak landed alone between floor poses — the exact
+  // random walk the block structure exists to prevent, reintroduced at the tail.
+  const changes = (items) => {
+    let n = 0;
+    for (let i = 1; i < items.length; i++) if (items[i].plane !== items[i - 1].plane) n++;
+    return n;
+  };
+  it("no prep is stranded on its own plane inside the build", () => {
+    const bad = [];
+    for (const intent of YOGA_INTENTS) {
+      for (const m of intent.minutes || [intent.defaultMinutes]) {
+        for (const level of ["beginner", "advanced", "expert"]) {
+          const f = generateFlow({ intent: intent.id, minutes: m, level, limits: [] });
+          const build = f.items.filter((it) => it.phase === "build");
+          for (let i = 1; i < build.length - 1; i++) {
+            if (!build[i].prepFor) continue;
+            const lone = build[i].plane !== build[i - 1].plane && build[i].plane !== build[i + 1].plane;
+            if (lone) bad.push(`${intent.id} ${m}min ${level}: ${build[i].asanaId} (${build[i].plane}) alone`);
+          }
+        }
+      }
+    }
+    assert.deepEqual(bad, []);
+  });
+  it("the build changes plane no more than a class does", () => {
+    // Two blocks plus their preps is at most a handful of changes; a random walk
+    // is a dozen. Pinned so a future selection change cannot quietly loosen it.
+    const worst = [];
+    for (const intent of YOGA_INTENTS) {
+      for (const level of ["beginner", "advanced", "expert"]) {
+        const f = generateFlow({ intent: intent.id, minutes: intent.defaultMinutes, level, limits: [] });
+        const c = changes(f.items.filter((it) => it.phase === "build"));
+        if (c > 3) worst.push(`${intent.id} ${level}: ${c} changes`);
+      }
+    }
+    assert.deepEqual(worst, []);
   });
 });
 

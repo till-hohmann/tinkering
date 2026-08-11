@@ -31,6 +31,22 @@ import { runRoutine } from "./routine.js";
 
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 const mins = (s) => `${Math.round(s / 60)} min`;
+// Four named paces rather than a slider, because the number is meaningless on
+// its own — "6 seconds" tells you nothing, "flowing" does. Bounded by
+// BREATH_SECONDS_RANGE at both ends; the slowest is the resonance-breathing rate
+// the HRV literature converges on, which belongs to seated practice more than to
+// asana and is offered as such.
+const BREATH_PACES = [
+  { seconds: 4, label: "Brisk" },
+  { seconds: 6, label: "Flowing" },
+  { seconds: 8, label: "Slow" },
+  { seconds: 12, label: "Very slow" },
+];
+
+const shortDate = (iso) => {
+  const [y, m, d] = String(iso || "").split("-").map(Number);
+  return y ? new Date(y, m - 1, d).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : iso;
+};
 
 // The flow currently on the review screen. Held in module scope so Regenerate
 // and Start operate on the same object without a round-trip through storage.
@@ -134,6 +150,25 @@ export async function renderYoga() {
         ]))),
     ]));
 
+    // --- how fast you breathe ---
+    // BREATH_SECONDS_RANGE was imported and never used: there was no way to set
+    // this, so everyone practised at whatever the default happened to be. It
+    // belongs on the picker rather than in Settings because it changes how long
+    // every breath-counted hold runs, which is a property of the practice you
+    // are about to compose.
+    const breathSeconds = prefs.breathSeconds || BREATH_SECONDS_DEFAULT;
+    const perMin = (bs) => Math.round((60 / bs) * 10) / 10;
+    body.appendChild(el("div.card", {}, [
+      el("h2", { text: "How fast do you breathe?" }),
+      el("div.btn-row.wrap", { style: "margin-top:10px" }, BREATH_PACES.map((p) =>
+        el("button.btn" + (p.seconds === breathSeconds ? ".primary" : ""), {
+          onclick: () => { setYogaPrefs({ breathSeconds: p.seconds }); prefs.breathSeconds = p.seconds; paint(); },
+        }, p.label))),
+      el("p.note", { style: "margin-top:10px", text:
+        `${breathSeconds} seconds a breath — about ${perMin(breathSeconds)} a minute. `
+        + "Holds counted in breaths run at this pace; yin and restorative holds are counted in minutes and don't move." }),
+    ]));
+
     // --- what it counts as, and what it can stand in for ---
     // The accounting follows the CHOICE, not the intent's default — otherwise
     // this card claims "a standalone extra" while the card directly below it
@@ -158,11 +193,33 @@ export async function renderYoga() {
     }
 
     // --- history ---
+    // A LIST, NOT A SENTENCE. This used to read "12 practices logged. Last: Wake
+    // up, 10 min on 2026-08-11" — a summary of a thing you could not open. Each
+    // row now goes to the practice, which is the only route to correcting what
+    // it stood in for or deleting one you tapped through by accident.
     if (log.length) {
-      const last = log[log.length - 1];
+      const recent = log.slice(-6).reverse();
       body.appendChild(el("div.card", {}, [
-        el("h2", { text: "Recent practice" }),
-        el("p.note", { text: `${log.length} practice${log.length === 1 ? "" : "s"} logged. Last: ${intentById(last.intent) ? intentById(last.intent).label : last.intent}, ${last.minutes} min on ${last.date}.` }),
+        el("h2", { text: "Recent practices" }),
+        el("div.list", { style: "margin-top:10px" }, recent.map((e) => {
+          const li = intentById(e.intent);
+          return el("button.item", {
+            style: "text-align:left",
+            onclick: () => go(`#/ysummary/${encodeURIComponent(e.at)}`),
+          }, [
+            el("div.ico.illotile", { style: "padding:0;overflow:hidden" }, [illustration("padmasana")]),
+            el("div.meta", {}, [
+              el("div.t", { text: li ? li.label : e.intent }),
+              el("div.s", { text: `${shortDate(e.date)} · ${e.minutes} min` +
+                (e.substitutes === "strength" ? " · stood in for the session"
+                  : e.substitutes === "mobility" ? " · stood in for M&S" : "") }),
+            ]),
+            el("span.badge", { text: "›" }),
+          ]);
+        })),
+        log.length > recent.length
+          ? el("p.note", { style: "margin-top:10px", text: `${log.length} practices logged in total.` })
+          : null,
       ]));
     }
 
@@ -251,9 +308,16 @@ function replacesCard(intent, replaces, onChange) {
 // Populated by todaysSessions() before the picker paints.
 let todaysAvailable = { mobility: false, strength: false, strengthLabel: null };
 
-/** What today's plan actually offers as a replacement target. */
-async function todaysSessions() {
-  const iso = todayISO();
+/**
+ * What the plan on a GIVEN DAY offers as a replacement target.
+ *
+ * Date-aware rather than today-only because the practice summary lets you
+ * correct what a past practice stood in for, and a summary of last Tuesday that
+ * offers today's leg day is offering something that never existed. The date is
+ * resolved against the block that was (or is) live on it — `resolveDay` already
+ * works for any date, this only ever assumed otherwise.
+ */
+export async function replaceOptionsOn(iso) {
   const out = { mobility: false, strength: false, strengthLabel: null };
   try {
     const { isMobilityDay } = await import("../mobility.js");
@@ -272,8 +336,12 @@ async function todaysSessions() {
       }
     }
   } catch {}
-  todaysAvailable = out;
   return out;
+}
+
+async function todaysSessions() {
+  todaysAvailable = await replaceOptionsOn(todayISO());
+  return todaysAvailable;
 }
 
 /**
@@ -605,6 +673,13 @@ export async function renderYogaSession(intentId, minutesStr, seedStr) {
           substitutes: sub,
           poses: flow.items.filter((i) => !i.linked).length,
           breathSeconds: flow.breathSeconds,
+          // The practice itself, so the summary can show what you actually did.
+          // `asanaId`, NOT `id` — `id` is a per-instance key ("centering-0") and
+          // would make every repeat look like a different pose. Repeats are kept
+          // as repeats: three rounds of a salutation IS three rounds, and the
+          // two sides of a bilateral pose are one item here (the player splits
+          // them, the flow does not).
+          sequence: flow.items.map((it) => it.asanaId).filter(Boolean),
         });
         toast(sub === "strength"
           ? "Logged, and today's session marked replaced. The week's hard sets are unchanged."

@@ -12,9 +12,32 @@
 // 60 breaths. So a style declares one or the other, and the generator resolves
 // whichever it gets into the seconds the player actually runs on.
 
-/** Seconds per breath at a normal practice pace. Configurable per person. */
-export const BREATH_SECONDS_DEFAULT = 5;
-export const BREATH_SECONDS_RANGE = [3, 8];
+// SECONDS PER WHOLE BREATH — in and out — at a normal practice pace.
+//
+// ⚠ THE OLD DEFAULT OF 5 WAS NOT A PRACTISED BREATH. Five seconds a cycle is 12
+// breaths a minute, which is the bottom of the NORMAL RESTING range (12-20) —
+// the pacer was asking people to breathe at the rate they already breathe at,
+// and calling it yoga. Every anchor for a deliberately slowed breath is slower
+// than that:
+//
+//   · Resonance-frequency work puts the HRV peak at 4.5-7 breaths/min, most
+//     commonly 5.5 with an even in:out ratio — 9-13 seconds a cycle. That is a
+//     seated pranayama rate, not a rate you flow at.
+//   · Ujjayi as taught for vinyasa is cued at 4 in / 6 out, or 4-6 each way —
+//     8-12 seconds a cycle.
+//
+// 6 seconds (10 breaths/min) is the honest landing point for a breath you move
+// on: slower than resting, faster than seated pranayama, and it puts a
+// five-breath vinyasa hold at 30 seconds and a hatha hold at 36-60, which is
+// what those holds are in a real class. The range now REACHES the resonance
+// band at the top for someone who wants to practise there, and no longer offers
+// 3 seconds at the bottom — 20 breaths a minute is not a slow breath, it is
+// hyperventilation, and an option that exists gets picked.
+//
+// This only moves breath-COUNTED styles (vinyasa, hatha). Yin and restorative
+// count their holds in minutes and are untouched by it — see holdSecondsFor.
+export const BREATH_SECONDS_DEFAULT = 6;
+export const BREATH_SECONDS_RANGE = [4, 12];
 
 export const STYLES = {
   vinyasa: {

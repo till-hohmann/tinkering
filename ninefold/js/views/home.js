@@ -122,7 +122,13 @@ function yogaSummaryCard(e) {
   const stoodIn = e.substitutes === "strength" ? "Replaced today's session"
     : e.substitutes === "mobility" ? "Replaced today's mobility & stability"
     : null;
-  return el("div.card.tight.yogadone", {}, [
+  // TAPPABLE. This card is where you look at a practice you have just finished,
+  // so it is where you notice that it stood in for a session you went on to
+  // train anyway — and until v177 there was nowhere to go from here.
+  return el("button.card.tight.yogadone", {
+    style: "display:block;width:100%;text-align:left",
+    onclick: () => go(`#/ysummary/${encodeURIComponent(e.at)}`),
+  }, [
     el("div.row", {}, [
       el("div", { style: "flex:1;min-width:0" }, [
         el("div.label", { text: "Yoga · " + label }),
@@ -137,7 +143,10 @@ function yogaSummaryCard(e) {
       stat(String(e.poses || "–"), "poses"),
       stat("0", "hard sets"),
     ]),
-    stoodIn ? el("div.note", { style: "margin-top:12px", text: stoodIn }) : null,
+    el("div.row", { style: "margin-top:12px;align-items:baseline" }, [
+      stoodIn ? el("div.note", { style: "flex:1", text: stoodIn }) : el("div", { style: "flex:1" }),
+      el("span.note.faint", { text: "View →" }),
+    ]),
   ]);
 }
 

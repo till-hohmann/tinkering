@@ -13,6 +13,12 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 177, notes: [
+    "Tap any logged practice — on Today, in the week plan, or in the new list on the Yoga tab — to see what you did, pose by pose. You can correct how long it ran, change what it stood in for, or delete it.",
+    "Breath-paced holds now show an orb that swells as you breathe in and settles as you breathe out, instead of a ring counting down. The breath count stays in the middle.",
+    "The breath itself is slower: six seconds rather than five, which is ten a minute instead of twelve. Five was the rate you breathe at anyway. You can pick your own pace on the Yoga tab, from Brisk to Very slow.",
+    "Pausing and resuming picks the teacher up mid-passage rather than starting the pose again from its name.",
+  ] },
   { v: 176, notes: [
     "Fixed: a yoga practice could open by saying \"stretch\" instead of naming the first pose, and then stay silent for the whole session. If the app had ever been opened before the voice was published, it kept believing there was no voice.",
     "Pausing a practice now stops the teacher mid-sentence. Resuming picks the pose back up rather than talking over where you already are.",

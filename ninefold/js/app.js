@@ -26,6 +26,7 @@ import { renderExercise } from "./views/exercise.js";
 import { renderBuilder } from "./views/builder.js";
 import { renderWelcome } from "./views/welcome.js";
 import { renderYoga, renderYogaBuild, renderYogaSession } from "./views/yoga.js";
+import { renderYSummary } from "./views/ysummary.js";
 
 // route table: hash pattern -> handler(params); tab = which bottom-nav tab is
 // active (null = a full-screen flow / drill-down, so the tab bar is hidden).
@@ -45,6 +46,10 @@ const routes = [
   [/^#\/yoga$/, () => renderYoga(), "yoga"],
   [/^#\/yoga\/build\/(\w+)\/(\d+)(?:\/(\d+))?$/, (m) => renderYogaBuild(m[1], m[2], m[3]), "yoga"],
   [/^#\/yoga\/do\/(\w+)\/(\d+)(?:\/(\d+))?$/, (m) => renderYogaSession(m[1], m[2], m[3]), null],
+  // A logged practice, addressed by its completion timestamp — several a day are
+  // allowed, so the date cannot identify one. The id is an ISO string with
+  // colons and dots in it, hence `(.+)` and the decode.
+  [/^#\/ysummary\/(.+)$/, (m) => renderYSummary(decodeURIComponent(m[1])), null],
   [/^#\/progress$/, () => renderProgress(), "progress"],
   [/^#\/body$/, () => renderComposition(), "body"],
   [/^#\/records$/, () => renderRecords(), null],

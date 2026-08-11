@@ -100,8 +100,43 @@ export async function prefetch(level, parts) {
 }
 
 let sequenceToken = 0;
-/** Stop whatever is currently being said. */
+
+/**
+ * WHERE THE TEACHER GOT TO. Kept across a stop so a pause can resume the passage
+ * instead of restarting it — being told the whole pose again, from the name
+ * down, every time you pause to adjust a strap is worse than not being told at
+ * all. Cleared when a passage finishes on its own.
+ *
+ * `i` is the sentence that was in flight, and resuming REPLAYS it from its
+ * start rather than from the exact offset it was cut at. A sentence is two to
+ * four seconds; resuming mid-word to save one of them is a bad trade.
+ */
+let pending = null;   // { level, parts, i }
+
+/** Stop whatever is being said. The passage stays resumable. */
 export function stopNarration() { sequenceToken++; speakClip.stopAll(); }
+
+/** Stop, and forget the passage. For teardown, where there is nothing to go back to. */
+export function resetNarration() { stopNarration(); pending = null; }
+
+/**
+ * Stage a passage as resumable WITHOUT speaking it — for a pose entered while
+ * the practice is paused. Pause has to mean silence, but the pose you land on
+ * is still the pose you will be in when you resume, so it is what Resume owes
+ * you.
+ */
+export function stageNarration(level, parts) {
+  stopNarration();
+  pending = (parts && parts.length) ? { level, parts, i: 0 } : null;
+}
+
+/** Pick the interrupted passage back up. False when there was nothing pending. */
+export function resumeNarration() {
+  if (!pending || pending.i >= pending.parts.length) return false;
+  const { level, parts, i } = pending;
+  speak(level, parts, { from: i });
+  return true;
+}
 
 /**
  * Speak a passage, one sentence-clip after another.
@@ -111,18 +146,24 @@ export function stopNarration() { sequenceToken++; speakClip.stopAll(); }
  * about a pose you are no longer in. Each clip checks the token it started with
  * and bails if the practice has moved on.
  */
-export async function speak(level, parts, { gap = 0.25 } = {}) {
+export async function speak(level, parts, { gap = 0.25, from = 0 } = {}) {
   // The membership set belongs to ONE level. Testing a beginner sentence against
   // the advanced manifest would quietly skip every line as "never rendered".
   if (!available || manifestLevel !== level || !audioAvailable()) return;
   const token = ++sequenceToken;
-  for (const p of parts || []) {
+  const list = parts || [];
+  for (let i = from; i < list.length; i++) {
     if (token !== sequenceToken) return;
-    const id = await clipId(p.text);
+    // Recorded BEFORE the clip plays, so a stop lands on the sentence that was
+    // actually cut rather than on the one after it.
+    pending = { level, parts: list, i };
+    const id = await clipId(list[i].text);
     if (!available.has(id)) continue;           // never rendered — skip it silently
     const buf = await fetchClip(level, id);
     if (!buf || token !== sequenceToken) continue;
     await speakClip.play(buf, gap);
     if (token !== sequenceToken) return;
   }
+  // Ran to the end: there is nothing left to resume.
+  if (token === sequenceToken) pending = null;
 }
