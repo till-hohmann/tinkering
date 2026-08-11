@@ -685,6 +685,8 @@ img.exphoto { object-fit: cover; border-radius: inherit; background: var(--bg-el
 .poserow .posename { font-size: 0.9rem; font-weight: 600; }
 .poserow .posesans { font-size: 0.7rem; color: var(--text-faint); font-style: italic; }
 .poserow .posehold { font-size: 0.76rem; color: var(--text-dim); white-space: nowrap; }
+/* A completed practice, given the same weight on Today as a logged workout. */
+.card.yogadone { border-color: rgba(47,230,166,.32); background: rgba(47,230,166,.05); }
 /* An error-level QC finding is the one thing here that stops you starting. */
 /* Arc summary: one row per phase, the peak picked out. */
 .phaserow { display: flex; align-items: baseline; gap: 10px; padding: 7px 0;

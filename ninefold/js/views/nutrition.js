@@ -7,7 +7,7 @@
 import { getNutrition, setNutrition, getBodyweight, getProteinPerKg, getDeficitTarget } from "../store.js";
 import { todayISO } from "../model.js";
 import * as M from "../model.js";
-import { el, mount, go, backBtn, addActionBar } from "../ui.js";
+import { el, mount, go, backBtn, addActionBar, setChildren } from "../ui.js";
 import { burnFor, provider, has, CAP } from "../health/index.js";
 
 const inStyle = "width:120px;text-align:right;font-size:1.2rem;font-weight:700;padding:10px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)";
@@ -76,7 +76,7 @@ export async function renderNutrition(dateParam) {
       el("div.metric.sm", { style: color ? "color:" + color : "", text: value }),
       el("div.label", { style: "margin-top:5px", text: label }),
     ]);
-    summary.replaceChildren(
+    setChildren(summary,
       el("div.row", {}, [
         el("div.label", { text: isToday ? "Energy balance today" : "Energy balance" }),
         el("span.spacer"),

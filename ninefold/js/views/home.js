@@ -6,10 +6,11 @@ import { getActiveProgram, getAllPrograms, resolveDay, getSessionOnDate, getSess
   mobilityDoneOn, getMobilityLog, yogaOn } from "../store.js";
 import { isMobilityDay, sessionFor, MOBILITY_TITLE, MOBILITY_MINUTES, MOBILITY_DAYS } from "../mobility.js";
 import { intentById } from "../yoga/intents.js";
+import { LEVELS } from "../yoga/levels.js";
 import { runKindLabel } from "../cardio-intel.js";
 import { todayISO, WEEKDAYS } from "../model.js";
 import * as M from "../model.js";
-import { el, mount, go, countUp } from "../ui.js";
+import { el, mount, go, countUp, setChildren } from "../ui.js";
 import { illustration, workoutFigure } from "../illustrations.js";
 import { ringStat } from "../components/charts.js";
 import { orbEl } from "../components/orb.js";
@@ -34,7 +35,7 @@ function buildOrbHero(host, kicker, st, makeMini) {
   host.className = "orbhero";
   const orb = orbEl({ pct: st.pct, value: st.value, unit: st.unit, label: st.label });
   if (makeMini) orb.appendChild(makeMini());
-  host.replaceChildren(...[
+  setChildren(host, ...[
     el("div.label.orbkick", { text: kicker }),
     orb,
     el("div.orb-verdict" + (st.verdictCls ? "." + st.verdictCls : ""), { text: st.verdict }),
@@ -103,6 +104,42 @@ async function fillFuelToday(card, iso) {
 }
 
 const hasContent = (s) => (s && ((s.strengthResult && s.strengthResult.length) || s.cardioResult));
+
+/**
+ * A completed practice, as a session summary rather than a footnote.
+ *
+ * Same weight on the screen as a logged workout: what it was, how long, what the
+ * peak was, and — the part that matters — what it stood in for. A practice that
+ * replaced the lifting day says so here, so the two cards tell one story instead
+ * of two contradictory ones.
+ */
+function yogaSummaryCard(e) {
+  const label = (intentById(e.intent) || {}).label || e.intent;
+  const stat = (v, l) => el("div", {}, [
+    el("div.metric.sm", { text: v }),
+    el("div.label", { style: "margin-top:5px", text: l }),
+  ]);
+  const stoodIn = e.substitutes === "strength" ? "Replaced today's session"
+    : e.substitutes === "mobility" ? "Replaced today's mobility & stability"
+    : null;
+  return el("div.card.tight.yogadone", {}, [
+    el("div.row", {}, [
+      el("div", { style: "flex:1;min-width:0" }, [
+        el("div.label", { text: "Yoga · " + label }),
+        el("div.note", { style: "margin-top:3px",
+          text: (LEVELS[e.level] ? LEVELS[e.level].label + " · " : "") +
+            (e.peakName ? "peak: " + e.peakName : (e.style || "")) }),
+      ]),
+      el("span.badge.accent", { text: "✓ Done" }),
+    ]),
+    el("div.statgrid.three", { style: "margin-top:14px" }, [
+      stat(String(e.minutes), "minutes"),
+      stat(String(e.poses || "–"), "poses"),
+      stat("0", "hard sets"),
+    ]),
+    stoodIn ? el("div.note", { style: "margin-top:12px", text: stoodIn }) : null,
+  ]);
+}
 
 function prettyDate(iso) {
   const [y, m, d] = iso.split("-").map(Number);
@@ -259,6 +296,10 @@ export async function renderHome() {
   }
 
   const iso = todayISO();
+  // Today's practices, read once: the labels below and the summary cards both
+  // need them, and a practice can replace a session it appears above.
+  const doneYoga = (!homeProfile || homeProfile.features.yoga !== false) ? await yogaOn(iso) : [];
+  const replacedByYoga = (kind) => doneYoga.find((y) => y.substitutes === kind) || null;
   const { weekNumber, weekday, week, day, template } = resolveDay(program, iso);
   const onWeekday = (s) => (template ? s.weekday === weekday : true);
   const existing = await getSessionOnDate(program.id, iso);
@@ -451,6 +492,13 @@ export async function renderHome() {
       ]),
       seqTip ? el("div.seqtip", {}, [el("span.seqtip-i", { text: "↯" }), el("span", { text: seqTip })]) : null,
       vo2Tip ? el("div.seqtip", {}, [el("span.seqtip-i", { text: "◎" }), el("span", { text: vo2Tip })]) : null,
+      // A practice that stood in for this session says so ON the session, not
+      // only on its own card. Two cards telling different stories about the same
+      // day is how a log stops being trusted.
+      replacedByYoga("strength") ? el("div.seqtip", {}, [
+        el("span.seqtip-i", { text: "☯" }),
+        el("span", { text: `Replaced by yoga today — ${(intentById(replacedByYoga("strength").intent) || {}).label || "a practice"}, ${replacedByYoga("strength").minutes} min. No hard sets, so this session's volume is still outstanding.` }),
+      ]) : null,
     ]));
 
     if (done) {
@@ -484,6 +532,7 @@ export async function renderHome() {
   // main session, logged to its own cloud-synced list. Shows ✓ once done today.
   if (showMobility && isMobilityDay(weekday)) {
     const mobDone = await mobilityDoneOn(iso);
+    const mobReplaced = replacedByYoga("mobility");
     const sess = sessionFor(weekday);
     children.push(el("div.card.tight", {}, [
       el("div.row", {}, [
@@ -491,9 +540,13 @@ export async function renderHome() {
           el("div.label", { text: `${MOBILITY_TITLE} · ${sess.key}` }),
           el("div.note", { style: "margin-top:3px", text: `${sess.title} — ${sess.focus} · ~${MOBILITY_MINUTES} min` }),
         ]),
-        mobDone ? el("span.badge.accent", { text: "✓ Done" }) : null,
+        mobDone ? el("span.badge.accent", { text: "✓ Done" })
+          : mobReplaced ? el("span.badge.accent", { text: "Replaced by yoga" }) : null,
       ]),
-      mobDone
+      mobReplaced && !mobDone
+        ? el("p.note", { style: "margin:10px 0 0",
+            text: `${(intentById(mobReplaced.intent) || {}).label || "A practice"}, ${mobReplaced.minutes} min, did this job today.` })
+        : mobDone
         ? el("div.btn-row", { style: "margin-top:11px" }, [
             el("button.btn", { onclick: () => go(`#/msummary/${iso}`) }, "View summary"),
             el("button.btn", { onclick: () => go(`#/msummary/${iso}`) }, "Redo"),
@@ -507,19 +560,22 @@ export async function renderHome() {
   // substitutes a session, replaces the mobility work, or goes on top, and which
   // of the three is a decision made on the day, not one the plan can hold.
   if (!homeProfile || homeProfile.features.yoga !== false) {
-    const doneToday = await yogaOn(iso);
+    // EVERY COMPLETED PRACTICE GETS A SUMMARY, the same as a workout does. A
+    // one-line note under a card was the practice being treated as an accessory
+    // to the "real" training, which is exactly the framing the whole feature is
+    // meant to avoid.
+    for (const e of doneYoga) children.push(yogaSummaryCard(e));
     children.push(el("div.card.tight", {}, [
       el("div.row", {}, [
         el("div", { style: "flex:1;min-width:0" }, [
           el("div.label", { text: "Yoga" }),
-          el("div.note", { style: "margin-top:3px", text: doneToday.length
-            ? doneToday.map((e) => `${(intentById(e.intent) || {}).label || e.intent} · ${e.minutes} min`).join(" · ")
+          el("div.note", { style: "margin-top:3px", text: doneYoga.length
+            ? "Another one is always allowed."
             : "Instead of today's session, instead of the mobility work, or on top." }),
         ]),
-        doneToday.length ? el("span.badge.accent", { text: "✓ Done" }) : null,
       ]),
       el("button.btn.block", { style: "margin-top:11px", onclick: () => go("#/yoga") },
-        doneToday.length ? "Practise again" : "Compose a practice"),
+        doneYoga.length ? "Practise again" : "Compose a practice"),
     ]));
   }
 

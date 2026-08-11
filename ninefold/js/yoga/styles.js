@@ -177,11 +177,17 @@ export const MAX_ITEM_SHARE = 0.22;
 export const MAX_TRANSITION_SHARE = 0.04;
 
 /** The hold band a style is working to for a session of `targetSeconds`. */
-export function effectiveHoldBand(style, { targetSeconds = 0, breathSeconds = BREATH_SECONDS_DEFAULT } = {}) {
+export function effectiveHoldBand(style, { targetSeconds = 0, breathSeconds = BREATH_SECONDS_DEFAULT,
+  holdScale = 1 } = {}) {
   let lo, hi;
   if (style.holdSeconds) [lo, hi] = style.holdSeconds;
   else if (style.holdBreaths) [lo, hi] = style.holdBreaths.map((b) => b * breathSeconds);
   else return null;
+  // The experience level stretches or shortens every hold, so the band it is
+  // graded against has to move with it — otherwise an expert's deliberately
+  // longer holds are reported as a defect in the style rather than as the point
+  // of being an expert.
+  lo *= holdScale; hi *= holdScale;
   const cap = targetSeconds ? targetSeconds * MAX_ITEM_SHARE : Infinity;
   return [Math.min(lo, cap), Math.min(hi, cap)];
 }

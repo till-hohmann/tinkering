@@ -50,6 +50,9 @@ import { generateFlow } from "../js/yoga/generate.js";
 import { primarySeries, checkSeries } from "../js/yoga/ashtanga.js";
 import { auditFlow } from "../js/yoga/quality.js";
 import { breathsRemaining, breathPhaseAt, isInhale } from "../js/yoga/breath.js";
+import { checkLevels } from "../js/yoga/levels.js";
+import { checkScript, entryScript, exitScript, salutationScript, allHoldPhrases } from "../js/yoga/script.js";
+import { ASANAS } from "../js/yoga/asanas.js";
 import { flowSeconds as flowSecondsOf, elapsedAt as flowElapsedAt } from "../js/yoga/compose.js";
 
 let passed = 0, failed = 0;
@@ -1904,6 +1907,130 @@ group("yoga — a hold is counted in breaths, not seconds", () => {
   it("survives a breath rate of zero rather than dividing by it", () => {
     assert.equal(breathsRemaining(25, 0), 0);
     assert.equal(breathPhaseAt(25, 0), 0);
+  });
+});
+
+group("yoga — the three levels are genuinely three levels", () => {
+  it("the level definitions hold together", () => {
+    assert.deepEqual(checkLevels(), []);
+  });
+  it("every pose has spoken cues, and they pass their own rules", () => {
+    assert.deepEqual(checkScript({ asanas: ASANAS }), []);
+  });
+  it("a beginner is never offered a pose above their ceiling", () => {
+    const f = generateFlow({ intent: "strong_flow", minutes: 45, limits: [], level: "beginner", seed: 3 });
+    const tooHard = f.items.filter((it) => (asanaById(it.asanaId) || {}).level > 1);
+    assert.deepEqual(tooHard.map((t) => t.asanaId), []);
+  });
+  it("beginner, advanced and expert produce DIFFERENT words for the same pose", () => {
+    const item = { asanaId: "utthita_trikonasana", side: "Left", holdBreaths: 5, durationSeconds: 25 };
+    const b = entryScript(item, "beginner", 0).text;
+    const a = entryScript(item, "advanced", 0).text;
+    const e = entryScript(item, "expert", 0).text;
+    assert.notEqual(b, a, "beginner and advanced must differ");
+    assert.notEqual(a, e, "advanced and expert must differ");
+  });
+  it("NO level ever speaks the Sanskrit name", () => {
+    // It is shown on screen, correctly spelled, and never said: the speech
+    // engine mangles it badly enough to teach the wrong sound, and edge-tts
+    // escapes SSML so <phoneme> can't fix it.
+    for (const a of ASANAS) {
+      if (!a.sanskrit || a.sanskrit.toLowerCase() === (a.name || "").toLowerCase()) continue;
+      for (const lvl of ["beginner", "advanced", "expert"]) {
+        const t = entryScript({ asanaId: a.id, holdBreaths: 5, durationSeconds: 25 }, lvl, 0).text;
+        assert.ok(!t.includes(a.sanskrit), `${a.id}: ${lvl} heard "${a.sanskrit}"`);
+      }
+    }
+  });
+  it("a beginner hears no jargon", () => {
+    for (const a of ASANAS) {
+      const t = entryScript({ asanaId: a.id, holdBreaths: 5, durationSeconds: 25 }, "beginner", 0).text;
+      for (const j of ["mula bandha", "drishti", "uddiyana"])
+        assert.ok(!t.toLowerCase().includes(j), `${a.id}: beginner heard "${j}"`);
+    }
+  });
+  it("a beginner is never given more than two alignment cues", () => {
+    for (const a of ASANAS) {
+      const parts = entryScript({ asanaId: a.id, holdBreaths: 5, durationSeconds: 25 }, "beginner", 0).parts;
+      const cues = parts.filter((p) => p.role === "cue").length;
+      assert.ok(cues <= 2, `${a.id}: ${cues} cues for a beginner`);
+    }
+  });
+  it("every level is still offered the way out", () => {
+    for (const lvl of ["beginner", "advanced", "expert"]) {
+      const parts = entryScript({ asanaId: "eka_pada_rajakapotasana", holdBreaths: 8, durationSeconds: 40 }, lvl, 0).parts;
+      assert.ok(parts.some((p) => p.role === "easier"), `${lvl} was not offered the way out`);
+    }
+  });
+  it("the hold length is always spoken", () => {
+    for (const lvl of ["beginner", "advanced", "expert"]) {
+      const parts = entryScript({ asanaId: "vrksasana", holdBreaths: 6, durationSeconds: 30 }, lvl, 0).parts;
+      const hold = parts.find((p) => p.role === "hold");
+      assert.ok(hold && /6 breaths/.test(hold.text), `${lvl}: hold length not spoken`);
+    }
+  });
+  it("an expert holds longer and moves faster than a beginner", () => {
+    const mk = (lvl) => generateFlow({ intent: "hips_low_back", minutes: 20, limits: [], level: lvl, seed: 9 });
+    const avg = (f, k) => f.items.reduce((s, it) => s + it[k], 0) / f.items.length;
+    assert.ok(avg(mk("expert"), "durationSeconds") > avg(mk("beginner"), "durationSeconds"));
+    assert.ok(avg(mk("expert"), "transitionSeconds") < avg(mk("beginner"), "transitionSeconds"));
+  });
+});
+
+group("yoga — the narration has no silent gaps", () => {
+  // THE RENDER PIPELINE SWEEPS; THIS ASSERTS THE SWEEP IS COMPLETE.
+  //
+  // The first render inferred hold sentences from a hand-picked list of breath
+  // counts, which missed odd counts and every time-based phrasing that yin and
+  // restorative produce. Poses reached the mat with nobody saying how long you
+  // were staying, and only a by-hand check against the manifest found it. This
+  // makes the gap a test failure instead.
+  const HOLD_SET = new Set(allHoldPhrases());
+  it("every hold sentence a real practice produces is one the renderer emits", () => {
+    const missing = new Set();
+    for (const level of ["beginner", "advanced", "expert"]) {
+      for (const intent of ["hips_low_back", "strong_flow", "wind_down", "sleep", "post_run", "full_body"]) {
+        for (const minutes of [10, 20, 45]) {
+          const f = generateFlow({ intent, minutes, limits: [], level, seed: 21 });
+          for (const it of f.items) {
+            if (it.flowRound) continue;
+            const parts = entryScript({ asanaId: it.asanaId, side: it.bilateral ? "Left" : null,
+              holdBreaths: it.holdBreaths, durationSeconds: it.durationSeconds, dynamic: it.dynamic },
+              level, 0).parts;
+            const hold = parts.find((p) => p.role === "hold");
+            if (hold && !HOLD_SET.has(hold.text)) missing.add(hold.text);
+          }
+        }
+      }
+    }
+    assert.deepEqual([...missing], [], "hold sentences the renderer would never have produced");
+  });
+  it("enumerates breath counts, seconds and minutes", () => {
+    const all = allHoldPhrases().join(" | ");
+    assert.ok(/5 breaths/.test(all) && /7 breaths/.test(all), "odd breath counts included");
+    assert.ok(/seconds/.test(all), "second-based holds included");
+    assert.ok(/minutes/.test(all), "minute-based holds included");
+  });
+});
+
+group("yoga — a salutation is one step, not six countdowns", () => {
+  const f = generateFlow({ intent: "strong_flow", minutes: 45, limits: [], level: "advanced", seed: 4242 });
+  it("produces no five-second poses", () => {
+    const tiny = f.items.filter((it) => it.durationSeconds < 15);
+    assert.deepEqual(tiny.map((t) => `${t.name} ${t.durationSeconds}s`), []);
+  });
+  it("a salutation round carries its movements", () => {
+    const rounds = f.items.filter((it) => it.flowRound);
+    assert.ok(rounds.length > 0, "there is at least one salutation round");
+    for (const r of rounds) {
+      assert.ok(r.moves && r.moves.length >= 5, `${r.name}: ${(r.moves || []).length} movements`);
+      assert.ok(r.durationSeconds >= r.moves.length * 4, "a round lasts as long as its movements");
+    }
+  });
+  it("the round is narrated as one passage", () => {
+    const s = salutationScript("A", 2, 5, "advanced");
+    assert.ok(/Round 2/.test(s.text));
+    assert.ok(/Inhale/.test(s.text) && /Exhale/.test(s.text), "the movements are called");
   });
 });
 

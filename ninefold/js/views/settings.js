@@ -25,7 +25,7 @@ import { weightLabel, weightValue, weightToKg, lengthLabel, lengthValue, lengthT
   METRIC_EQUIPMENT, IMPERIAL_EQUIPMENT } from "../units.js";
 import { resolvedConfig, setRuntimeConfig, hasBackup } from "../config.js";
 import * as db from "../db.js";
-import { el, mount, go } from "../ui.js";
+import { el, mount, go, setChildren } from "../ui.js";
 import { cloudPull, cloudCheck, getCloudHealth } from "../cloudsync.js";
 // Baked in rather than read at runtime: an iOS standalone PWA exposes neither
 // caches.keys() nor SW messaging to the page, so the code reports its own version.
@@ -85,7 +85,7 @@ export async function renderSettings() {
   const preview = el("div", { style: "margin-top:14px" });
   function readInputs() { return inputs.map((i) => Math.round(M.parseNum(i.value))); }
   function renderPreview(b) {
-    preview.replaceChildren(...zonesFromBounds(b).map((z) => el("div.zrow", {}, [
+    setChildren(preview, ...zonesFromBounds(b).map((z) => el("div.zrow", {}, [
       el("span.zchip.z" + z.z, { text: "Z" + z.z }),
       el("span", { style: "flex:1;font-weight:600", text: z.name }),
       el("span.tnum.dim", { text: z.loBpm == null ? `< ${b[0]} bpm` : `${z.loBpm}–${z.hiBpm} bpm` }),
@@ -491,7 +491,7 @@ export async function renderSettings() {
         ...(rows.length ? rows : [el("p.note", { style: "margin:0", text: "Connected, but nothing recent came back yet." })]),
       );
     } catch (e) {
-      trkLatest.replaceChildren(el("p.note", { style: "margin:10px 0 0", text: `Couldn't load ${trk.label} data: ` + (e.message || "error") }));
+      setChildren(trkLatest, el("p.note", { style: "margin:10px 0 0", text: `Couldn't load ${trk.label} data: ` + (e.message || "error") }));
     }
   }
   refreshTracker();   // fire-and-forget; updates the live nodes once it resolves
@@ -1129,7 +1129,7 @@ export async function renderSettings() {
     const typed = el("input", { type: "text", placeholder: "DELETE",
       style: "width:100%;padding:11px 13px;background:var(--bg-elev2);border:1px solid var(--red);border-radius:11px;color:var(--text);font-size:.95rem;text-align:center;letter-spacing:.12em" });
     const cfgHasBackup = hasBackup(cfg0);
-    dangerBody.replaceChildren(
+    setChildren(dangerBody,
       el("p.note", { style: "margin-top:0;color:var(--red)", text:
         `This deletes ${sessions.length} session${sessions.length === 1 ? "" : "s"} and ${programs.length} program${programs.length === 1 ? "" : "s"}. It cannot be undone.` }),
       cfgHasBackup

@@ -24,6 +24,7 @@ import { cueTick, cueItemStart, cueItemEnd, cueRoutineDone, say, muteToggle,
   cueInhale, cueExhale } from "../components/sound.js";
 import { lockButton, closeScreenLock } from "../components/screenlock.js";
 import { breathsRemaining, breathPhaseAt, isInhale } from "../yoga/breath.js";
+import { loadNarration, narrationReady, speak, prefetch, stopNarration } from "../yoga/narrate.js";
 
 let wakeLock = null;
 async function requestWake() {
@@ -171,7 +172,7 @@ export function runRoutine(container, def, program, opts = {}) {
   registerCleanup(() => {
     if (raf) cancelAnimationFrame(raf);
     if (extendRaf) cancelAnimationFrame(extendRaf);
-    clearRunTimeline(); releaseWake(); endRunAudio(); closeScreenLock();
+    clearRunTimeline(); releaseWake(); endRunAudio(); closeScreenLock(); stopNarration();
   });
 
   function fmt(s) {
@@ -344,6 +345,14 @@ export function runRoutine(container, def, program, opts = {}) {
   // stops), a +15s, an Extend, and the screen going off and coming back: an
   // independent timer would drift out of step with the pose it is pacing, which
   // is worse than no pacer at all.
+  // THE TEACHER'S VOICE. opts.narrate = { level, entryFor(step), exitFor(step) }
+  // supplied by the yoga session view; absent for the mobility routine and the
+  // warm-ups, which keep their own short cues.
+  const narrate = opts.narrate || null;
+  let narrationOn = false;
+  if (narrate) loadNarration(narrate.level).then((ok) => { narrationOn = ok; });
+  let saidExitFor = -1;
+
   const breathSeconds = def.breathSeconds || 0;
   const isBreathPaced = (step) => !!(breathSeconds && step && step.type === "timed"
     && step.item.breathPaced && step.item.holdBreaths);
@@ -382,6 +391,14 @@ export function runRoutine(container, def, program, opts = {}) {
     }
     ring.style.setProperty("--p", `${Math.max(0, Math.min(100, dur > 0 ? (rem / dur) * 100 : 0))}%`);
     ring.classList.toggle("transition", step.type === "transition");
+    // "One more breath, then we move on" — spoken as the LAST breath begins, so
+    // it lands while there is still a breath to take rather than as a farewell.
+    if (narrate && narrationOn && step.type === "timed" && !paused && idx !== saidExitFor
+        && breathSeconds && rem > 0 && rem <= breathSeconds * 1.15 && dur > breathSeconds * 2) {
+      saidExitFor = idx;
+      const parts = narrate.exitFor(step, idx);
+      if (parts) speak(narrate.level, parts);
+    }
     const whole = Math.ceil(rem);
     // The 3-2-1 tick is for a clock. On a breath-paced hold it fights the pacer,
     // and "hurry up" is the opposite of what the last breath of a pose wants.
@@ -427,7 +444,22 @@ export function runRoutine(container, def, program, opts = {}) {
     endHoldBtn.style.display = tracked(step) ? "" : "none";
     const sayLive = !stepOpts.silent && !document.hidden;
     const kind = cueKindOf(step.item);
-    if (step.type === "transition") { if (sayLive) say("position"); haptic(10); }
+    // WITH A NARRATOR, SHE IS THE CUE. The old behaviour borrowed the warm-up's
+    // "stretch" clip for every pose, which announced "stretch" over a warrior.
+    if (narrate && narrationOn && step.type === "timed") {
+      stopNarration();
+      haptic(15);
+      saidExitFor = -1;
+      if (!stepOpts.silent) {
+        const parts = narrate.entryFor(step, idx);
+        if (parts) speak(narrate.level, parts);
+      }
+      // Warm the NEXT pose's clips while this one is being held, so the voice
+      // never waits on the network in the middle of a practice.
+      const nx = steps[idx + 1] && steps[idx + 1].type === "transition" ? steps[idx + 2] : steps[idx + 1];
+      if (nx && nx.type === "timed") prefetch(narrate.level, narrate.entryFor(nx, idx + 1) || []);
+    }
+    else if (step.type === "transition") { if (sayLive && !narrate) say("position"); haptic(10); }
     else if (kind === "hold") { if (sayLive) say("stretch"); haptic(20); }
     else if (kind === "flow") { haptic(10); }        // linked movement: no announcement
     else if (kind === "rest") { /* savasana — nothing at all */ }
@@ -520,6 +552,7 @@ export function runRoutine(container, def, program, opts = {}) {
     closeScreenLock();
     releaseWake();
     endRunAudio();
+    stopNarration();
     cueRoutineDone();
     clear(container);
     const msg = rounds > 1 ? `Complete (${rounds} rounds)` : "Complete";
@@ -541,6 +574,7 @@ export function runRoutine(container, def, program, opts = {}) {
     closeScreenLock();
     releaseWake();
     endRunAudio();
+    stopNarration();
     onComplete && onComplete({ completed, holds: holdList() });
   }
 

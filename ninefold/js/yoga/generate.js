@@ -27,6 +27,7 @@ import { STYLES, styleById, holdSecondsFor, holdBreathsFor, BREATH_SECONDS_DEFAU
 import { intentById, emphasisFor, accountingFor } from "./intents.js";
 import { primarySeries } from "./ashtanga.js";
 import { rng, seedFrom, resolvePose, REPEATABLE, itemSeconds, flowSeconds } from "./compose.js";
+import { levelById, normaliseLevel, poseCeiling } from "./levels.js";
 
 // Re-exported so callers that think of these as "the generator's" keep working;
 // they live in compose.js because the authored Primary Series needs them too.
@@ -67,18 +68,57 @@ const SURYA_A = ["urdhva_hastasana", "uttanasana", "ardha_uttanasana", "chaturan
 const SURYA_B = ["utkatasana", "uttanasana", "ardha_uttanasana", "chaturanga",
   "urdhva_mukha", "adho_mukha", "virabhadrasana_1", "chaturanga", "urdhva_mukha", "adho_mukha"];
 
-function salutationItems(list, ctx, { holdLast = 5 } = {}) {
-  const out = [];
-  list.forEach((id, i) => {
+/**
+ * ONE ROUND OF A SALUTATION IS ONE STEP, NOT SIX.
+ *
+ * Each movement genuinely is one breath — that is what "one breath, one
+ * movement" means — but showing six consecutive five-second countdowns is not
+ * how anybody experiences a sun salutation, and it was the first thing that
+ * looked wrong on the mat. A teacher calls the movements WHILE you flow; the
+ * round is the unit, and the movements are narration inside it.
+ *
+ * So the round becomes a single timed item whose duration is the sum of its
+ * movements, carrying the movement list for the player to show and the voice to
+ * call. The last shape (downward dog) keeps its own held step, because that one
+ * genuinely is a hold.
+ */
+function salutationItems(list, ctx, { holdLast = 5, variant = "A", round = 1, rounds = 1 } = {}) {
+  const moves = [];
+  for (const id of list.slice(0, -1)) {
     const a = resolvePose(id, ctx);
-    if (!a) return;
-    const last = i === list.length - 1;
-    out.push(makeItem(a, ctx, {
-      phase: "warmup",
-      breaths: last ? holdLast : 1,
-      linked: !last,               // one breath, one movement — no transition pause
-    }));
-  });
+    if (a) moves.push({ id: a.id, name: a.name, art: a.art });
+  }
+  const lastPose = resolvePose(list[list.length - 1], ctx);
+  const out = [];
+
+  if (moves.length) {
+    // One breath per movement, at the practitioner's own breath rate.
+    const seconds = moves.length * ctx.breathSeconds;
+    // The first RESOLVED movement, not the first named one: a shoulder or a
+    // wrist can make the opening shape unavailable, and `moves` already holds
+    // only what survived the substitution chain.
+    const first = byId(moves[0].id);
+    const it = makeItem(first, ctx, { phase: "warmup", breaths: moves.length });
+    it.durationSeconds = Math.max(4, Math.round(seconds));
+    it.holdBreaths = moves.length;
+    it.transitionSeconds = round === 1 ? ctx.style.transitionSeconds : 0;
+    it.name = `Sun salutation ${variant}`;
+    it.sanskrit = `Surya Namaskara ${variant}`;
+    it.salutation = variant;
+    it.round = round;
+    it.rounds = rounds;
+    it.moves = moves;              // what the player shows and the voice calls
+    it.linked = false;             // it is a step now, not a fragment of one
+    it.flowRound = true;
+    it.bilateral = false;
+    out.push(it);
+  }
+  if (lastPose) {
+    const hold = makeItem(lastPose, ctx, { phase: "warmup", breaths: holdLast });
+    hold.salutation = variant;
+    hold.round = round;
+    out.push(hold);
+  }
   return out;
 }
 
@@ -126,12 +166,19 @@ function makeItem(asana, ctx, { phase, breaths = null, t = 0.5, linked = false }
     bilateral: asana.bilateral,
     intensity: asana.intensity,
     holdBreaths: linked ? 1 : holdBreaths,
-    durationSeconds: Math.max(3, Math.round(Math.min(seconds, capSeconds))),
+    // The level scales the hold and the transition: an expert holds longer and
+    // moves between shapes faster, a beginner the reverse — more time to arrive
+    // somewhere they have not been, less time spent there.
+    // Savasana is EXEMPT: it is already computed as a proportion of the finished
+    // practice, so scaling it again by the level pushed it straight out of the
+    // 10-20% band it was just derived to sit inside.
+    durationSeconds: Math.max(3, Math.round(Math.min(
+      seconds * (asana.id === "savasana" ? 1 : ((ctx.L && ctx.L.holdScale) || 1)), capSeconds))),
     dynamic: !!asana.dynamic,
     plane: asana.plane,
     // A vinyasa's linked movements have NO transition — that is what "one breath,
     // one movement" means. A change to or from the floor needs real time.
-    transitionSeconds: Math.round(Math.min(rawTrans, capTrans)),
+    transitionSeconds: Math.round(Math.min(rawTrans * ((ctx.L && ctx.L.transitionScale) || 1), capTrans)),
     linked,
   };
 }
@@ -272,26 +319,33 @@ const DURATION_FIT_TOLERANCE = 0.08;
  * @param {number} [o.seed]
  */
 export function generateFlow({ intent: intentId, minutes, limits = [], style: styleOverride = null,
-  level = 2, breathSeconds = BREATH_SECONDS_DEFAULT, seed = 1 } = {}) {
+  level = "advanced", breathSeconds = BREATH_SECONDS_DEFAULT, seed = 1 } = {}) {
   const intent = intentById(intentId);
   if (!intent) throw new Error(`unknown intent "${intentId}"`);
   const style = styleById(styleOverride || intent.style);
   if (!style) throw new Error(`unknown style "${styleOverride || intent.style}"`);
 
   // A fixed series is fixed by definition — nothing here composes it.
-  if (style.authored) return primarySeries({ limits, level, breathSeconds, minutes });
+  // A named level ("beginner"), with the numeric pose ceiling derived from it.
+  // The first version passed a bare 1/2/3 around, which meant the number had to
+  // mean the same thing to the pose filter, the substitution chain and the
+  // narration — three things that want to diverge.
+  const levelId = normaliseLevel(level);
+  const L = levelById(levelId);
+  const ceiling = poseCeiling(levelId);
+  if (style.authored) return primarySeries({ limits, level: levelId, breathSeconds, minutes });
 
   const rand = rng(seed);
   const targetSeconds = Math.round(minutes * 60);
   const savShare = (style.savasanaShare[0] + style.savasanaShare[1]) / 2;
-  const ctx = { intent, style, limits, level, breathSeconds, targetSeconds, savasanaSeconds: 0 };
+  const ctx = { intent, style, limits, level: ceiling, levelId, L, breathSeconds, targetSeconds, savasanaSeconds: 0 };
 
   // What the limitations cost, recorded so the app can name it rather than
   // quietly shipping a shorter library.
   const excluded = ASANAS
     .filter((a) => isContraindicated(a, limits))
     .map((a) => ({ id: a.id, name: a.name, sites: limitsHit(a, limits) }));
-  const pool = ASANAS.filter((a) => !isContraindicated(a, limits) && a.level <= level);
+  const pool = ASANAS.filter((a) => !isContraindicated(a, limits) && a.level <= ceiling);
   const reachableFamilies = new Set(pool
     .filter((a) => emphasisFor(intent, a.family) > 0
       && a.intensity >= style.intensityBand[0] && a.intensity <= style.intensityBand[1]
@@ -309,7 +363,7 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
   const resolvablePreps = (a) => {
     const seen = new Set();
     for (const id of a.preps) {
-      const got = resolvePose(id, { limits, level });
+      const got = resolvePose(id, { limits, level: ceiling });
       if (got && got.id !== a.id) seen.add(got.id);
     }
     return seen.size;
@@ -318,7 +372,7 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
   let peakRejected = [];
   if (wantsPeak) {
     const resolved = intent.peaks
-      .map((id) => resolvePose(id, { limits, level }))
+      .map((id) => resolvePose(id, { limits, level: ceiling }))
       .filter((a) => a && a.peak > 0 && a.phases.includes("peak"));
     const candidates = resolved.filter((a) => {
       const need = PREP_MIN[a.peak] || 3;
@@ -377,8 +431,8 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
   const budgetFor = (phase) => (plan.find(([p]) => p === phase) || [null, 0])[1] * targetSeconds;
 
   // 1. centering — always exactly one thing, so the practice starts by settling
-  const centeringPose = resolvePose(style.id === "restorative" ? "balasana_open" : "centering", { limits, level })
-    || resolvePose("savasana", { limits, level });
+  const centeringPose = resolvePose(style.id === "restorative" ? "balasana_open" : "centering", { limits, level: ceiling })
+    || resolvePose("savasana", { limits, level: ceiling });
   sections.centering = centeringPose
     ? [makeItem(centeringPose, ctx, { phase: "centering", breaths: null, t: 0.5 })]
     : [];
@@ -405,15 +459,15 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
     // No explicit breath count: cat/cow carries its own as DYNAMIC movement, and
     // if a wrist sends it down the substitution chain to a seated shape, that
     // shape gets the style's ordinary hold rather than cat/cow's eight breaths.
-    const opener = resolvePose("cat_cow", { limits, level });
+    const opener = resolvePose("cat_cow", { limits, level: ceiling });
     if (opener) { const it = makeItem(opener, ctx, { phase: "warmup" }); items.push(it); spent += itemSeconds(it); used.add(opener.id); }
     let rounds = 0;
     while (spent < budget * 0.85 && rounds < 5) {
-      const set = salutationItems(rounds < 2 || minutes < 30 ? SURYA_A : SURYA_B, ctx,
-        { holdLast: rounds === 0 ? 5 : 3 });
+      const variant = rounds < 2 || minutes < 30 ? "A" : "B";
+      const set = salutationItems(variant === "A" ? SURYA_A : SURYA_B, ctx,
+        { holdLast: rounds === 0 ? 5 : 3, variant, round: rounds + 1, rounds: 5 });
       const cost = flowSeconds(set);
       if (spent + cost > budget * 1.15 && items.length > 1) break;
-      set.forEach((it) => { it.round = rounds + 1; it.salutation = rounds < 2 || minutes < 30 ? "A" : "B"; });
       items.push(...set);
       set.forEach((it) => used.add(it.asanaId));
       spent += cost;
@@ -431,7 +485,7 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
   if (peak) {
     const want = style.prepCount[peak.peak] || 4;
     const preps = peak.preps
-      .map((id) => resolvePose(id, { limits, level }))
+      .map((id) => resolvePose(id, { limits, level: ceiling }))
       .filter(Boolean)
       .filter((a, i, arr) => arr.findIndex((b) => b.id === a.id) === i)
       .slice(0, want);
@@ -471,7 +525,7 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
   if (peak) {
     const counters = (peak.counters.length ? peak.counters : (COUNTER_FAMILY[peak.family] || [])
       .flatMap((f) => pool.filter((a) => a.family === f && a.phases.includes("counter")).slice(0, 1).map((a) => a.id)))
-      .map((id) => resolvePose(id, { limits, level }))
+      .map((id) => resolvePose(id, { limits, level: ceiling }))
       .filter(Boolean)
       .filter((a, i, arr) => arr.findIndex((b) => b.id === a.id) === i);
     const items = [];
@@ -516,7 +570,7 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
   const savasanaSeconds = Math.max(60,
     Math.round((bodySeconds * (savShare / (1 - savShare))) / 15) * 15);
   ctx.savasanaSeconds = savasanaSeconds;
-  const sav = resolvePose("savasana", { limits, level });
+  const sav = resolvePose("savasana", { limits, level: ceiling });
   sections.savasana = sav ? [makeItem(sav, ctx, { phase: "savasana" })] : [];
 
   const order = peak
@@ -536,7 +590,8 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
     targetSeconds,
     totalSeconds,
     breathSeconds,
-    level,
+    level: levelId,
+    poseCeiling: ceiling,
     limits: [...limits],
     seed,
     peak: peak ? peak.id : null,

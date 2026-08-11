@@ -21,6 +21,7 @@
 
 import { byId, COUNTER_FAMILY, isContraindicated, limitsHit, PREP_MIN } from "./asanas.js";
 import { styleById, effectiveHoldBand } from "./styles.js";
+import { levelById } from "./levels.js";
 import { itemSeconds, flowSeconds, elapsedAt } from "./compose.js";
 
 // --- thresholds, named and in one place --------------------------------------
@@ -211,9 +212,12 @@ export function auditFlow(flow, { limits = null } = {}) {
   // fires on the app doing the right thing is a check people learn to ignore.
   //
   // Dynamic movement is excluded: cat/cow is not a shape you can fail to hold.
+  // A salutation ROUND is linked movement measured end to end, not a shape you
+  // hold — excluded for the same reason cat/cow is.
   const held = items.filter((it) => it.phase !== "savasana" && it.phase !== "centering"
-    && !it.linked && !it.dynamic);
-  const eff = effectiveHoldBand(style, { targetSeconds: flow.targetSeconds, breathSeconds: flow.breathSeconds });
+    && !it.linked && !it.dynamic && !it.flowRound);
+  const eff = effectiveHoldBand(style, { targetSeconds: flow.targetSeconds, breathSeconds: flow.breathSeconds,
+    holdScale: levelById(flow.level).holdScale });
   let holdLo = 0, holdHi = Infinity, band = "";
   if (eff) {
     [holdLo, holdHi] = eff;
@@ -278,7 +282,7 @@ export function auditFlow(flow, { limits = null } = {}) {
   // Linked salutation movements are EXCLUDED. A sun salutation is standing,
   // floor, standing by construction — that alternation is the form, not a defect
   // in it, and counting it would fire on every vinyasa ever written.
-  const planed = items.filter((it) => it.plane && it.phase !== "savasana" && !it.linked && !it.round);
+  const planed = items.filter((it) => it.plane && it.phase !== "savasana" && !it.linked && !it.round && !it.flowRound);
   let changes = 0;
   for (let i = 1; i < planed.length; i++) if (planed[i].plane !== planed[i - 1].plane) changes++;
   // One descent is ideal; a few more are a real class warming up on the floor and

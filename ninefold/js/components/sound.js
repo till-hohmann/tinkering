@@ -235,39 +235,120 @@ export const cueItemEnd = () => tone(520, 0.16, 0.22);
 export const cueRoutineDone = () => { tone(660, 0.12); setTimeout(() => tone(990, 0.2), 130); };
 
 // --- breath pacer (yoga) ---------------------------------------------------
-// A hold in yoga is counted in BREATHS, not seconds, so the player needs to mark
-// the breath rather than the clock.
+// A hold in yoga is counted in BREATHS, not seconds, so the player marks the
+// breath rather than the clock.
 //
-// Deliberately much quieter and lower than the interval cues, and a long soft
-// swell rather than a beep: this fires every few seconds for minutes at a time,
-// and anything with an attack on it becomes unbearable by the third pose. Rising
-// tone on the inhale, falling on the exhale — the pitch IS the instruction, so
-// it works with the eyes closed, which is the point.
+// THE FIRST VERSION WAS A SINE SWELL AND IT SOUNDED LIKE A TONE, because it was
+// one. Reported from the mat as "irritating, and it doesn't remind me of
+// breathing". A pitch ramp is a musical gesture; breath is a NOISE gesture —
+// air moving through a narrow space. So this is filtered noise, not an
+// oscillator: the sound of ujjayi breathing is broadband hiss shaped by the
+// throat, and that is exactly what a band-passed noise source with a moving
+// centre frequency produces.
 //
-// No locked-screen handling is needed or attempted. The routine engine holds a
-// screen wake-lock for the whole practice, and this file's header explains why
-// cues to a hard-locked PWA are not a thing we chase.
-function swell(from, to, dur, vol) {
+// Inhale: the filter opens upward and the volume swells, the way drawing air in
+// gets brighter and fuller as the lungs fill.
+// Exhale: it closes downward and fades, longer and softer than the inhale,
+// because that is what a real exhale does and because the exhale is where you
+// want people to slow down.
+//
+// Still deliberately quiet. This fires every few seconds for minutes at a time,
+// and anything with an attack on it is unbearable by the third pose.
+
+// One second of pink-ish noise, generated once and reused. White noise is too
+// bright and hisses like a broken speaker; rolling it off gives it breath's
+// darker, airier quality.
+let noiseBuf = null;
+function breathNoise() {
+  if (noiseBuf || !ctx) return noiseBuf;
+  const n = Math.floor(ctx.sampleRate);
+  const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let b0 = 0, b1 = 0, b2 = 0;
+  for (let i = 0; i < n; i++) {
+    const w = Math.random() * 2 - 1;
+    // cheap pink-ish filter — three one-pole sections
+    b0 = 0.99765 * b0 + w * 0.0990460;
+    b1 = 0.96300 * b1 + w * 0.2965164;
+    b2 = 0.57000 * b2 + w * 1.0526913;
+    d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.22;
+  }
+  noiseBuf = buf;
+  return buf;
+}
+
+function breath(f0, f1, dur, peak, attack) {
   if (!enabled || !ctx) return;
   if (ctx.state === "suspended") ctx.resume();
   try {
-    const osc = ctx.createOscillator();
+    const src = ctx.createBufferSource();
+    src.buffer = breathNoise();
+    src.loop = true;
+    // A band-pass with a gentle Q reads as air; a high Q whistles.
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = 0.9;
     const gain = ctx.createGain();
-    osc.type = "sine";
     const t = ctx.currentTime;
-    osc.frequency.setValueAtTime(from, t);
-    osc.frequency.linearRampToValueAtTime(to, t + dur);
-    // fade in and out symmetrically — no click, no attack
+    bp.frequency.setValueAtTime(f0, t);
+    bp.frequency.exponentialRampToValueAtTime(f1, t + dur);
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(vol, t + dur * 0.35);
+    gain.gain.exponentialRampToValueAtTime(peak, t + dur * attack);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + dur + 0.05);
+    src.connect(bp).connect(gain).connect(ctx.destination);
+    src.start(t);
+    src.stop(t + dur + 0.05);
   } catch {}
 }
-export const cueInhale = (dur = 2) => swell(196, 262, Math.max(0.6, dur * 0.9), 0.09);
-export const cueExhale = (dur = 2) => swell(262, 175, Math.max(0.6, dur * 0.9), 0.075);
+
+/** Rising and opening: the sound of drawing air in. */
+export const cueInhale = (dur = 2) =>
+  breath(320, 900, Math.max(0.7, dur * 0.92), 0.055, 0.62);
+/** Falling, softer and slightly longer: the sound of letting it go. */
+export const cueExhale = (dur = 2) =>
+  breath(760, 240, Math.max(0.8, dur * 0.98), 0.042, 0.3);
+
+// --- narration playback (yoga) ---------------------------------------------
+// The yoga teacher's voice is many pre-rendered sentence clips played in
+// sequence, not the seven fixed commands above, so it needs decode + play +
+// stop rather than say(). It goes through the SAME AudioContext, which is what
+// keeps it mixing over music instead of taking the media session.
+let speaking = [];
+export const audioAvailable = () => !!ctx;
+export const speakClip = {
+  async decode(arrayBuffer) {
+    try {
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      return await ctx.decodeAudioData(arrayBuffer);
+    } catch { return null; }
+  },
+  /** Play one clip and resolve when it finishes (plus a breath of silence). */
+  play(buf, gapSeconds = 0.25) {
+    return new Promise((resolve) => {
+      if (!enabled || !ctx || !buf) return resolve();
+      try {
+        applySession();
+        if (ctx.state !== "running") ctx.resume();
+        const src = ctx.createBufferSource();
+        const g = ctx.createGain();
+        g.gain.value = 1.25;
+        src.buffer = buf;
+        src.connect(g).connect(ctx.destination);
+        speaking.push(src);
+        src.onended = () => {
+          speaking = speaking.filter((s) => s !== src);
+          setTimeout(resolve, gapSeconds * 1000);
+        };
+        src.start();
+      } catch { resolve(); }
+    });
+  },
+  /** Cut the teacher off — the practice has moved on. */
+  stopAll() {
+    for (const s of speaking) { try { s.onended = null; s.stop(); } catch {} }
+    speaking = [];
+  },
+};
 
 // --- reusable mute button ------------------------------------------------
 const SPK_ON = "M4 9v6h4l5 5V4L8 9H4Z M16 8a4 4 0 0 1 0 8 M18.5 5.5a8 8 0 0 1 0 13";

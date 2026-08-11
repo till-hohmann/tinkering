@@ -26,7 +26,7 @@
 // adaptations, because "what are you actually training for" is the question the
 // rest of the plan hangs off.
 
-import { el, mount, go, backBtn, addActionBar, clear } from "../ui.js";
+import { el, mount, go, backBtn, addActionBar, clear, setChildren } from "../ui.js";
 import { ADAPTATIONS, byId as adaptationById, analysePriorities, compatibility,
   BLOCK_SHAPES, isCardio, isStrength } from "../builder/adaptations.js";
 import { generateProgram } from "../builder/generate.js";
@@ -166,7 +166,7 @@ function stepPriorities(body) {
   const list = el("div.list", { style: "margin-top:14px" });
 
   function render() {
-    list.replaceChildren(...ADAPTATIONS.map((a) => {
+    setChildren(list, ...ADAPTATIONS.map((a) => {
       const rank = S.priorities.indexOf(a.id);
       const picked = rank >= 0;
       const row = el("button.item" + (picked ? ".on" : ""), {
@@ -337,7 +337,7 @@ function stepEquipment(body) {
   const host = el("div");
 
   function render() {
-    host.replaceChildren(...S.places.map((place, idx) =>
+    setChildren(host, ...S.places.map((place, idx) =>
       el("div.card", { style: "margin-top:12px" }, [
         el("div.row", { style: "align-items:center;margin-bottom:6px" }, [
           el("div.label", { text: "Place " + (idx + 1) }), el("span.spacer"),
@@ -382,7 +382,7 @@ function stepSchedule(body) {
     const total = S.mandatoryDays + S.optionalDays;
     S.cardioPerWeek = Math.min(S.cardioPerWeek, total);
     const strength = total - S.cardioPerWeek;
-    summary.replaceChildren(...[
+    setChildren(summary, ...[
       el("div", { text: `${total} session${total === 1 ? "" : "s"} a week: `
         + `${strength} lifting, ${S.cardioPerWeek} cardio.` }),
       S.optionalDays

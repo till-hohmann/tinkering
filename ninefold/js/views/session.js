@@ -9,7 +9,7 @@ import { getProfile, patchProfile, placeNames, withPlace } from "../profile.js";
 import { applyStretchTargets, applyStretchResults } from "../stretch.js";
 import { todayISO } from "../model.js";
 import * as M from "../model.js";
-import { el, mount, go, locationBadge, clear, backBtn, addActionBar } from "../ui.js";
+import { el, mount, go, locationBadge, clear, backBtn, addActionBar, setChildren } from "../ui.js";
 import { illustration, workoutFigure } from "../illustrations.js";
 import { unlockAudio } from "../components/sound.js";
 import { interruptSheet } from "../components/interrupt.js";
@@ -430,7 +430,7 @@ function templateQuestions(stage, questions) {
         [CONSIDER, "Not in the plan, but remember it"],
       ];
       const seg = el("div.list", { style: "margin-top:9px" });
-      const paint = () => seg.replaceChildren(...opts.map(([val, label]) =>
+      const paint = () => setChildren(seg, ...opts.map(([val, label]) =>
         el("button.item" + (answers[q.key] === val ? ".on" : ""), { style: "text-align:left",
           "aria-pressed": answers[q.key] === val ? "true" : "false",
           onclick: () => { answers[q.key] = val; paint(); } }, [

@@ -13,7 +13,7 @@
 // preparation behind it. Regenerate replaces the WHOLE sequence, which keeps the
 // graph intact. That is the deliberate difference between the two tabs.
 
-import { el, mount, go, addActionBar, backBtn } from "../ui.js";
+import { el, mount, go, addActionBar, backBtn, setChildren } from "../ui.js";
 import { getProfile } from "../profile.js";
 import { getYogaPrefs, setYogaPrefs, addYogaDone, getYogaLog, yogaOn } from "../store.js";
 import { todayISO } from "../model.js";
@@ -21,9 +21,11 @@ import { illustration } from "../illustrations.js";
 import { INTENTS, intentById } from "../yoga/intents.js";
 import { STYLES, styleById, BREATH_SECONDS_DEFAULT, BREATH_SECONDS_RANGE } from "../yoga/styles.js";
 import { LIMITATIONS, LIMITATION_KEYS, byId as asanaById } from "../yoga/asanas.js";
+import { LEVELS, LEVEL_KEYS, normaliseLevel } from "../yoga/levels.js";
 import { generateFlow, toRoutineDef } from "../yoga/generate.js";
 import { seedFrom } from "../yoga/compose.js";
 import { auditFlow, verdict } from "../yoga/quality.js";
+import { entryScript, exitScript, salutationScript } from "../yoga/script.js";
 import { runRoutine } from "./routine.js";
 
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
@@ -68,11 +70,18 @@ export async function renderYoga() {
   let intent = chosen;
   let minutes = prefs.lastMinutes && intent.minutes.includes(prefs.lastMinutes)
     ? prefs.lastMinutes : intent.defaultMinutes;
+  let level = normaliseLevel(prefs.level);
+  // What today's practice stands in for. `undefined` means "haven't chosen" and
+  // falls back to the intent's own default; null means "nothing, it's an extra".
+  let replaces = prefs.replaces === undefined ? intent.substitutes : prefs.replaces;
+  // What the day actually has to offer as a replacement, so the card can't
+  // suggest standing in for a session that isn't scheduled.
+  const today = await todaysSessions();
 
   const body = el("div");
 
   const paint = () => {
-    body.replaceChildren();
+    setChildren(body);
 
     // --- what for ---
     body.appendChild(el("div.card", {}, [
@@ -107,8 +116,26 @@ export async function renderYoga() {
       ]));
     }
 
-    // --- what it will and won't count as ---
-    body.appendChild(accountingCard(intent));
+    // --- how experienced ---
+    // Drives which poses are eligible AND how the teacher talks. Remembered as
+    // the default, because it is a fact about you rather than a per-session mood.
+    body.appendChild(el("div.card", {}, [
+      el("h2", { text: "How experienced are you?" }),
+      el("div.chipgrid.lim", {}, LEVEL_KEYS.map((k) =>
+        el("button.chip" + (k === level ? ".on" : ""), {
+          onclick: () => { level = k; setYogaPrefs({ level: k }); paint(); },
+        }, [
+          el("span.chiptitle", { text: LEVELS[k].label }),
+          el("span.chipsub", { text: LEVELS[k].blurb }),
+        ]))),
+    ]));
+
+    // --- what it counts as, and what it can stand in for ---
+    // The accounting follows the CHOICE, not the intent's default — otherwise
+    // this card claims "a standalone extra" while the card directly below it
+    // says the practice is replacing today's session.
+    body.appendChild(replacesCard(intent, replaces, (v) => { replaces = v; paint(); }));
+    body.appendChild(accountingCard(replaces));
 
     // --- what you're protecting ---
     body.appendChild(limitationsCard(profile, limits, paint));
@@ -124,7 +151,7 @@ export async function renderYoga() {
 
     addActionBar(el("button.btn.primary.big.block", {
       onclick: () => {
-        setYogaPrefs({ lastIntent: intent.id, lastMinutes: minutes });
+        setYogaPrefs({ lastIntent: intent.id, lastMinutes: minutes, level, replaces });
         go(`#/yoga/build/${intent.id}/${minutes}`);
       },
     }, "Compose a practice"));
@@ -147,7 +174,7 @@ function estimateAshtangaMinutes(prefs) {
   return Math.round(65 * (bs / 5));
 }
 
-function accountingCard(intent) {
+function accountingCard(substitutes) {
   const rows = {
     strength: {
       title: "Stands in for a lifting day",
@@ -162,7 +189,7 @@ function accountingCard(intent) {
       note: "Low fatigue cost, complements everything. Counts for adherence, adds nothing to the training load.",
     },
   };
-  const r = rows[String(intent.substitutes)] || rows.null;
+  const r = rows[String(substitutes)] || rows.null;
   return el("div.card", {}, [
     el("h2", { text: r.title }),
     el("p.note", { text: r.note }),
@@ -171,13 +198,77 @@ function accountingCard(intent) {
 }
 
 /**
+ * What today's practice STANDS IN FOR.
+ *
+ * The intent carries a default — a strong flow substitutes a lifting day, a
+ * wind-down substitutes the mobility work — but the decision belongs to the day,
+ * not to the taxonomy. If today's plan has an M&S session and you'd rather do
+ * yin, that is a replacement, and Today should say so instead of showing an
+ * unticked session and a separate unrelated practice.
+ *
+ * Only offers what the day actually has. Standing in for a session that was
+ * never scheduled is not a thing you can do.
+ */
+function replacesCard(intent, replaces, onChange) {
+  const opts = [
+    { v: null, label: "Nothing — it's extra", sub: "On top of whatever else today holds." },
+  ];
+  if (todaysAvailable.mobility) opts.push({ v: "mobility",
+    label: "Today's mobility & stability", sub: "Cleanly equivalent — same job, same intensity band." });
+  if (todaysAvailable.strength) opts.push({ v: "strength",
+    label: `Today's ${todaysAvailable.strengthLabel || "session"}`,
+    sub: "Counts as a session, but adds no hard sets. Progress will show the gap." });
+  return el("div.card", {}, [
+    el("h2", { text: "Standing in for anything?" }),
+    el("div.chipgrid.lim", {}, opts.map((o) =>
+      el("button.chip" + (o.v === replaces ? ".on" : ""), { onclick: () => onChange(o.v) }, [
+        el("span.chiptitle", { text: o.label }),
+        el("span.chipsub", { text: o.sub }),
+      ]))),
+    opts.length === 1
+      ? el("p.note", { text: "Nothing scheduled today for this to replace." })
+      : null,
+  ]);
+}
+
+// Populated by todaysSessions() before the picker paints.
+let todaysAvailable = { mobility: false, strength: false, strengthLabel: null };
+
+/** What today's plan actually offers as a replacement target. */
+async function todaysSessions() {
+  const iso = todayISO();
+  const out = { mobility: false, strength: false, strengthLabel: null };
+  try {
+    const { isMobilityDay } = await import("../mobility.js");
+    const { weekdayOf } = await import("../model.js");
+    const p = await getProfile();
+    if ((!p || p.features.mobility !== false) && isMobilityDay(weekdayOf(iso))) out.mobility = true;
+  } catch {}
+  try {
+    const { getActiveProgram, resolveDay } = await import("../store.js");
+    const prog = await getActiveProgram();
+    if (prog) {
+      const { day, template } = resolveDay(prog, iso) || {};
+      if (day && day.type && day.type !== "rest" && day.type !== "cardio") {
+        out.strength = true;
+        out.strengthLabel = (template && template.label) || "strength session";
+      }
+    }
+  } catch {}
+  todaysAvailable = out;
+  return out;
+}
+
+/**
  * THIS IS A SET-ONCE ANSWER, so it stops taking a screen and a half once it has
- * been given. Seven full-width explanatory chips are right the first time and
- * noise on the twentieth visit — the picker was 2.5 screens tall and most of it
- * was this card restating what a knee is. Answered, it collapses to a line.
+ * been given — and it opens as a plain yes/no rather than as seven explanatory
+ * chips. Most practices protect nothing; asking those people to read seven
+ * paragraphs about knees to say "no" is the wrong default.
  */
 function limitationsCard(profile, limits, repaint) {
-  let open = limits.length === 0;
+  // null = not answered yet, true = protecting something, false = nothing.
+  let answered = limits.length > 0 ? true : null;
+  let open = limits.length > 0;
   const card = el("div.card");
 
   const chips = () => LIMITATION_KEYS.map((k) =>
@@ -196,25 +287,60 @@ function limitationsCard(profile, limits, repaint) {
       el("span.chipsub", { text: LIMITATIONS[k].note }),
     ]));
 
+  const clearAll = async () => {
+    limits.length = 0;
+    const p = await getProfile();
+    const { saveProfile } = await import("../profile.js");
+    await saveProfile({ ...p, limitations: [] });
+  };
+
   function paint() {
+    // 1. Unanswered: a plain yes/no. The list only exists after a "yes".
+    if (answered === null) {
+      setChildren(card,
+        el("h2", { text: "Anything you're protecting?" }),
+        el("p.note", { text: "A knee, a low back, a shoulder. If so, it becomes an input to the sequence rather than something filtered out afterwards." }),
+        el("div.btn-row", { style: "margin-top:12px" }, [
+          el("button.btn", { onclick: () => { answered = true; open = true; paint(); } }, "Yes"),
+          el("button.btn.primary", { onclick: async () => { answered = false; open = false; await clearAll(); paint(); } }, "No"),
+        ]));
+      return;
+    }
+    // 2. Answered "no": one quiet line with a way back.
+    if (answered === false) {
+      setChildren(card,
+        el("div.row", {}, [
+          el("div", { style: "flex:1;min-width:0" }, [
+            el("div.label", { text: "Protecting" }),
+            el("div.note", { style: "margin-top:3px", text: "Nothing" }),
+          ]),
+          el("button.btn", { style: "padding:8px 14px",
+            onclick: () => { answered = true; open = true; paint(); } }, "Change"),
+        ]));
+      return;
+    }
+    // 3. Answered "yes" and collapsed: the sites, named.
     if (!open) {
-      card.replaceChildren(
+      setChildren(card,
         el("div.row", {}, [
           el("div", { style: "flex:1;min-width:0" }, [
             el("div.label", { text: "Protecting" }),
             el("div.note", { style: "margin-top:3px",
-              text: limits.map((k) => LIMITATIONS[k].label).join(", ") }),
+              text: limits.length ? limits.map((k) => LIMITATIONS[k].label).join(", ") : "Nothing" }),
           ]),
           el("button.btn", { style: "padding:8px 14px", onclick: () => { open = true; paint(); } }, "Change"),
         ]));
       return;
     }
-    card.replaceChildren(
+    setChildren(card,
       el("h2", { text: "Anything you're protecting?" }),
       el("p.note", { text: "Yoga's two documented injury sites are the knee — deep flexion with rotation, which is lotus and full pigeon — and the sacroiliac joint, which is the asymmetric open-hip shapes. Whatever you tick here is an input to the sequence, not a filter afterwards." }),
       el("div.chipgrid.lim", {}, chips()),
-      limits.length ? el("button.btn.block", { style: "margin-top:10px",
-        onclick: () => { open = false; paint(); } }, "Done") : null,
+      el("button.btn.block", { style: "margin-top:10px", onclick: async () => {
+        if (!limits.length) { answered = false; await clearAll(); }
+        open = false;
+        paint();
+      } }, limits.length ? "Done" : "Nothing, actually"),
     );
   }
   paint();
@@ -235,7 +361,7 @@ export async function renderYogaBuild(intentId, minutesStr, seedStr) {
   try {
     flow = generateFlow({
       intent: intentId, minutes, limits,
-      level: prefs.level || 2,
+      level: normaliseLevel(prefs.level),
       breathSeconds: prefs.breathSeconds || BREATH_SECONDS_DEFAULT,
       style: prefs.styleOverride && prefs.styleOverrideFor === intentId ? prefs.styleOverride : null,
       seed,
@@ -404,7 +530,7 @@ export async function renderYogaSession(intentId, minutesStr, seedStr) {
   const flow = (current && current.intent === intentId && current.seed === seed) ? current
     : generateFlow({
         intent: intentId, minutes, limits,
-        level: prefs.level || 2,
+        level: normaliseLevel(prefs.level),
         breathSeconds: prefs.breathSeconds || BREATH_SECONDS_DEFAULT,
         seed,
       });
@@ -413,23 +539,51 @@ export async function renderYogaSession(intentId, minutesStr, seedStr) {
   // screen — see the note in styles.css.
   const stage = el("div.yogaplayer");
   mount([stage]);
+  // THE TEACHER. Entry narration on arriving in a pose, the "one more breath"
+  // call as the last breath begins. The player owns the timing; the script layer
+  // owns the words; neither knows about the other's internals.
+  const levelId = normaliseLevel(prefs.level);
+  const scriptFor = (step, i) => {
+    const it = step.item;
+    if (!it || !it.id) return null;
+    if (it.salutation && it.moves) {
+      return salutationScript(it.salutation, it.round || 1, it.rounds || 1, levelId).parts;
+    }
+    return entryScript({
+      asanaId: it.id, side: step.side, holdBreaths: it.holdBreaths,
+      durationSeconds: it.durationSeconds, dynamic: it.dynamic,
+    }, levelId, i).parts;
+  };
+
   runRoutine(stage, toRoutineDef(flow), null, {
     title: intent.label,
+    narrate: {
+      level: levelId,
+      entryFor: scriptFor,
+      exitFor: (step, i) => exitScript({ asanaId: step.item && step.item.id }, levelId, i).parts,
+    },
     onComplete: async ({ completed }) => {
       if (completed) {
+        // WHAT IT REPLACED IS THE PRACTITIONER'S CHOICE, not the intent's
+        // default. The intent has an opinion — a strong flow suits a lifting
+        // day — but the day is the thing that knows, and it was chosen on the
+        // picker before starting.
+        const sub = prefs.replaces === undefined ? flow.accounting.substitutes : prefs.replaces;
         await addYogaDone(todayISO(), {
           intent: flow.intent,
           style: flow.style,
+          level: flow.level,
           minutes: Math.round(flow.totalSeconds / 60),
           seconds: flow.totalSeconds,
           peak: flow.peak,
-          substitutes: flow.accounting.substitutes,
-          poses: flow.items.length,
+          peakName: flow.peakName,
+          substitutes: sub,
+          poses: flow.items.filter((i) => !i.linked).length,
+          breathSeconds: flow.breathSeconds,
         });
-        const sub = flow.accounting.substitutes;
         toast(sub === "strength"
-          ? "Logged. Counts as a session — the week's hard sets are unchanged."
-          : sub === "mobility" ? "Logged as your mobility & stability work."
+          ? "Logged, and today's session marked replaced. The week's hard sets are unchanged."
+          : sub === "mobility" ? "Logged — that's today's mobility & stability done."
           : "Logged.");
       }
       go("#/yoga");

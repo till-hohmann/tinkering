@@ -31,6 +31,25 @@ function appendChildren(node, children) {
 
 export function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
+/**
+ * Replace a node's children, SKIPPING null and false the way el() does.
+ *
+ * Use this instead of node.replaceChildren(). The native method stringifies
+ * whatever it is given, so the ordinary conditional-child idiom
+ *
+ *     card.replaceChildren(title, body, showFooter ? footer : null)
+ *
+ * prints the literal word "null" on screen the moment the condition is false —
+ * which is exactly what happened on the yoga picker, and is latent at ten other
+ * call sites that were written the same way. el() has always filtered; the
+ * imperative path had no equivalent, so this is it.
+ */
+export function setChildren(node, ...children) {
+  clear(node);
+  appendChildren(node, children);
+  return node;
+}
+
 // Cleanup registry — views/components register teardown (stop tickers, release
 // wake locks) so navigating away mid-session never leaks an animation loop.
 let _cleanups = [];

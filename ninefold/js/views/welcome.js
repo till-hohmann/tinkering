@@ -21,7 +21,7 @@
 // benchmark card hides, zones fall back to a labelled estimate, optional
 // features stay off.
 
-import { el, mount, go, backBtn, addActionBar, clear } from "../ui.js";
+import { el, mount, go, backBtn, addActionBar, clear, setChildren } from "../ui.js";
 import { getProfile, patchProfile, defaultProfile, TRACKED_FEATURES } from "../profile.js";
 import { PROVIDERS, resetProviderCache } from "../health/index.js";
 import { THEMES, applyTheme, DEFAULT_THEME } from "../theme.js";
@@ -239,7 +239,7 @@ function track(body) {
 // --- tracker -----------------------------------------------------------------
 function tracker(body) {
   const list = el("div.list", { style: "margin-top:16px" });
-  const paint = () => list.replaceChildren(...PROVIDERS.map((p) => {
+  const paint = () => setChildren(list, ...PROVIDERS.map((p) => {
     const on = S.tracker === p.id;
     return el("button.item" + (on ? ".on" : ""), {
       style: "text-align:left" + (on ? ";border-color:var(--accent)" : ""),

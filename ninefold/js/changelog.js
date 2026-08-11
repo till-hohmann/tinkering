@@ -13,6 +13,13 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 173, notes: [
+    "Yoga now has a voice. A real teacher talks you through every pose — names it, tells you how to get in, what matters, how long you're staying, and calls one more breath before you move on.",
+    "Three experience levels. A beginner gets plain language, two cues and the way in; an expert gets the Sanskrit, the harder variation and far less talking. It changes which poses you're given, how long you hold them, and how much is explained.",
+    "Sun salutations run as rounds now, the way a class does, instead of six five-second poses in a row.",
+    "The breathing sound is actual breath rather than a tone.",
+    "You can say what a practice stands in for. Do yin instead of your mobility session and Today shows that session as replaced, with the practice logged as its own summary.",
+  ] },
   { v: 172, notes: [
     "Fixed: the button that starts a yoga practice was missing until you tapped something, and then sat underneath the tab bar where you couldn't reach it.",
     "The sequence now opens as its shape — how long each part takes and what the peak is — with the full pose list one tap away. A 45-minute flow was five screens of scrolling before you could start it.",
