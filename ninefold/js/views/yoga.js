@@ -26,6 +26,7 @@ import { generateFlow, toRoutineDef } from "../yoga/generate.js";
 import { seedFrom } from "../yoga/compose.js";
 import { auditFlow, verdict } from "../yoga/quality.js";
 import { entryScript, exitScript, salutationScript } from "../yoga/script.js";
+import { loadNarration } from "../yoga/narrate.js";
 import { runRoutine } from "./routine.js";
 
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
@@ -77,6 +78,9 @@ export async function renderYoga() {
   // What the day actually has to offer as a replacement, so the card can't
   // suggest standing in for a session that isn't scheduled.
   const today = await todaysSessions();
+  // Does this install actually have a voice? Checked once, here, so the picker
+  // can say so before you start rather than leaving you to wonder mid-practice.
+  const voiceMissing = !(await loadNarration(level).catch(() => false));
 
   const body = el("div");
 
@@ -139,6 +143,19 @@ export async function renderYoga() {
 
     // --- what you're protecting ---
     body.appendChild(limitationsCard(profile, limits, paint));
+
+    // --- no voice on this install ---
+    // Narration is a build artefact (tools/build-voice.py), so a self-hosted
+    // clone has none until it is rendered. Everything else works and the
+    // practice runs silent — but silence with no explanation reads as broken,
+    // and the person seeing it is the one person who can fix it.
+    if (voiceMissing) {
+      body.appendChild(el("div.card", {}, [
+        el("h2", { text: "No voice on this install" }),
+        el("p.note", { text: "The spoken guidance isn't built yet, so practices will run silent — poses, figures, written cues and the breath pacer all still work." }),
+        el("p.note.dim", { text: "Run  python tools/build-voice.py --level all  to render it. See GETTING_STARTED, step 5." }),
+      ]));
+    }
 
     // --- history ---
     if (log.length) {

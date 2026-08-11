@@ -112,6 +112,25 @@ In the app: **Settings → Tracker → Apple Health → Set up the Health bridge
 
 ---
 
+## Step 5 — Optional: build the yoga narration
+
+The Yoga tab talks you through each pose — names it, tells you how to get in, what matters, how long you're staying. **That narration is not in this repository.** It is about 107 MB of rendered audio, which is a build artefact rather than source, so you generate it yourself:
+
+```bash
+pip install edge-tts
+python tools/build-voice.py --level all
+```
+
+That writes `audio/yoga/{beginner,advanced,expert}/` and takes roughly **90 minutes** — it is calling a speech service once per sentence, about 4,700 of them. You can do one level instead (`--level advanced`) in a third of the time. It is safe to interrupt and re-run: finished clips are skipped.
+
+The words themselves *are* source, in [`js/yoga/cues.js`](./js/yoga/cues.js) — one entry per pose, which is the file to edit if you want different cues, a different tone, or another language. Re-run the renderer afterwards and only the changed lines are rebuilt.
+
+**Without this step everything else works and the practice simply runs silent** — you get the pose, the figure, the written cue and the breath pacer, just no voice. The Yoga tab says so rather than leaving you wondering.
+
+To use a different voice, change `VOICE` at the top of `tools/build-voice.py`; `python -c "import asyncio,edge_tts;print([v['ShortName'] for v in asyncio.run(edge_tts.list_voices())])"` lists what's available.
+
+---
+
 ## Common questions
 
 **Does my data go anywhere?**

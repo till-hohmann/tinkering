@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 174, notes: [
+    "If the spoken guidance hasn't been built on an install, the Yoga tab now says so instead of just running silent.",
+  ] },
   { v: 173, notes: [
     "Yoga now has a voice. A real teacher talks you through every pose — names it, tells you how to get in, what matters, how long you're staying, and calls one more breath before you move on.",
     "Three experience levels. A beginner gets plain language, two cues and the way in; an expert gets the Sanskrit, the harder variation and far less talking. It changes which poses you're given, how long you hold them, and how much is explained.",
