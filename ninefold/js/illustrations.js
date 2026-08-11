@@ -315,6 +315,21 @@ export function workoutFigure(template, day) {
   return "barbell";
 }
 
+/**
+ * `id` MAY BE A LIST OF CANDIDATES, most specific first.
+ *
+ * Yoga needs this. A pose's drawn figure is keyed by its ART key, and 77 art
+ * keys cover all 110 poses — so 33 poses have no figure of their own and borrow
+ * a related pose's. That was fine while the figures were line drawings and
+ * wrong the moment they became photographs: Marichyasana B, C and D would every
+ * one of them show a picture of Marichyasana A, which are four different shapes.
+ *
+ * So a yoga caller passes `[asanaId, art]`: use the pose's OWN photograph if it
+ * has been generated, fall back to the shared one if it hasn't, and fall back to
+ * the drawn figure — which is only ever keyed by the art key, hence "last wins"
+ * for the SVG — if neither exists. Passing a plain string behaves exactly as it
+ * always did.
+ */
 export function illustration(id, cls = "illo") {
   // A REAL PHOTOGRAPH BEATS A DRAWING OF ONE, wherever it is legible.
   //
@@ -332,7 +347,9 @@ export function illustration(id, cls = "illo") {
   // loaded once at boot. Before it resolves, or for a movement with no render,
   // this falls through to the hand-authored figure, which is also what keeps the
   // 40 exercises that have no photo looking deliberate rather than broken.
-  const photo = thumbURL(id);
+  const ids = (Array.isArray(id) ? id : [id]).filter(Boolean);
+  const drawKey = ids[ids.length - 1];
+  const photo = ids.map(thumbURL).find(Boolean);
   if (photo) {
     const img = document.createElement("img");
     img.className = "exfig exphoto " + cls;
@@ -341,10 +358,10 @@ export function illustration(id, cls = "illo") {
     img.loading = "lazy";
     img.decoding = "async";
     // a 404 (manifest out of step with disk) must not leave a hole in a list
-    img.onerror = () => { const fb = illustrationSVG(id, cls); if (img.parentNode) img.parentNode.replaceChild(fb, img); };
+    img.onerror = () => { const fb = illustrationSVG(drawKey, cls); if (img.parentNode) img.parentNode.replaceChild(fb, img); };
     return img;
   }
-  return illustrationSVG(id, cls);
+  return illustrationSVG(drawKey, cls);
 }
 
 function illustrationSVG(id, cls = "illo") {

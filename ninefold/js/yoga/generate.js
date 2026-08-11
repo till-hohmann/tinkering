@@ -657,7 +657,9 @@ export function toRoutineDef(flow) {
       cueKind: it.phase === "savasana" ? "rest" : (it.linked ? "flow" : "hold"),
       breathPaced: !!flow.breathSeconds && !it.linked && it.holdBreaths != null,
       phase: it.phase,
-      illustrationId: it.art,
+      // [own photo, shared photo / drawn figure] — see illustrations.js. The art
+      // key has to stay LAST: it is the only one the drawn figures are keyed by.
+      illustrationId: [it.asanaId, it.art],
     })),
   };
 }

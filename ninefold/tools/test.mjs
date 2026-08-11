@@ -2105,6 +2105,44 @@ group("yoga — the breath is paced at a practised rate, not a resting one", () 
   });
 });
 
+group("yoga — every pose can be pictured, and none borrows another's", () => {
+  const src = (f) => readFileSync(new URL(`../js/${f}`, import.meta.url), "utf8");
+  const kebab = (s) => s.toLowerCase().replace(/['’]/g, "").replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+  it("a pose asks for its OWN photo before the shared one", () => {
+    // 77 art keys cover 110 poses, so resolving by art key alone means 33 poses
+    // show a picture of a different pose — Marichyasana B, C and D would every
+    // one of them show Marichyasana A. The player passes [asanaId, art]; the
+    // art key must stay LAST, because it is the only key the drawn figures have.
+    assert.match(src("yoga/generate.js"), /illustrationId: \[it\.asanaId, it\.art\]/);
+    assert.match(src("views/yoga.js"), /illustration\(\[it\.asanaId, it\.art\]\)/);
+    assert.match(src("views/ysummary.js"), /illustration\(\[id, a && a\.art\]\)/);
+  });
+
+  it("every pose still resolves a drawn figure through the chain", () => {
+    // The fallback is the whole reason the art key is carried alongside. A pose
+    // with no photograph and no figure renders a blank tile.
+    const blind = ASANAS.filter((a) => !ASANA_ART_KEYS.has(a.art));
+    assert.deepEqual(blind.map((a) => a.id), []);
+  });
+
+  it("the import map names every pose, and no filename is claimed twice", () => {
+    const py = readFileSync(new URL("../tools/import-exercise-images.py", import.meta.url), "utf8");
+    const map = py.slice(py.indexOf("MAP = {"), py.indexOf("\n}\n", py.indexOf("MAP = {")));
+    const pairs = [...map.matchAll(/^\s*"([^"]+)":\s*"([^"]+)",/gm)].map((m) => [m[1], m[2]]);
+    const byFile = new Map(pairs);
+    assert.equal(byFile.size, pairs.length, "a filename is mapped twice");
+    const byId = new Set(pairs.map((p) => p[1]));
+    assert.equal(byId.size, pairs.length, "two filenames claim the same id");
+    // ⚠ THE PREFIX IS LOAD-BEARING: the pose "Side plank" and the movement
+    // "Side plank" produce the same filename without it, and this map would
+    // hand one of them the other's photograph with no error anywhere.
+    const missing = ASANAS.filter((a) => byFile.get("yoga-" + kebab(a.name)) !== a.id);
+    assert.deepEqual(missing.map((a) => a.name), []);
+  });
+});
+
 group("yoga — the orb is something to breathe with, not a timer in disguise", () => {
   const BS = 6;
   it("empty at the bottom of the exhale, full at the top of the inhale", () => {

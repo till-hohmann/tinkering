@@ -115,7 +115,7 @@ export async function renderYSummary(at) {
         ? el("div.list", { style: "margin-top:10px" }, seq.map(({ id, n }, i) => {
             const a = asanaById(id);
             return el("div.item", {}, [
-              el("div.ico.illotile", { style: "padding:0;overflow:hidden" }, [illustration((a && a.art) || id)]),
+              el("div.ico.illotile", { style: "padding:0;overflow:hidden" }, [illustration([id, a && a.art])]),
               el("div.meta", {}, [
                 el("div.t", { text: (a ? a.name : id) + (n > 1 ? ` ×${n}` : "") }),
                 el("div.s", { text: a ? (a.sanskrit || "") : "" }),

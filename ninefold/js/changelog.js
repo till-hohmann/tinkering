@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  // v178 has no entry ON PURPOSE. It lets a yoga pose carry its own photograph
+  // instead of borrowing a related pose's — but no yoga photographs exist yet,
+  // so nothing about it is visible. It gets a note when the pictures land.
   { v: 177, notes: [
     "Tap any logged practice — on Today, in the week plan, or in the new list on the Yoga tab — to see what you did, pose by pose. You can correct how long it ran, change what it stood in for, or delete it.",
     "Breath-paced holds now show an orb that swells as you breathe in and settles as you breathe out, instead of a ring counting down. The breath count stays in the middle.",

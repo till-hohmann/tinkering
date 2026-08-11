@@ -593,7 +593,7 @@ function holdLabel(it, flow) {
 
 function poseRow(it, right) {
   return el("div.poserow", {}, [
-    el("div.posefig", {}, [illustration(it.art || it.asanaId)]),
+    el("div.posefig", {}, [illustration([it.asanaId, it.art])]),
     el("div.posemeta", {}, [
       el("div.posename", { text: it.name }),
       it.sanskrit ? el("div.posesans", { text: it.sanskrit }) : null,
