@@ -21,7 +21,12 @@
   /* ink */
   --text: #f1f4f9;
   --text-dim: #8b93a1;
-  --text-faint: #565d6a;
+  /* ⚠ THE PRE-THEME FALLBACK ONLY. js/theme.js sets every one of these on
+     documentElement at boot, so ITS values are what actually paint — editing
+     this block alone changes nothing, which is exactly how the first attempt at
+     the contrast fix measured as having done nothing at all. Kept in step with
+     the Aurora theme; the reasoning lives next to THEMES. */
+  --text-faint: #6d7481;
 
   /* BRAND accent — themeable. Decoration only: CTAs, rings, glows, progress.
      js/theme.js overrides these on the root element. */
@@ -581,7 +586,11 @@ img.exphoto { object-fit: cover; border-radius: inherit; background: var(--bg-el
 .cal-week.hasbar .cal-cell { padding-top: 28px; }
 .cal-week-bars { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(7, 1fr);
   gap: 6px; pointer-events: none; z-index: 1; }
-.cal-span { grid-row: 1; align-self: start; margin-top: 2px; height: 22px; box-sizing: border-box;
+/* 26 rather than 22: the cell already reserves 28px above it (.hasbar) and the
+   bar was only using 24 of them, so this is four free pixels of touch target on
+   a control that is otherwise a 22px-tall sliver — and a one-week block's bar is
+   only ~44px wide, which made it the smallest tap target in the app. */
+.cal-span { grid-row: 1; align-self: start; margin-top: 2px; height: 26px; box-sizing: border-box;
   display: flex; align-items: center; pointer-events: auto; cursor: pointer;
   padding: 0 8px; font-size: .66rem; font-weight: 800; letter-spacing: .01em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -667,19 +676,23 @@ img.exphoto { object-fit: cover; border-radius: inherit; background: var(--bg-el
    NO CSS TRANSITION ON THE TRANSFORM. The scale is written every frame from
    the wall-clock loop, which is what keeps the swell locked to the breath tone;
    a transition would add its own easing on top and drift behind the audio. */
+/* ⚠ --accent-shadow, NOT LITERAL MINT. The orb was hardcoded to the gym's
+   electric green, so under the yoga night skin the one moving thing on screen
+   was still wearing the colour of the section it exists to be different from.
+   Every theme and both yoga skins define --accent-shadow as "r,g,b". */
 .breath-guide { position: absolute; inset: 6px; border-radius: 50%;
-  border: 1px dashed rgba(47,230,166,.22); }
+  border: 1px dashed rgba(var(--accent-shadow), .22); }
 .breath-orb { position: absolute; inset: 6px; border-radius: 50%;
   transform: scale(var(--s, .42)); will-change: transform;
   background: radial-gradient(circle at 50% 42%,
-    rgba(47,230,166,.30), rgba(47,230,166,.13) 58%, rgba(47,230,166,.05) 78%);
-  border: 1.5px solid rgba(47,230,166,.52);
-  filter: drop-shadow(0 0 16px rgba(47,230,166,.22)); }
+    rgba(var(--accent-shadow), .30), rgba(var(--accent-shadow), .13) 58%, rgba(var(--accent-shadow), .05) 78%);
+  border: 1.5px solid rgba(var(--accent-shadow), .52);
+  filter: drop-shadow(0 0 16px rgba(var(--accent-shadow), .22)); }
 /* The exhale cools and softens rather than changing hue — a colour that flips
    every few seconds is a strobe at this size, and the direction is already
    unmistakable from which way the orb is going. */
-.breath-orb.out { border-color: rgba(47,230,166,.34);
-  filter: drop-shadow(0 0 10px rgba(47,230,166,.12)); }
+.breath-orb.out { border-color: rgba(var(--accent-shadow), .34);
+  filter: drop-shadow(0 0 10px rgba(var(--accent-shadow), .12)); }
 /* --- Yoga tab --- */
 .btn-row.wrap { flex-wrap: wrap; }
 .btn-row.wrap > .btn { flex: 1 1 30%; }
@@ -691,7 +704,10 @@ img.exphoto { object-fit: cover; border-radius: inherit; background: var(--bg-el
   background: var(--bg-elev2); border: 1px solid var(--line-soft); color: var(--text);
   border-radius: 14px; padding: 10px 11px; min-height: 56px; transition: border-color .15s, background .15s; }
 .chip .chiptitle { font-weight: 700; font-size: 0.9rem; }
-.chip .chipsub { font-size: 0.7rem; color: var(--text-faint); line-height: 1.35; }
+/* --text-dim, not --text-faint: this is the line that says what "Wind down"
+   or "SI joint" actually MEANS, which is the whole reason the chip is two
+   lines. Explanatory text does not belong on the decorative tier. */
+.chip .chipsub { font-size: 0.7rem; color: var(--text-dim); line-height: 1.35; }
 .chip.on { border-color: var(--accent); background: rgba(47,230,166,.09); }
 .chip.on .chiptitle { color: var(--accent); }
 .chip:active { transform: scale(.97); }
@@ -738,10 +754,20 @@ img.exphoto { object-fit: cover; border-radius: inherit; background: var(--bg-el
    64 of which was bottom padding reserved for a tab bar the player hides. */
 @media (max-height: 720px) {
   .yogaplayer .routine-illo { width: 64px; height: 64px; margin-top: 0; }
-  .yogaplayer .timer-wrap { width: 152px; height: 152px; margin: 4px auto 2px; }
+  /* 140, not 152: Warrior I's cue wraps to two lines and carries a long
+     modification under it, which was the last 12px of overflow on an SE
+     once the side badge stopped taking a row of its own. The orb and the
+     guide are sized from this box, so they shrink with it. */
+  .yogaplayer .timer-wrap { width: 140px; height: 140px; margin: 4px auto 2px; }
   .yogaplayer .timer-big { font-size: 2.9rem; }
   .yogaplayer .routine-name { min-height: 22px; }
   .yogaplayer .sanskrit { margin-bottom: 2px; }
+  /* ⚠ THE FIT IS CONTENT-DEPENDENT, so it has to hold for the WORST pose, not
+     the average one. This screen was measured as fitting exactly — on the first
+     step, whose cue is one line. Cat/cow's cue wraps to two and carries an
+     "easier" line under it, and the same screen went 5px over on an SE. The cue
+     block's own margins are the cheapest thing to take it out of. */
+  .yogaplayer .easier { margin-top: 8px; margin-bottom: 8px; }
 }
 /* Sanskrit sits under the English name, quiet — it names the pose without
    competing with it, and it is what a class you have been to will have used. */
@@ -1078,3 +1104,87 @@ html.sl-locked, html.sl-locked body { overflow: hidden !important; overscroll-be
 /* list rows that drill down (exercise -> anatomy card) */
 .item.tappable { cursor: pointer; }
 .item.tappable:active { transform: scale(0.985); }
+
+/* ==========================================================================
+   THE YOGA SECTION LOOKS DIFFERENT, AND IT LOOKS DIFFERENT TWICE.
+
+   The rest of the app is a gym: near-black, electric mint, 800-weight headings,
+   tight corners. That is right for the thing it is and wrong for this — the yoga
+   tab was reading as one more place to get a number up.
+
+   ⚠ TWO SKINS, CHOSEN BY WHAT YOU ARE DOING, NOT BY A TOGGLE.
+     .yoga-dawn  — the tab, the picker, the review and the practice summary.
+                   Screens you READ, at arm's length, usually in daylight.
+     .yoga-night — the player. Phone on the mat, often a dim room, and the one
+                   screen you look at continuously for forty minutes. Two of the
+                   nine intents are "Wind down" and "Before bed"; handing those a
+                   bright white screen at 22:00 would work against the feature.
+
+   These are set on BODY, not on the root. js/theme.js writes the active theme's
+   variables to documentElement as INLINE STYLE, which no stylesheet rule on that
+   same element can override — but custom properties inherit, so a value set on
+   body shadows the inherited one cleanly.
+
+   Every colour below was solved for contrast rather than picked by eye: the
+   first pass at Dawn failed four of five checks (body text at 4.15 against a
+   4.5 threshold, the accent at 2.8 against 3, and white-on-clay CTA text at
+   3.66). These clear AA for text and 3:1 for the faint tier and the accent.
+   ========================================================================== */
+body.yoga-dawn {
+  --bg: #f5f1ea; --bg-1: #f0ebe2; --bg-elev: #fffdf9; --bg-elev2: #efe8dc;
+  --bg-elev3: #e5dccd; --bg-elev-hero: #fffdf9;
+  --line: #ded3c2; --line-soft: #eae2d5;
+  --text: #2a2622; --text-dim: #4f483e; --text-faint: #6a6052;
+  --accent: #a9613a; --accent-press: #974f28;
+  /* #fffaee, not the deeper #f6e6da it started as: the selected chip's title
+     and the “✓ Done” badge print the ACCENT on this, and on the deeper wash
+     they measured 4.18 and 3.87 against a 4.5 threshold. */
+  --accent-ghost: #fffaee;
+  --on-accent: #fffaf4; --accent-shadow: 169,97,58;
+  --grad-cta: linear-gradient(118deg, #bd7449 0%, #9c552e 100%);
+  --grad-vibrant: linear-gradient(125deg, #c98155 0%, #a9613a 55%, #7f8f6b 100%);
+  --glow: 0 0 0 1px rgba(169,97,58,.12), 0 8px 26px rgba(120,90,60,.10);
+  color-scheme: light;
+  /* ⚠ THE PAGE BACKGROUND IS HARDCODED, NOT A VARIABLE. `body { background:
+     #08111a }` and the body::before glow are literal colours that no theme has
+     ever recoloured — so setting the tokens alone left every card light on a
+     near-black page, and a heading sitting directly on that page measured 1.27
+     against a 4.5 threshold. Both have to be overridden by hand. */
+  background: #f5f1ea;
+}
+body.yoga-night { background: #14131c; }
+/* The static aurora glow is three saturated mint/cyan blobs. On cream it is
+   lurid and on the night skin it is the gym's colours bleeding through the one
+   section that exists to not look like the gym. */
+body.yoga-dawn::before, body.yoga-night::before { display: none; }
+body.yoga-night {
+  --bg: #14131c; --bg-1: #191825; --bg-elev: #1d1b28; --bg-elev2: #232032;
+  --bg-elev3: #2b2839; --bg-elev-hero: #221f30;
+  --line: #302c40; --line-soft: #262336;
+  --text: #eae7f2; --text-dim: #b3adc4; --text-faint: #938dac;
+  --accent: #c9a5d6; --accent-press: #b78cc6; --accent-ghost: #2a2334;
+  --on-accent: #221c28; --accent-shadow: 201,165,214;
+  --grad-cta: linear-gradient(118deg, #d8b8e2 0%, #b78cc6 100%);
+  --grad-vibrant: linear-gradient(125deg, #c9a5d6 0%, #9aa8d8 55%, #8fc7c0 100%);
+  --glow: 0 0 0 1px rgba(201,165,214,.14), 0 8px 30px rgba(201,165,214,.10);
+}
+
+/* The section reads as calmer through WEIGHT and SPACE as much as colour — and
+   those cost nothing and carry across both skins. */
+body.yoga-dawn h1, body.yoga-night h1,
+body.yoga-dawn h2, body.yoga-night h2,
+body.yoga-dawn .routine-name, body.yoga-night .routine-name {
+  font-weight: 600; letter-spacing: .005em;
+}
+body.yoga-dawn .card, body.yoga-night .card,
+body.yoga-dawn .item, body.yoga-night .item { border-radius: 18px; }
+body.yoga-dawn .chip, body.yoga-night .chip { border-radius: 15px; }
+body.yoga-dawn .btn, body.yoga-night .btn { border-radius: 15px; }
+/* Sanskrit is provenance, not a label. */
+body.yoga-dawn .routine-sanskrit, body.yoga-night .routine-sanskrit { font-style: italic; }
+/* The timer number stops shouting: on a breath-paced hold it is a count, not a score. */
+body.yoga-dawn .timer-big, body.yoga-night .timer-big { font-weight: 300; letter-spacing: -.02em; }
+
+/* ⚠ NO AURORA DURING A PRACTICE. The living gradient backdrop is motion you did
+   not ask for at the one moment the whole screen is asking you to be still. */
+body.yoga-dawn #aurora-cv, body.yoga-night #aurora-cv { display: none; }

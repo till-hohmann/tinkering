@@ -79,7 +79,8 @@ export async function renderSettings() {
   const hrStatus = el("p.note", { style: "margin-top:8px;min-height:1em" });
   const inStyle = "width:74px;text-align:center;font-size:1.05rem;font-weight:700;padding:8px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)";
   const labels = ["Zone 1 starts", "Zone 2 starts", "Zone 3 starts", "Zone 4 starts", "Zone 5 starts", "Max HR (top of Zone 5)"];
-  const inputs = bounds.map((v) => el("input", { type: "number", inputmode: "numeric", value: String(v), style: inStyle }));
+  const inputs = bounds.map((v, i) => el("input", { type: "number", inputmode: "numeric", value: String(v),
+    style: inStyle, "aria-label": labels[i] }));
   const editRows = inputs.map((inp, i) => el("div.row", { style: "margin:7px 0;align-items:center" }, [
     el("div", { style: "flex:1", text: labels[i] }), el("span.spacer"), inp,
   ]));
@@ -151,6 +152,7 @@ export async function renderSettings() {
   const vo2log = await getVO2maxLog();
   const latestVO2 = vo2log.length ? vo2log[vo2log.length - 1] : null;
   const vo2In = el("input", { type: "text", inputmode: "decimal", placeholder: "ml/kg/min",
+    "aria-label": "VO₂max in ml/kg/min",
     value: latestVO2 ? String(latestVO2.value) : "",
     style: "width:120px;text-align:center;font-size:1.05rem;font-weight:700;padding:8px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)" });
   const vo2Status = el("p.note", { style: "margin-top:8px;min-height:1em",
@@ -179,14 +181,17 @@ export async function renderSettings() {
   const bwStatus  = el("p.note", { style: "margin-top:8px;min-height:1em" });
   const numStyle = "width:96px;text-align:center;font-size:1.05rem;font-weight:700;padding:8px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)";
   const bwIn = el("input", { type: "text", inputmode: "decimal", placeholder: weightLabel(),
+    "aria-label": "Bodyweight in " + weightLabel(),
     value: bw0 != null ? String(weightValue(bw0)) : "", style: numStyle });
   bwIn.dataset.shown = bwIn.value;      // an untouched field keeps the stored kg exactly (see readEdit)
   const bwKgNow = () => readEdit(bwIn, bw0 ?? 0, (v) => weightToKg(M.parseNum(v)));
   // Protein stays g per KG even on an imperial profile: it's the convention every
   // source states the number in, and converting it would leave the user guessing
   // which one their 2.0 was. The target it produces is in grams either way.
-  const perKgIn = el("input", { type: "text", inputmode: "decimal", placeholder: "g/kg", value: String(perKg0), style: numStyle });
-  const defIn = el("input", { type: "text", inputmode: "numeric", placeholder: "kcal", value: String(def0), style: numStyle });
+  const perKgIn = el("input", { type: "text", inputmode: "decimal", placeholder: "g/kg", value: String(perKg0),
+    style: numStyle, "aria-label": "Protein target in grams per kilo of bodyweight" });
+  const defIn = el("input", { type: "text", inputmode: "numeric", placeholder: "kcal", value: String(def0),
+    style: numStyle, "aria-label": "Daily calorie deficit target" });
   const targetLine = el("div.note", { style: "margin-top:10px" });
   function showTarget() {
     const bwKg = bwKgNow(), pk = M.parseNum(perKgIn.value);
@@ -262,6 +267,7 @@ export async function renderSettings() {
   const mIn = {};
   const mRow = (key, label, hint) => {
     mIn[key] = el("input", { type: "text", inputmode: "decimal", placeholder: lengthLabel(),
+      "aria-label": label + " in " + lengthLabel(),
       value: latestM && latestM[key] != null ? String(lengthValue(latestM[key])) : "", style: numStyle });
     mIn[key].dataset.shown = mIn[key].value;   // carrying last month's number forward must not re-round it
     return el("div.row", { style: "margin-top:10px;align-items:center" }, [
@@ -308,10 +314,12 @@ export async function renderSettings() {
   const dStatus = el("p.note", { style: "margin-top:8px;min-height:1em",
     text: latestD ? `Last scan ${latestD.date}. Retest ~12 weeks apart to track fat vs lean.` : "No scan yet — enter your DEXA results to start tracking." });
   const dDate = el("input", { type: "date", value: (latestD && latestD.date) || todayISO(), max: todayISO(),
+    "aria-label": "Date of the DEXA scan",
     style: numStyle + ";width:150px" });
   const dIn = {};
   const dRow = (key, label, unit) => {
     dIn[key] = el("input", { type: "text", inputmode: "decimal", placeholder: unit || "",
+      "aria-label": label + (unit ? " in " + unit : ""),
       value: latestD && latestD[key] != null ? String(latestD[key]) : "", style: numStyle });
     return el("div.row", { style: "margin-top:10px;align-items:center" }, [
       el("div", { style: "flex:1" }, [el("div", { text: label }), unit ? el("div.faint", { style: "font-size:.78rem", text: unit }) : null]),
@@ -384,6 +392,7 @@ export async function renderSettings() {
   function whoopEndpointRow() {
     const inp = el("input", { type: "text", inputmode: "url",
       placeholder: "https://your-whoop-worker.workers.dev",
+      "aria-label": "WHOOP worker URL",
       style: "flex:1;min-width:0;padding:9px 11px;background:var(--bg-elev2);border:1px solid var(--line);"
         + "border-radius:10px;color:var(--text);font-size:.82rem" });
     const save = el("button.btn.primary", { onclick: async () => {
@@ -548,7 +557,8 @@ export async function renderSettings() {
     if (res !== "cancelled") planStatus.textContent = `Exported “${p.name}” (${res}).`;
   }
 
-  const planInput = el("input", { type: "file", accept: "text/csv,.csv", style: "display:none" });
+  const planInput = el("input", { type: "file", accept: "text/csv,.csv", style: "display:none",
+    "aria-label": "Choose an edited plan CSV to import" });
   planInput.addEventListener("change", async () => {
     const f = planInput.files[0];
     planInput.value = "";                 // so re-picking the same file fires again
@@ -635,7 +645,8 @@ export async function renderSettings() {
   // the comment there. Only the plumbing is up here, because it has to be
   // defined before that card is built.)
 
-  const importInput = el("input", { type: "file", accept: "application/json,.json", style: "display:none" });
+  const importInput = el("input", { type: "file", accept: "application/json,.json", style: "display:none",
+    "aria-label": "Choose a backup JSON file to restore" });
   importInput.addEventListener("change", async () => {
     const f = importInput.files[0]; if (!f) return;
     try {
@@ -818,8 +829,10 @@ export async function renderSettings() {
   const cfg0 = await resolvedConfig(db);
   const cloudStatus = el("p.note", { style: "margin-top:8px;min-height:1em" });
   const epIn = el("input", { type: "text", placeholder: "https://your-backup.workers.dev", value: (cfg0.backup && cfg0.backup.endpoint) || "",
+    "aria-label": "Cloud backup endpoint URL",
     style: "width:100%;padding:9px 11px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text);font-size:.82rem" });
   const tokIn = el("input", { type: "password", placeholder: "your backup token", value: (cfg0.backup && cfg0.backup.token) || "",
+    "aria-label": "Cloud backup token",
     style: "width:100%;padding:9px 11px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text);font-size:.82rem" });
   async function testCloud() {
     cloudStatus.textContent = "Checking…";
@@ -1154,6 +1167,7 @@ export async function renderSettings() {
   }
   function dangerConfirm() {
     const typed = el("input", { type: "text", placeholder: "DELETE",
+      "aria-label": "Type DELETE to confirm erasing everything",
       style: "width:100%;padding:11px 13px;background:var(--bg-elev2);border:1px solid var(--red);border-radius:11px;color:var(--text);font-size:.95rem;text-align:center;letter-spacing:.12em" });
     const cfgHasBackup = hasBackup(cfg0);
     setChildren(dangerBody,
@@ -1338,7 +1352,8 @@ function appleImport() {
   const fill = bar.firstChild;
   const summary = el("div", { style: "margin-top:10px" });
 
-  const input = el("input", { type: "file", accept: ".zip,.xml,application/zip,text/xml", style: "display:none" });
+  const input = el("input", { type: "file", accept: ".zip,.xml,application/zip,text/xml", style: "display:none",
+    "aria-label": "Choose an Apple Health export.zip" });
   const pick = el("button.btn.block", { style: "margin-top:10px", onclick: () => input.click() }, "Choose export.zip…");
 
   input.addEventListener("change", async () => {

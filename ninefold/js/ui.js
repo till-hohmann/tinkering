@@ -142,9 +142,20 @@ export const locationBadge = (loc) => el("span.badge" + placeTint(loc), { text: 
 const TAB_ICONS = {
   today: "M4 11l8-7 8 7M6 9.5V19h12V9.5M10 19v-5h4v5",
   plan: "M4 8h16v12H4zM4 8V5h16v3M8 3v4M16 3v4M8 12h8M8 16h5",
-  // Seated figure, crossed legs: the one silhouette that reads as yoga at 24px
-  // without being a lotus flower, which would be decoration rather than a sign.
-  yoga: "M12 6.5a2 2 0 100-4 2 2 0 000 4M12 8.5v5M6 19l6-5.5 6 5.5M6 19h12",
+  // ॐ. Five strokes, in the order the glyph is written: the upper curl, the big
+  // lower bowl, the tail hooking right and down, the crescent, and the bindu
+  // above it (a zero-length round-capped segment — a dot needs no arc).
+  //
+  // DRAWN, NOT SET IN A FONT. The character depends on a Devanagari face being
+  // installed, and where one is it arrives at whatever weight that font chose —
+  // beside five 2px stroke icons that reads as a paste-in. This was built
+  // against the real glyph rasterised from the system font and checked at the
+  // size it actually renders (25px, 2px stroke), where it comes out at 19% ink
+  // against 16% for the seated figure it replaces and 23% for the Today icon.
+  yoga: "M11.1 10.8 C10.4 9.3 7.3 9.4 7.0 11.2 C6.8 12.6 8.9 13.1 10.0 13.5 " +
+        "C7.1 13.7 4.5 15.1 4.5 17.5 C4.5 20.0 7.1 21.4 9.7 20.6 C11.6 19.9 12.3 18.1 11.4 16.7 " +
+        "M10.0 13.5 C13.1 12.8 16.3 13.2 17.7 14.7 C19.0 16.1 18.6 18.5 16.8 19.4 " +
+        "M11.6 6.3 C12.8 8.7 16.8 8.7 18.0 6.3 M14.8 2.7 L14.85 2.7",
   progress: "M4 20V4M4 20h16M8 20v-7M13 20V8M18 20v-10",
   body: "M4 8h16M4 8v8M4 16h16M20 8v8M8 8v3M12 8v4M16 8v3",   // tape measure = body composition
   profile: "M12 11.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM5 20a7 7 0 0114 0",

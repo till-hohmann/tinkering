@@ -31,10 +31,10 @@ export async function renderNutrition(dateParam) {
   const proteinTarget = bodyweight ? Math.round(perKg * bodyweight) : null;
 
   const fields = {
-    kcal: el("input", { type: "text", inputmode: "numeric", placeholder: "kcal", value: entry && entry.kcal != null ? String(entry.kcal) : "", style: inStyle }),
-    protein: el("input", { type: "text", inputmode: "numeric", placeholder: "g", value: entry && entry.protein != null ? String(entry.protein) : "", style: inStyle }),
-    carbs: el("input", { type: "text", inputmode: "numeric", placeholder: "g", value: entry && entry.carbs != null ? String(entry.carbs) : "", style: inStyle }),
-    fat: el("input", { type: "text", inputmode: "numeric", placeholder: "g", value: entry && entry.fat != null ? String(entry.fat) : "", style: inStyle }),
+    kcal: el("input", { type: "text", inputmode: "numeric", placeholder: "kcal", value: entry && entry.kcal != null ? String(entry.kcal) : "", style: inStyle , "aria-label": "Calories in kcal" }),
+    protein: el("input", { type: "text", inputmode: "numeric", placeholder: "g", value: entry && entry.protein != null ? String(entry.protein) : "", style: inStyle , "aria-label": "Protein in grams" }),
+    carbs: el("input", { type: "text", inputmode: "numeric", placeholder: "g", value: entry && entry.carbs != null ? String(entry.carbs) : "", style: inStyle , "aria-label": "Carbohydrate in grams" }),
+    fat: el("input", { type: "text", inputmode: "numeric", placeholder: "g", value: entry && entry.fat != null ? String(entry.fat) : "", style: inStyle , "aria-label": "Fat in grams" }),
   };
   // gentle validation: flag non-numeric junk (a comma/dot is fine) so a typo isn't
   // silently parsed to 0 without the user noticing.
@@ -50,6 +50,7 @@ export async function renderNutrition(dateParam) {
   // date stepper — ‹ › step a day, tap the date for a native picker to jump to
   // any past day (next/future disabled).
   const picker = el("input", { type: "date", value: iso, max: today,
+    "aria-label": "Pick a day to log food for",
     style: "position:absolute;opacity:0;width:1px;height:1px;pointer-events:none" });
   picker.addEventListener("change", () => { if (picker.value) go("#/nutrition/" + picker.value); });
   const dateBtn = el("button.smid", { style: "background:none;border:none;color:inherit;cursor:pointer",

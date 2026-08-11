@@ -282,7 +282,14 @@ export function sparkline({ values = [], color = "accent", height = 90, fill = t
   const pts = values.map((v, i) => [X(i), Y(v)]);
   const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(2) + " " + p[1].toFixed(2)).join(" ");
 
-  const gid = "sg" + Math.abs(values.reduce((a, b) => a + b, n) | 0) + "_" + n + "_" + String(color).replace(/\W/g, "");
+  // ⚠ A COUNTER, NOT A HASH OF THE DATA. This derived the gradient id from the
+  // sum of the values, the point count and the colour — so two sparklines whose
+  // numbers happened to add up the same collided, and an SVG id collision does
+  // not error: the FIRST definition wins for every `url(#id)` in the document,
+  // so the second chart silently painted with the first one's gradient. Caught
+  // on Progress, where two accent sparklines shared "sg49_2_accent". The other
+  // two generators in this file already use `uidc` for exactly this reason.
+  const gid = "sg" + uidc++;
   if (fill) {
     const defs = svg("defs", {});
     const grad = svg("linearGradient", { id: gid, x1: 0, y1: 0, x2: 0, y2: 1 });

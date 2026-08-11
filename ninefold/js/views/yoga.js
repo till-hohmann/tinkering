@@ -29,7 +29,18 @@ import { entryScript, exitScript, salutationScript } from "../yoga/script.js";
 import { loadNarration } from "../yoga/narrate.js";
 import { runRoutine } from "./routine.js";
 
-const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+// ⚠ HOURS ONCE THERE ARE HOURS. This was M:SS unconditionally, so the Ashtanga
+// Primary Series — the one practice that regularly runs past an hour, and past
+// two at a slow breath — announced itself as "115:21" directly above a phase row
+// reading "15:21". Two numbers in the same visual language meaning wildly
+// different things is the kind of thing you only notice on the mat.
+const mmss = (s) => {
+  const t = Math.max(0, Math.round(s));
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  return h
+    ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+    : `${m}:${String(sec).padStart(2, "0")}`;
+};
 const mins = (s) => `${Math.round(s / 60)} min`;
 // Four named paces rather than a slider, because the number is meaningless on
 // its own — "6 seconds" tells you nothing, "flowing" does. Bounded by

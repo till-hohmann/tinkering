@@ -13,6 +13,13 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 179, notes: [
+    "The yoga section has its own look now. Warm light for choosing a practice and browsing what you've done; deep indigo for the practice itself, because two of the nine intents are Wind down and Before bed and a white screen at 22:00 helps nobody.",
+    "The Yoga tab icon is ॐ.",
+    "Fixed: on a smaller phone the practice screen ran off the bottom on any two-sided pose, so you had to scroll to reach Pause mid-pose. The side is now part of the pose name rather than a row of its own.",
+    "Fixed: an Ashtanga practice showed its length as \"115:21\". It now says 1:55:21.",
+    "Quiet text across the app is a little lighter — the faintest tier was under the threshold where text is reliably readable.",
+  ] },
   // v178 has no entry ON PURPOSE. It lets a yoga pose carry its own photograph
   // instead of borrowing a related pose's — but no yoga photographs exist yet,
   // so nothing about it is visible. It gets a note when the pictures land.

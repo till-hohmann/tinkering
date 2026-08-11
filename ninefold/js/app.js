@@ -63,6 +63,44 @@ const routes = [
   [/^#\/settings$/, () => renderSettings(), "profile"],
 ];
 
+/**
+ * WHICH SKIN THE YOGA SECTION WEARS, DECIDED BY WHAT YOU ARE DOING.
+ *
+ * The rest of the app is a gym and looks like one. Yoga gets its own palette —
+ * and two of them, because the two things you do here want opposite screens:
+ *
+ *   dawn  — the tab, the picker, the review, a logged practice. Read at arm's
+ *           length, usually in daylight. Warm off-white, clay accent.
+ *   night — the player itself. Phone on the mat, often a dim room, forty
+ *           minutes of continuous looking. Deep indigo, lilac accent.
+ *
+ * Not a setting. "Wind down" and "Before bed" are two of the nine intents, and a
+ * light screen at 22:00 would undo the practice it is meant to be carrying.
+ *
+ * The class goes on BODY: theme.js writes the active theme onto documentElement
+ * as inline style, which a stylesheet rule on that element cannot beat — but
+ * custom properties inherit, so setting them one level down shadows it.
+ */
+function yogaSkinFor(hash) {
+  if (/^#\/yoga\/do\//.test(hash)) return "yoga-night";
+  if (/^#\/yoga/.test(hash) || /^#\/ysummary\//.test(hash)) return "yoga-dawn";
+  return null;
+}
+
+function applySkin(hash) {
+  const skin = yogaSkinFor(hash);
+  document.body.classList.toggle("yoga-dawn", skin === "yoga-dawn");
+  document.body.classList.toggle("yoga-night", skin === "yoga-night");
+  // The iOS status bar and the Android toolbar follow the page, or the section
+  // reads as a light screen wearing a black hat.
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    meta.content = skin
+      ? getComputedStyle(document.body).getPropertyValue("--bg").trim()
+      : getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  }
+}
+
 async function router() {
   const hash = window.location.hash || "#/";
   for (const [re, handler, tab] of routes) {
@@ -72,6 +110,7 @@ async function router() {
       // session) never resolve until finished, so doing this after the await
       // would leave the tab bar covering the screen's own controls.
       if (tab) showTabs(tab); else hideTabs();
+      applySkin(hash);
       try { await handler(m); }
       catch (err) { showError(err); }
       return;

@@ -184,7 +184,17 @@ export function runRoutine(container, def, program, opts = {}) {
 
   // --- DOM scaffold (built once; countdown text updated in place) ---
   const big = el("div.timer-big.tnum", { text: "0" });
-  const sideBadge = el("span.badge", { style: "display:none" });
+  // ⚠ THE SIDE GOES ON THE NAME, NOT ON A ROW OF ITS OWN.
+  //
+  // It used to sit in its own centred row above the title, which cost 37px
+  // (29 tall plus an 8px margin) on every bilateral pose — and most poses are
+  // bilateral. On a 375x667 phone that alone pushed the player 34px past one
+  // screen, so you had to scroll to reach Pause while holding pigeon. The
+  // screen was only ever measured on the FIRST step, which is seated centering:
+  // not bilateral, so the row was collapsed and the fit looked fine.
+  //
+  // "Pyramid — Left" in the title is also simply better: it is the phrasing the
+  // "Next:" line already uses, and the side is more prominent there, not less.
   const nameEl = el("h2.center.routine-name", { style: "margin:6px 0 2px" });
   const sanskritEl = el("p.faint.center.sanskrit", { style: "margin:0 0 4px;display:none" });
   const cueEl = el("p.note.center", { style: "min-height:1.2em;padding:0 12px" });
@@ -285,7 +295,6 @@ export function runRoutine(container, def, program, opts = {}) {
     ]));
     container.appendChild(el("div.progress", {}, [bar]));
     container.appendChild(illo);
-    container.appendChild(el("div.row", { style: "justify-content:center;margin-top:8px" }, [sideBadge]));
     container.appendChild(nameEl);
     container.appendChild(sanskritEl);
     container.appendChild(cueEl);
@@ -514,8 +523,14 @@ export function runRoutine(container, def, program, opts = {}) {
     const step = steps[idx];
 
     roundEl.textContent = rounds > 1 ? `Round ${step.round}/${rounds}` : (title || "Routine");
-    setNext("Next: " + nextActiveLabel(steps, idx));
-    if (step.side) { sideBadge.style.display = ""; sideBadge.textContent = step.side; } else sideBadge.style.display = "none";
+    // ⚠ ON A TRANSITION, LOOK PAST THE POSE YOU ARE ENTERING. A transition step
+    // is immediately followed by its OWN timed step, so scanning from here found
+    // the very thing the cue line above is already announcing — the screen read
+    // "Next: Easy cardio" in the middle and "Next: Easy cardio" again at the
+    // bottom, at the exact moment it is meant to be telling you two different
+    // things. Starting one later skips the paired hold and names what actually
+    // follows it.
+    setNext("Next: " + nextActiveLabel(steps, step.type === "transition" ? idx + 1 : idx));
     setIllo(step.item);
     setCue(step.item.cue || "");
     setSanskrit(step.type === "transition" ? "" : (step.item.sanskrit || ""));
@@ -524,7 +539,7 @@ export function runRoutine(container, def, program, opts = {}) {
     if (step.type === "checklist") {
       ring.style.display = "none"; big.style.display = "none";
       orb.style.display = "none"; orbGuide.style.display = "none";
-      setName(step.item.name);
+      setName(labelFor(step));
       renderChecklistControls();
       clearRunTimeline();              // barrier — waits for the Done tap
       return;
@@ -532,7 +547,7 @@ export function runRoutine(container, def, program, opts = {}) {
 
     ring.style.display = ""; big.style.display = "";
     if (step.type === "transition") { setName("Get into position"); setCue("Next: " + labelFor(step)); }
-    else setName(step.item.name);
+    else setName(labelFor(step));
     renderTimedControls();
 
     // Live foreground cue. Suppressed on the post-unlock catch-up (opts.silent),
