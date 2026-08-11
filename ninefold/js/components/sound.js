@@ -234,6 +234,41 @@ export const cueItemStart = () => tone(880, 0.12, 0.22);
 export const cueItemEnd = () => tone(520, 0.16, 0.22);
 export const cueRoutineDone = () => { tone(660, 0.12); setTimeout(() => tone(990, 0.2), 130); };
 
+// --- breath pacer (yoga) ---------------------------------------------------
+// A hold in yoga is counted in BREATHS, not seconds, so the player needs to mark
+// the breath rather than the clock.
+//
+// Deliberately much quieter and lower than the interval cues, and a long soft
+// swell rather than a beep: this fires every few seconds for minutes at a time,
+// and anything with an attack on it becomes unbearable by the third pose. Rising
+// tone on the inhale, falling on the exhale — the pitch IS the instruction, so
+// it works with the eyes closed, which is the point.
+//
+// No locked-screen handling is needed or attempted. The routine engine holds a
+// screen wake-lock for the whole practice, and this file's header explains why
+// cues to a hard-locked PWA are not a thing we chase.
+function swell(from, to, dur, vol) {
+  if (!enabled || !ctx) return;
+  if (ctx.state === "suspended") ctx.resume();
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    const t = ctx.currentTime;
+    osc.frequency.setValueAtTime(from, t);
+    osc.frequency.linearRampToValueAtTime(to, t + dur);
+    // fade in and out symmetrically — no click, no attack
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(vol, t + dur * 0.35);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+  } catch {}
+}
+export const cueInhale = (dur = 2) => swell(196, 262, Math.max(0.6, dur * 0.9), 0.09);
+export const cueExhale = (dur = 2) => swell(262, 175, Math.max(0.6, dur * 0.9), 0.075);
+
 // --- reusable mute button ------------------------------------------------
 const SPK_ON = "M4 9v6h4l5 5V4L8 9H4Z M16 8a4 4 0 0 1 0 8 M18.5 5.5a8 8 0 0 1 0 13";
 const SPK_OFF = "M4 9v6h4l5 5V4L8 9H4Z M16 9l5 6 M21 9l-5 6";

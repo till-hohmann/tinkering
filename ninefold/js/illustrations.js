@@ -9,6 +9,10 @@
 import { POSES, hasPose, renderFigure } from "./figure.js";
 
 import { thumbURL } from "./exercise-photo.js";
+// Asanas keep their own art map rather than joining ART below: it is 77 figures
+// with their own drawing conventions (mat line, inverted and bound shapes), and
+// the yoga side should be removable without unpicking this file.
+import { ASANA_ART, hasAsanaArt } from "./yoga/asana-art.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const SPL = "0.42 0 0.58 1;0.42 0 0.58 1";
@@ -224,7 +228,10 @@ const MAP = {
 
 // direct pose keys (e.g. workoutFigure's "squat_bw"/"overhead") resolve to
 // themselves so every workout tile renders the full poster figure
-export const illustrationKey = (id) => (hasPose(id) ? id : ART[id] ? id : MAP[id] || null);
+// Asanas are checked FIRST so a Sanskrit key can never be shadowed by a lifting
+// pose or an alias that happens to collide.
+export const illustrationKey = (id) =>
+  (hasAsanaArt(id) ? id : hasPose(id) ? id : ART[id] ? id : MAP[id] || null);
 export const hasIllustration = (id) => !!illustrationKey(id);
 
 // --- v2 illustration tiles: a still, glowing gradient figure on a deep tinted
@@ -272,7 +279,7 @@ const themeFor = (id) => THEMES[KEY_THEME[illustrationKey(id)] || "legs"] || THE
 // a clear, static symbol (and so screenshots/Plan lists stay calm).
 export function lineGlyph(id, { animated = false, strokeWidth = 3.4 } = {}) {
   const key = illustrationKey(id) || "barbell";
-  let art = ART[key] || ART.generic;
+  let art = ASANA_ART[key] || ART[key] || ART.generic;
   if (!animated) {
     art = art.replace(/<animateTransform[^>]*\/>/g, "").replace(/<animate[^>]*\/>/g, "");
   }
@@ -366,7 +373,7 @@ function illustrationSVG(id, cls = "illo") {
     return svg;
   }
 
-  const art = (ART[key] || ART.generic)
+  const art = (ASANA_ART[key] || ART[key] || ART.generic)
     .replace(/<animateTransform[^>]*\/>/g, "").replace(/<animate[^>]*\/>/g, "");   // STILL frame, no loop
   svg.setAttribute("viewBox", "0 0 64 64");
   svg.innerHTML =

@@ -571,6 +571,18 @@ export async function renderProgress() {
         el("div.volwrap", {}, rows),
         el("p.note", { style: "margin:12px 2px 2px", text: "Bar = sets logged, tick = the week's planned target, green band = productive range (MEV–MAV). The chip rates your program's planned dose: light (below MEV) · productive · high (above MAV)." }),
       ]));
+      // THE GAP A YOGA-SUBSTITUTED WEEK LEAVES IS SHOWN, NOT HIDDEN.
+      //
+      // Yoga contributes zero hard sets by design — the strength evidence for it
+      // comes entirely from untrained, older or clinical populations, and it is
+      // isometric work, which transfers to isometric strength and not to dynamic
+      // strength. So a week where a lifting day became a practice reads as
+      // under-dosed on the bars above, and that reading is CORRECT. Saying so is
+      // more useful than quietly crediting sets that were never done, and it is
+      // the same principle as the builder naming a Zone-2-only choice instead of
+      // fixing it: an explicit decision is surfaced, never overridden.
+      const yogaCard = await yogaGapNote(program, curWeek, loggedSets);
+      if (yogaCard) children.push(yogaCard);
       // 2. muscle map — lit by the sets you've LOGGED this week (the bars card above
       //    covers the planned dose; the map answers "what have I actually trained").
       const VC = { under: "#5fa8ff", in: "#2fe6a6", over: "#fb7185" };
@@ -878,6 +890,50 @@ function miniStat(label, value) {
     el("div.metric.sm", { text: value }),
     el("div.label", { style: "margin-top:5px", text: label }),
   ]);
+}
+
+/**
+ * Name the gap a yoga practice left in the week's hard sets.
+ *
+ * Only speaks when a practice actually STOOD IN FOR a lifting day — a standalone
+ * practice or one that replaced the mobility work costs the week nothing and
+ * saying otherwise would be noise. When it does speak it names the muscles that
+ * are actually short, because "you did yoga instead" is a fact and "back and
+ * quads are under their floor this week" is the useful version of it.
+ */
+async function yogaGapNote(program, curWeek, loggedSets) {
+  if (!program || !curWeek) return null;
+  const { getYogaLog } = await import("../store.js");
+  const { intentById } = await import("../yoga/intents.js");
+  const log = await getYogaLog();
+  if (!log.length) return null;
+  // The ISO dates covered by the current program week.
+  const start = addDaysLocal(program.startDate, (curWeek - 1) * 7);
+  const end = addDaysLocal(start, 6);
+  const thisWeek = log.filter((e) => e.date >= start && e.date <= end);
+  if (!thisWeek.length) return null;
+  const substituting = thisWeek.filter((e) => e.substitutes === "strength");
+  const short = MUSCLES.filter((m) => LANDMARKS[m] && (loggedSets[m] || 0) < LANDMARKS[m].mev);
+
+  const lines = [];
+  lines.push(el("p.note", { text: `${thisWeek.length} yoga practice${thisWeek.length === 1 ? "" : "s"} this week: ` +
+    thisWeek.map((e) => `${(intentById(e.intent) || {}).label || e.intent} (${e.minutes} min)`).join(", ") + "." }));
+  if (substituting.length) {
+    lines.push(el("p.note", { text: "Counted for adherence. It contributes no hard sets, so the bars above are the real dose — a vigorous flow is a session, not an equivalent one." }));
+    if (short.length) {
+      lines.push(el("p.note.bad", { text: `Below the growth floor this week: ${short.join(", ")}.` }));
+    }
+  } else {
+    lines.push(el("p.note", { text: "None of them stood in for a lifting day, so the week's hard sets are unaffected." }));
+  }
+  return el("div.card", {}, [el("h2", { text: "Yoga this week" }), ...lines]);
+}
+
+function addDaysLocal(iso, n) {
+  const [y, m, d] = String(iso).split("-").map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  const p = (x) => String(x).padStart(2, "0");
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
 }
 
 // Front + back body silhouette, each muscle region tinted by its weekly-volume

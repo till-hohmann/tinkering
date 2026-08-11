@@ -92,8 +92,22 @@ export function defaultProfile() {
       nutrition: false,
       mobility: false,
       vo2max: false,
+      // ON by default, unlike the optional trackers below it. Yoga is a way to
+      // train rather than a number to record: it earns a tab the way cardio does,
+      // and a feature nobody can find is a feature nobody has.
+      yoga: true,
       strengthStandards: true,
     },
+
+    // WHICH BODY SITES THIS PERSON IS PROTECTING. Site names only — "knees",
+    // "si_joint" — never a diagnosis, never a history. The yoga generator reads
+    // this as a first-class input (yoga/asanas.js LIMITATIONS), because yoga's
+    // two documented injury mechanisms are the knee and the sacroiliac joint and
+    // filtering for them afterwards is filtering too late.
+    //
+    // It lives on the PROFILE rather than in the build so the public tree can
+    // carry the vocabulary without carrying anyone's answers.
+    limitations: [],
   };
 }
 
@@ -105,6 +119,7 @@ export const TRACKED_FEATURES = [
   ["cardio", "Running & cardio", "Guided runs, heart-rate zones, pace trends"],
   ["weight", "Bodyweight", "A weigh-in trend over time"],
   ["mobility", "Mobility & stability", "A short supplemental routine a few times a week"],
+  ["yoga", "Yoga", "Composed practices — an alternative to a mobility session, or an extra"],
   ["nutrition", "Food & energy", "Calories in vs out, protein target"],
   ["measurements", "Tape measurements", "Waist and the rest — the honest fat-loss signal"],
   ["dexa", "DEXA scans", "Full body composition, if you get them"],
@@ -156,6 +171,7 @@ function mergeDefaults(stored) {
     tracker: { ...d.tracker, ...(stored.tracker || {}) },
     features: { ...d.features, ...(stored.features || {}) },
     places: Array.isArray(stored.places) ? stored.places : d.places,
+    limitations: Array.isArray(stored.limitations) ? stored.limitations : d.limitations,
   };
 }
 

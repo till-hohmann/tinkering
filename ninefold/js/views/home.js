@@ -3,8 +3,9 @@
 
 import { getActiveProgram, getAllPrograms, resolveDay, getSessionOnDate, getSessionsForProgram,
   getNutrition, getBodyweight, getProteinPerKg, getDeficitTarget, getDraft, getVO2maxLog, getDexaLog,
-  mobilityDoneOn, getMobilityLog } from "../store.js";
+  mobilityDoneOn, getMobilityLog, yogaOn } from "../store.js";
 import { isMobilityDay, sessionFor, MOBILITY_TITLE, MOBILITY_MINUTES, MOBILITY_DAYS } from "../mobility.js";
+import { intentById } from "../yoga/intents.js";
 import { runKindLabel } from "../cardio-intel.js";
 import { todayISO, WEEKDAYS } from "../model.js";
 import * as M from "../model.js";
@@ -242,7 +243,19 @@ export async function renderHome() {
         "A few questions about what you're training for and when you can train, and the app writes the plan — then runs it with you, session by session." }),
       el("button.btn.block.primary", { style: "margin-top:16px", onclick: () => go("#/build") }, "Start"),
       el("button.btn.block", { style: "margin-top:8px", onclick: () => go("#/settings") }, "Import a program instead"),
-    ])]);
+    ]),
+    // YOGA DOES NOT WAIT FOR A TRAINING BLOCK. It substitutes a session, replaces
+    // the mobility work, or goes on top — and only the first of those needs a
+    // plan to exist. Someone who hasn't built a block yet is exactly the person
+    // who might practise today, so hiding it behind the builder gets the
+    // dependency backwards. Found by rendering this screen with a yoga log and
+    // no program, which is a state nothing had exercised.
+    (!homeProfile || homeProfile.features.yoga !== false) ? el("div.card.tight", {}, [
+      el("div.label", { text: "Yoga" }),
+      el("div.note", { style: "margin-top:3px", text: "You don't need a block for this one. Pick what you want from a practice and how long you have." }),
+      el("button.btn.block", { style: "margin-top:11px", onclick: () => go("#/yoga") }, "Compose a practice"),
+    ]) : null,
+    ].filter(Boolean));
   }
 
   const iso = todayISO();
@@ -486,6 +499,27 @@ export async function renderHome() {
             el("button.btn", { onclick: () => go(`#/msummary/${iso}`) }, "Redo"),
           ])
         : el("button.btn.block", { style: "margin-top:11px", onclick: () => go("#/mobility") }, `Start ${sess.title.toLowerCase()}`),
+    ]));
+  }
+
+  // ===== yoga =====
+  // Always available rather than scheduled — that is the point of it. Yoga
+  // substitutes a session, replaces the mobility work, or goes on top, and which
+  // of the three is a decision made on the day, not one the plan can hold.
+  if (!homeProfile || homeProfile.features.yoga !== false) {
+    const doneToday = await yogaOn(iso);
+    children.push(el("div.card.tight", {}, [
+      el("div.row", {}, [
+        el("div", { style: "flex:1;min-width:0" }, [
+          el("div.label", { text: "Yoga" }),
+          el("div.note", { style: "margin-top:3px", text: doneToday.length
+            ? doneToday.map((e) => `${(intentById(e.intent) || {}).label || e.intent} · ${e.minutes} min`).join(" · ")
+            : "Instead of today's session, instead of the mobility work, or on top." }),
+        ]),
+        doneToday.length ? el("span.badge.accent", { text: "✓ Done" }) : null,
+      ]),
+      el("button.btn.block", { style: "margin-top:11px", onclick: () => go("#/yoga") },
+        doneToday.length ? "Practise again" : "Compose a practice"),
     ]));
   }
 

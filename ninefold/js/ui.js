@@ -119,6 +119,9 @@ export const locationBadge = (loc) => el("span.badge" + placeTint(loc), { text: 
 const TAB_ICONS = {
   today: "M4 11l8-7 8 7M6 9.5V19h12V9.5M10 19v-5h4v5",
   plan: "M4 8h16v12H4zM4 8V5h16v3M8 3v4M16 3v4M8 12h8M8 16h5",
+  // Seated figure, crossed legs: the one silhouette that reads as yoga at 24px
+  // without being a lotus flower, which would be decoration rather than a sign.
+  yoga: "M12 6.5a2 2 0 100-4 2 2 0 000 4M12 8.5v5M6 19l6-5.5 6 5.5M6 19h12",
   progress: "M4 20V4M4 20h16M8 20v-7M13 20V8M18 20v-10",
   body: "M4 8h16M4 8v8M4 16h16M20 8v8M8 8v3M12 8v4M16 8v3",   // tape measure = body composition
   profile: "M12 11.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM5 20a7 7 0 0114 0",
@@ -126,6 +129,7 @@ const TAB_ICONS = {
 const TABS = [
   ["today", "Today", "#/"],
   ["plan", "Plan", "#/week"],
+  ["yoga", "Yoga", "#/yoga"],
   ["progress", "Progress", "#/progress"],
   ["body", "Body", "#/body"],
   ["profile", "Profile", "#/settings"],
@@ -142,17 +146,30 @@ function tabIcon(id) {
   return svg;
 }
 
+// Tabs the profile has switched off. Set once at boot and again when Settings
+// changes an answer, so a feature nobody wants doesn't take a sixth of the bar.
+// Kept here rather than read from the profile inside showTabs because showTabs is
+// called synchronously on every route change and the profile read is async.
+let hiddenTabs = new Set();
+export function setHiddenTabs(keys) {
+  hiddenTabs = new Set(keys || []);
+  const bar = document.querySelector(".tabbar");
+  if (bar) bar.remove();          // rebuilt on the next showTabs with the new set
+}
+export const isTabHidden = (key) => hiddenTabs.has(key);
+
 // Show (or update the active state of) the persistent tab bar.
 export function showTabs(activeKey) {
   let bar = document.querySelector(".tabbar");
+  const visible = TABS.filter(([key]) => !hiddenTabs.has(key));
   if (!bar) {
-    bar = el("div.tabbar", {}, [el("div.tabinner", {}, TABS.map(([key, label, href]) =>
+    bar = el("div.tabbar", {}, [el("div.tabinner", {}, visible.map(([key, label, href]) =>
       el("button.tab", { onclick: () => go(href), "aria-label": label }, [
         tabIcon(key), el("span.tlabel", { text: label }),
       ])))]);
     document.body.appendChild(bar);
   }
-  bar.querySelectorAll(".tab").forEach((t, i) => t.classList.toggle("active", TABS[i][0] === activeKey));
+  bar.querySelectorAll(".tab").forEach((t, i) => t.classList.toggle("active", visible[i] && visible[i][0] === activeKey));
 }
 
 export function hideTabs() {

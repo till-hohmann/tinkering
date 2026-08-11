@@ -17,7 +17,7 @@
 // an update and an offline open in the same short window — which is the exact
 // situation of someone who trains while travelling.
 
-const CACHE = "fittrack-v170";
+const CACHE = "fittrack-v171";
 const SHELL = [
   "./",
   "./index.html",
@@ -98,6 +98,16 @@ const SHELL = [
   "./js/version.js",
   "./js/views/builder.js",
   "./js/views/welcome.js",
+  "./js/views/yoga.js",
+  "./js/yoga/asanas.js",
+  "./js/yoga/breath.js",
+  "./js/yoga/asana-art.js",
+  "./js/yoga/ashtanga.js",
+  "./js/yoga/compose.js",
+  "./js/yoga/generate.js",
+  "./js/yoga/intents.js",
+  "./js/yoga/quality.js",
+  "./js/yoga/styles.js",
   "./data/program-1.json",
   "./data/program-2.json",
   "./icons/icon.svg",

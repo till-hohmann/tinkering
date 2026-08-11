@@ -1083,6 +1083,10 @@ export async function renderSettings() {
         const next = { ...state, [key]: !on };
         paintFeats(next);
         await patchProfile({ features: { [key]: !on } });
+        // Some features own a TAB, not just a card, so the bar has to be rebuilt
+        // here too — a feature you just switched on that needs a reload before
+        // its tab shows up reads as broken.
+        try { (await import("../app.js")).applyTabVisibility(); } catch {}
         redraw();                          // the gated cards below appear/disappear
       },
     }, [

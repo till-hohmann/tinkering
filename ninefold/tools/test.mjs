@@ -42,6 +42,15 @@ import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES, alternativesFor } 
 import * as mob from "../js/mobility.js";
 import { applyStretchResults, applyStretchTargets, stretchTarget, STRETCH_MIN, STRETCH_CAP } from "../js/stretch.js";
 import { CHANGELOG, notesSince, versionNumber } from "../js/changelog.js";
+import { checkAsanas, byId as asanaById } from "../js/yoga/asanas.js";
+import { ASANA_ART_KEYS } from "../js/yoga/asana-art.js";
+import { STYLES as YOGA_STYLES } from "../js/yoga/styles.js";
+import { INTENTS as YOGA_INTENTS, checkIntents, accountingFor } from "../js/yoga/intents.js";
+import { generateFlow } from "../js/yoga/generate.js";
+import { primarySeries, checkSeries } from "../js/yoga/ashtanga.js";
+import { auditFlow } from "../js/yoga/quality.js";
+import { breathsRemaining, breathPhaseAt, isInhale } from "../js/yoga/breath.js";
+import { flowSeconds as flowSecondsOf, elapsedAt as flowElapsedAt } from "../js/yoga/compose.js";
 
 let passed = 0, failed = 0;
 const groups = [];
@@ -1742,6 +1751,187 @@ await appleTests();
 // ---------------------------------------------------------------------------
 // The backup Worker's write guards, exercised as real requests against an
 // in-memory KV. These protect the only durable copy of a training log, and both
+// ---------------------------------------------------------------------------
+// YOGA. The generator is the same shape of program as the block builder, which
+// shipped 79% defective because nothing graded the finished artefact — so these
+// assert against WHOLE composed sequences, not against the pieces.
+group("yoga — the library holds together", () => {
+  it("every pose is structurally complete and has a figure", () => {
+    assert.deepEqual(checkAsanas({ art: ASANA_ART_KEYS }), []);
+  });
+  it("every intent names a real style and real peaks", () => {
+    assert.deepEqual(checkIntents({ styles: YOGA_STYLES, asanas: asanaById }), []);
+  });
+  it("the Primary Series names postures that exist", () => {
+    assert.deepEqual(checkSeries(), []);
+  });
+  it("no intent claims to substitute cardio", () => {
+    // Yoga averages ~3.3 METs against 8-9 for a Zone 2 run. The app may never
+    // offer it as a cardio session, at any length or vigour.
+    assert.deepEqual(YOGA_INTENTS.filter((i) => String(i.substitutes) === "cardio").map((i) => i.id), []);
+  });
+  it("a yoga session contributes zero hard sets", () => {
+    for (const i of YOGA_INTENTS) assert.equal(accountingFor(i).hardSets, 0, i.id);
+  });
+});
+
+group("yoga — the arc is a dependency, not a preference", () => {
+  const flow = generateFlow({ intent: "strong_flow", minutes: 45, limits: [], level: 2, seed: 4242 });
+  const audit = auditFlow(flow);
+  it("composes without an error-level defect", () => {
+    assert.deepEqual(audit.errors.map((e) => e.id), []);
+  });
+  it("puts every preparatory pose BEFORE the peak", () => {
+    const peakIdx = flow.items.findIndex((it) => it.phase === "peak");
+    assert.ok(peakIdx > 0, "there is a peak");
+    const prepsAfter = flow.items.slice(peakIdx + 1).filter((it) => it.prepFor);
+    assert.deepEqual(prepsAfter.map((p) => p.asanaId), [], "preparation must precede the peak");
+  });
+  it("puts every counter-pose AFTER the peak", () => {
+    const peakIdx = flow.items.findIndex((it) => it.phase === "peak");
+    const countersBefore = flow.items.slice(0, peakIdx).filter((it) => it.counterTo);
+    assert.deepEqual(countersBefore.map((c) => c.asanaId), []);
+  });
+  it("ends in savasana, at 10-20% of the practice", () => {
+    const last = flow.items[flow.items.length - 1];
+    assert.equal(last.phase, "savasana");
+    const share = last.durationSeconds / flow.totalSeconds;
+    assert.ok(share >= 0.10 && share <= 0.20, `savasana share ${Math.round(share * 100)}%`);
+  });
+  it("lands the peak between 55% and 75% of elapsed time", () => {
+    const idx = flow.items.findIndex((it) => it.phase === "peak");
+    const at = flowElapsedAt(flow.items, idx) / flowSecondsOf(flow.items);
+    assert.ok(at >= 0.55 && at <= 0.75, `peak at ${Math.round(at * 100)}%`);
+  });
+  it("is reproducible from its seed", () => {
+    const again = generateFlow({ intent: "strong_flow", minutes: 45, limits: [], level: 2, seed: 4242 });
+    assert.deepEqual(again.items.map((i) => i.asanaId), flow.items.map((i) => i.asanaId));
+  });
+  it("gives a different sequence on a different seed", () => {
+    const other = generateFlow({ intent: "strong_flow", minutes: 45, limits: [], level: 2, seed: 4243 });
+    assert.notDeepEqual(other.items.map((i) => i.asanaId), flow.items.map((i) => i.asanaId));
+  });
+});
+
+group("yoga — contraindications are an input, not a filter", () => {
+  // The two sites that matter: the knee (deep flexion plus rotation — lotus,
+  // pigeon) and the sacroiliac joint (asymmetric open-hip shapes). Both are
+  // documented yoga injury mechanisms, which is why this is not a polish pass.
+  const limits = ["knees", "si_joint"];
+  it("no protected pose survives into any generated sequence", () => {
+    for (const intent of YOGA_INTENTS) {
+      if (intent.id === "ashtanga") continue;
+      for (const minutes of intent.minutes) {
+        const f = generateFlow({ intent: intent.id, minutes, limits, level: 3, seed: 99 });
+        const bad = f.items.filter((it) => {
+          const a = asanaById(it.asanaId);
+          return a && a.avoid.some((s) => limits.includes(s));
+        });
+        assert.deepEqual(bad.map((b) => b.asanaId), [], `${intent.id} ${minutes}min`);
+      }
+    }
+  });
+  it("names what it left out instead of silently omitting it", () => {
+    const f = generateFlow({ intent: "hips_low_back", minutes: 30, limits, level: 3, seed: 7 });
+    assert.ok(f.excluded.length > 0);
+    assert.ok(f.excluded.some((e) => e.id === "padmasana"), "lotus is a knee pose and must be named");
+    for (const e of f.excluded) assert.ok(e.sites.length > 0, `${e.id} says which site`);
+  });
+  it("drops the peak rather than arriving at one it cannot prepare", () => {
+    // Every peak whose own preparation the limitations strip must be refused.
+    const f = generateFlow({ intent: "strong_flow", minutes: 30,
+      limits: ["knees", "si_joint", "low_back", "wrists", "shoulders", "neck", "inversions"],
+      level: 3, seed: 5 });
+    const audit = auditFlow(f);
+    assert.deepEqual(audit.errors.map((e) => e.id), []);
+  });
+});
+
+group("yoga — the Primary Series stays the Primary Series", () => {
+  it("substitutes in place and keeps every slot", () => {
+    const plain = primarySeries({ limits: [], level: 3, breathSeconds: 5 });
+    const knees = primarySeries({ limits: ["knees", "si_joint"], level: 3, breathSeconds: 5 });
+    assert.equal(knees.items.length, plain.items.length,
+      "the filter may substitute a posture but never remove one");
+    assert.ok(knees.substituted.length > 20, `expected many lotus substitutions, got ${knees.substituted.length}`);
+  });
+  it("audits clean for a body protecting the classic injury sites", () => {
+    const f = primarySeries({ limits: ["knees", "si_joint", "neck"], level: 3, breathSeconds: 5 });
+    assert.deepEqual(auditFlow(f).errors.map((e) => e.id), []);
+  });
+  it("runs five rounds of each salutation as separate rounds", () => {
+    const f = primarySeries({ limits: [], level: 3, breathSeconds: 5 });
+    const roundsA = new Set(f.items.filter((i) => i.salutation === "A").map((i) => i.round));
+    assert.equal(roundsA.size, 5);
+  });
+  it("takes its length from the breath rate, not from a target", () => {
+    const slow = primarySeries({ limits: [], level: 3, breathSeconds: 7 });
+    const fast = primarySeries({ limits: [], level: 3, breathSeconds: 5 });
+    assert.ok(slow.totalSeconds > fast.totalSeconds * 1.2);
+    assert.equal(slow.targetSeconds, slow.totalSeconds, "an authored series has no target to miss");
+  });
+});
+
+group("yoga — a hold is counted in breaths, not seconds", () => {
+  const BS = 5;   // seconds per breath
+  it("reads the full count for the whole of the first breath", () => {
+    // A 5-breath hold is 25 s. At 0 s elapsed it must say 5, and it must still
+    // say 5 after four seconds — a counter that drops to 4 immediately is
+    // counting the clock and calling it a breath.
+    assert.equal(breathsRemaining(25, BS), 5);
+    assert.equal(breathsRemaining(21, BS), 5);
+    assert.equal(breathsRemaining(20, BS), 4);
+  });
+  it("reaches one on the last breath and zero at the end", () => {
+    assert.equal(breathsRemaining(5, BS), 1);
+    assert.equal(breathsRemaining(0.4, BS), 1);
+    assert.equal(breathsRemaining(0, BS), 0);
+  });
+  it("never goes negative when a hold is extended past its target", () => {
+    assert.equal(breathsRemaining(-12, BS), 0);
+  });
+  it("alternates inhale and exhale twice per breath", () => {
+    const phases = [0, 2.5, 5, 7.5, 10].map((t) => breathPhaseAt(t, BS));
+    assert.deepEqual(phases, [0, 1, 2, 3, 4]);
+    assert.deepEqual(phases.map(isInhale), [true, false, true, false, true]);
+  });
+  it("gives one inhale and one exhale per breath over a whole hold", () => {
+    const seen = new Set();
+    for (let t = 0; t < 25; t += 0.1) seen.add(breathPhaseAt(t, BS));
+    assert.equal(seen.size, 10, "5 breaths = 10 half-breaths");
+    assert.equal([...seen].filter(isInhale).length, 5);
+  });
+  it("survives a breath rate of zero rather than dividing by it", () => {
+    assert.equal(breathsRemaining(25, 0), 0);
+    assert.equal(breathPhaseAt(25, 0), 0);
+  });
+});
+
+group("yoga — the whole space is swept, as the builder audit taught", () => {
+  it("no intent, length, limitation or level produces an error-level defect", () => {
+    const LIMIT_SETS = [[], ["knees"], ["si_joint"], ["knees", "si_joint"], ["low_back"],
+      ["wrists"], ["neck", "inversions"], ["shoulders"],
+      ["knees", "si_joint", "low_back", "wrists", "neck", "shoulders", "inversions"]];
+    let swept = 0;
+    const failures = [];
+    for (const intent of YOGA_INTENTS) {
+      if (intent.id === "ashtanga") continue;
+      for (const minutes of intent.minutes) {
+        for (const limits of LIMIT_SETS) {
+          for (let level = 1; level <= 3; level++) {
+            const f = generateFlow({ intent: intent.id, minutes, limits, level, seed: 1234 });
+            const a = auditFlow(f);
+            swept++;
+            if (a.errors.length) failures.push(`${intent.id} ${minutes}min [${limits.join("+") || "none"}] lvl${level}: ${a.errors[0].id}`);
+          }
+        }
+      }
+    }
+    assert.ok(swept >= 200, `swept only ${swept}`);
+    assert.deepEqual(failures.slice(0, 5), []);
+  });
+});
+
 // refusals exist because the failure they prevent has a plausible everyday path
 // (a device wiped by an app reinstall, pushing its blank settings back up).
 async function workerTests() {

@@ -3,7 +3,7 @@
 // open their summary; future days are previewable.
 
 import { getActiveProgram, getAllPrograms, getProgram, resolveDay, getSessionsForProgram,
-  mobilityDoneDates } from "../store.js";
+  mobilityDoneDates, getYogaLog } from "../store.js";
 import { todayISO, weekNumberFor, WEEKDAYS } from "../model.js";
 import { el, mount, go, locationBadge } from "../ui.js";
 import { workoutFigure, illustration } from "../illustrations.js";
@@ -11,6 +11,7 @@ import { ringStat } from "../components/charts.js";
 import { planToggle } from "./calendar.js";
 import { runKindLabel } from "../cardio-intel.js";
 import { sessionFor as mobSessionFor, isMobilityDay } from "../mobility.js";
+import { intentById as yogaIntent } from "../yoga/intents.js";
 import { getProfile } from "../profile.js";
 
 function addDays(iso, n) {
@@ -105,6 +106,26 @@ export async function renderWeek(pid, n) {
       onclick: nextHref ? () => go(nextHref) : null, "aria-label": "Next week" }, "›"),
   ]));
 
+  // A block that carries no weeks at all. Not a draft — a draft says so — but a
+  // block that arrived incomplete, which a partial restore can produce: the
+  // record has `lengthWeeks: 6` and an empty `weeks` array, so `week` resolves to
+  // `{}` and the first `addDays(week.startDate, …)` throws on undefined. The Plan
+  // tab then shows "Something went wrong" with no way forward.
+  //
+  // PRE-EXISTING, found while verifying the Yoga tab against a browser holding
+  // exactly that leftover record. Guarded rather than fixed at the source because
+  // the source is whatever wrote the record, and a view should not crash on data
+  // it can simply describe.
+  if (!program.draft && !(week && week.startDate)) {
+    children.push(el("div.card", { style: "margin-top:6px" }, [
+      el("h2", { style: "margin:2px 0 6px", text: "This block has no weeks" }),
+      el("p.note", { style: "margin-top:0", text:
+        "The block record is here but its daily plan isn't — usually a restore that didn't finish. Build a new block, or import the plan again from Profile." }),
+      el("button.btn.primary.block", { style: "margin-top:14px", onclick: () => go("#/build") }, "Build a block"),
+    ]));
+    return mount(children);
+  }
+
   // --- draft "shell" block: no daily plan yet (designed at the handoff) ---
   if (program.draft) {
     children.push(el("div.card", { style: "margin-top:6px" }, [
@@ -122,6 +143,11 @@ export async function renderWeek(pid, n) {
   // --- completion + scheme ---
   let planned = 0, completed = 0;
   const mobDone = await mobilityDoneDates();
+  const yogaByDate = new Map();
+  for (const e of await getYogaLog()) {
+    if (!yogaByDate.has(e.date)) yogaByDate.set(e.date, []);
+    yogaByDate.get(e.date).push(e);
+  }
   // A tracker switched off in "What you track" must stop appearing here too.
   const wkProfile = await getProfile().catch(() => null);
   const showMobility = !wkProfile || wkProfile.features.mobility !== false;
@@ -154,9 +180,23 @@ export async function renderWeek(pid, n) {
           onclick: () => go(doneSession ? `#/summary/${doneSession.id}` : `#/day/${program.id}/${weekNumber}/${wd}`),
         }, [tile, meta, right]);
 
+    // A yoga practice done on this day. Yoga is never SCHEDULED — it substitutes
+    // or it goes on top, and which is a decision made on the day — so it only
+    // ever appears here retrospectively, as a row recording what happened.
+    const yogaRows = (yogaByDate.get(dayIso) || []).map((e) => el("div.item.yogarow", {}, [
+      el("div.ico.illotile", { style: "padding:0;overflow:hidden" }, [illustration("padmasana")]),
+      el("div.meta", {}, [
+        el("div.t", { text: `${WEEKDAY_FULL[wd]} yoga` }),
+        el("div.s", { text: `${(yogaIntent(e.intent) || {}).label || e.intent} · ${e.minutes} min` +
+          (e.substitutes === "strength" ? " · stood in for the session"
+            : e.substitutes === "mobility" ? " · stood in for M&S" : "") }),
+      ]),
+      el("span.badge.accent", { text: "✓ Done" }),
+    ]));
+
     // supplemental mobility & stability session on its scheduled days — tappable
     // any day (past, today or ahead), so it can be run late or previewed early.
-    if (!showMobility || !isMobilityDay(wd)) return [dayRow];
+    if (!showMobility || !isMobilityDay(wd)) return [dayRow, ...yogaRows];
     const ms = mobSessionFor(wd);
     const msDone = mobDone.has(dayIso);
     const msTile = el("div.ico.illotile", { style: "padding:0;overflow:hidden" }, [illustration(ms.items[0].id)]);
@@ -171,7 +211,7 @@ export async function renderWeek(pid, n) {
       ]),
       msDone ? el("span.badge.accent", { text: "✓ Done" }) : locationBadge(ms.location),
     ]);
-    return [dayRow, msRow];
+    return [dayRow, msRow, ...yogaRows];
   });
 
   const ring = ringStat({ pct: planned ? completed / planned : 0, value: `${completed}/${planned}`,

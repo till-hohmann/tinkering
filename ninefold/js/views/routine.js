@@ -20,8 +20,10 @@
 import { el, clear, haptic, registerCleanup } from "../ui.js";
 import { illustration } from "../illustrations.js";
 import { cueTick, cueItemStart, cueItemEnd, cueRoutineDone, say, muteToggle,
-  beginRunAudio, endRunAudio, setRunTimeline, clearRunTimeline, preloadVoice, ensureAudioRunning } from "../components/sound.js";
+  beginRunAudio, endRunAudio, setRunTimeline, clearRunTimeline, preloadVoice, ensureAudioRunning,
+  cueInhale, cueExhale } from "../components/sound.js";
 import { lockButton, closeScreenLock } from "../components/screenlock.js";
+import { breathsRemaining, breathPhaseAt, isInhale } from "../yoga/breath.js";
 
 let wakeLock = null;
 async function requestWake() {
@@ -74,10 +76,18 @@ export function svgText(text, { size = 20, weight = 800, maxLines = 1, maxWidth 
 }
 
 // Expand a routine definition into a flat list of steps.
+//
+// TRANSITIONS ARE PER-ITEM, falling back to the routine's own default. The
+// mobility routine wants one number for everything; a yoga flow does not. A
+// vinyasa's linked movements have NO transition at all — "one breath, one
+// movement" is the definition of the thing, and a five-second pause to "get into
+// position" between the halves of a sun salutation breaks it — while a change
+// from standing to a propped floor shape needs longer than either.
 function buildSteps(def) {
   const steps = [];
   const rounds = def.rounds || 1;
-  const trans = def.transitionSeconds != null ? def.transitionSeconds : 5;
+  const fallback = def.transitionSeconds != null ? def.transitionSeconds : 5;
+  const transFor = (it) => (it.transitionSeconds != null ? it.transitionSeconds : fallback);
   for (let r = 1; r <= rounds; r++) {
     for (const it of def.items) {
       if (it.once && r > 1) continue; // intro items (e.g. HR-down walk) play once, not every round
@@ -86,6 +96,7 @@ function buildSteps(def) {
       } else {
         const sides = it.bilateral ? ["Left", "Right"] : [null];
         for (const side of sides) {
+          const trans = transFor(it);
           if (trans > 0) steps.push({ type: "transition", item: it, side, seconds: trans, round: r });
           steps.push({ type: "timed", item: it, side, seconds: it.durationSeconds, round: r });
         }
@@ -104,6 +115,30 @@ function buildSteps(def) {
 // not a meaningful question.
 const STRETCH_RE = /hamstring|quad|glute|hip_flex|chest|lat|tspine|calf|calv|stretch|figure|doorway|worlds_greatest|adductor|butterfly|dead[_ ]?hang/i;
 export const isStretch = (item) => STRETCH_RE.test(item.id || "") || /stretch/i.test(item.name || "");
+
+// AN ITEM MAY STATE ITS CUE KIND INSTEAD OF BEING GUESSED AT.
+//
+// The regex above works because the mobility routine's ids are English words
+// describing body parts. No asana name will ever match it — "Utthita
+// Trikonasana" contains none of those strings — so every pose in a yoga flow
+// would have been announced with the beep meant for dynamic warm-up work. Rather
+// than extend the regex with 110 Sanskrit names, an item can now say what it is:
+//
+//   "hold"  — a shape you settle into and can fail to maintain (the "stretch" cue)
+//   "flow"  — a linked movement, one breath one movement (no spoken cue at all,
+//             because announcing every step of a sun salutation is chatter)
+//   "rest"  — savasana and the like: no cue, nothing to announce
+//
+// Items with no `cueKind` fall back to the regex, so the mobility routine and the
+// warm-ups are untouched.
+export function cueKindOf(item) {
+  if (item && item.cueKind) return item.cueKind;
+  return isStretch(item) ? "hold" : "dynamic";
+}
+
+// The breath arithmetic lives in yoga/breath.js — pure, DOM-free and tested.
+// Re-exported here because this is where callers expect to find it.
+export { breathsRemaining, breathPhaseAt, isInhale } from "../yoga/breath.js";
 
 // Each warm-up / cool-down movement gets its own movement-figure tile — the same
 // glowing, tinted-tile illustration the main lifts use — resolved from its id.
@@ -149,9 +184,16 @@ export function runRoutine(container, def, program, opts = {}) {
   const big = el("div.timer-big.tnum", { text: "0" });
   const sideBadge = el("span.badge", { style: "display:none" });
   const nameEl = el("h2.center.routine-name", { style: "margin:6px 0 2px" });
+  const sanskritEl = el("p.faint.center.sanskrit", { style: "margin:0 0 4px;display:none" });
   const cueEl = el("p.note.center", { style: "min-height:1.2em;padding:0 12px" });
+  // THE MODIFICATION IS ALWAYS ON SCREEN, never behind a tap.
+  // Accessibility is the whole brand of the practices people actually finish, and
+  // the one thing a home practitioner cannot do is ask. A way into the pose that
+  // you have to go looking for is a way into the pose you do not take.
+  const easierEl = el("p.faint.center.easier", { style: "margin:6px 12px 0;display:none" });
   const illo = el("div.routine-illo");
   const nextEl = el("div.faint.center", { style: "margin-top:8px" });
+  const unitEl = el("div.faint.center.breathunit", { style: "margin-top:-4px;display:none" });
   const roundEl = el("span.badge");
   const bar = el("div.progress-fill");
   const ring = el("div.timer-ring");
@@ -220,8 +262,11 @@ export function runRoutine(container, def, program, opts = {}) {
     container.appendChild(illo);
     container.appendChild(el("div.row", { style: "justify-content:center;margin-top:8px" }, [sideBadge]));
     container.appendChild(nameEl);
+    container.appendChild(sanskritEl);
     container.appendChild(cueEl);
+    container.appendChild(easierEl);
     container.appendChild(el("div.timer-wrap", {}, [ring, big]));
+    container.appendChild(unitEl);
     container.appendChild(nextEl);
   }
 
@@ -243,6 +288,16 @@ export function runRoutine(container, def, program, opts = {}) {
   function setName(text) { clear(nameEl); nameEl.appendChild(svgText(text, { size: 20, weight: 800, maxLines: 2 })); }
   function setCue(text) { clear(cueEl); if (text) cueEl.appendChild(svgText(text, { size: 14, weight: 500, maxLines: 2, maxWidth: 320 })); }
   function setNext(text) { clear(nextEl); nextEl.appendChild(svgText(text, { size: 14, weight: 500, maxLines: 1 })); }
+  function setSanskrit(text) {
+    clear(sanskritEl);
+    sanskritEl.style.display = text ? "" : "none";
+    if (text) sanskritEl.appendChild(svgText(text, { size: 12, weight: 500, maxLines: 1, maxWidth: 320 }));
+  }
+  function setEasier(text) {
+    clear(easierEl);
+    easierEl.style.display = text ? "" : "none";
+    if (text) easierEl.appendChild(svgText("Easier: " + text, { size: 12, weight: 500, maxLines: 2, maxWidth: 320 }));
+  }
 
   // --- lock-timeline cue scheduling (fires while the screen is locked) ---
   // The voice clip a step announces, or null for steps that use a tone (dynamic
@@ -279,17 +334,61 @@ export function runRoutine(container, def, program, opts = {}) {
     buildTimeline();
   }
 
+  // --- breath pacing (yoga) --------------------------------------------------
+  // A yoga hold is counted in BREATHS, not seconds — five breaths in triangle,
+  // not twenty-five seconds in triangle — so on a breath-paced item the big
+  // number counts breaths down and a soft rising/falling tone marks each one.
+  //
+  // Driven from the SAME wall-clock accumulator as everything else rather than
+  // from its own interval. That is what makes it survive a pause (segMs simply
+  // stops), a +15s, an Extend, and the screen going off and coming back: an
+  // independent timer would drift out of step with the pose it is pacing, which
+  // is worse than no pacer at all.
+  const breathSeconds = def.breathSeconds || 0;
+  const isBreathPaced = (step) => !!(breathSeconds && step && step.type === "timed"
+    && step.item.breathPaced && step.item.holdBreaths);
+  let lastHalf = -1;
+  function startBreathPacer(step) {
+    lastHalf = -1;
+    const on = isBreathPaced(step);
+    unitEl.style.display = on ? "" : "none";
+    if (on) unitEl.textContent = step.item.holdBreaths === 1 ? "breath" : "breaths";
+  }
+  function paceBreath(step, elapsedSec) {
+    if (!isBreathPaced(step) || paused) return;
+    const half = breathPhaseAt(elapsedSec, breathSeconds);
+    if (half === lastHalf) return;
+    const first = lastHalf === -1;
+    lastHalf = half;
+    // Don't fire a burst of cues catching up after the screen was off.
+    if (first && elapsedSec > breathSeconds) return;
+    if (isInhale(half)) cueInhale(breathSeconds / 2); else cueExhale(breathSeconds / 2);
+  }
+
   // --- per-frame display (driven by the wall-clock loop) ---
   function render() {
     const step = steps[idx];
     if (!step || step.type === "checklist" || extending) return;
     const dur = curDur();
-    const rem = Math.max(0, dur - segMs / 1000);
-    big.textContent = fmt(Math.ceil(rem));
+    const elapsed = segMs / 1000;
+    const rem = Math.max(0, dur - elapsed);
+    if (isBreathPaced(step)) {
+      // Count the breaths, not the clock. Ceil so it reads "5" for the whole of
+      // the first breath and only turns over when that breath is done.
+      big.textContent = String(breathsRemaining(rem, breathSeconds));
+      paceBreath(step, elapsed);
+    } else {
+      big.textContent = fmt(Math.ceil(rem));
+    }
     ring.style.setProperty("--p", `${Math.max(0, Math.min(100, dur > 0 ? (rem / dur) * 100 : 0))}%`);
     ring.classList.toggle("transition", step.type === "transition");
     const whole = Math.ceil(rem);
-    if (whole !== lastTick) { lastTick = whole; if (!paused && step.type === "timed" && whole <= 3 && whole > 0) cueTick(); }
+    // The 3-2-1 tick is for a clock. On a breath-paced hold it fights the pacer,
+    // and "hurry up" is the opposite of what the last breath of a pose wants.
+    if (whole !== lastTick) {
+      lastTick = whole;
+      if (!paused && step.type === "timed" && !isBreathPaced(step) && whole <= 3 && whole > 0) cueTick();
+    }
     bar.style.width = `${Math.round((idx / steps.length) * 100)}%`;
   }
 
@@ -307,6 +406,8 @@ export function runRoutine(container, def, program, opts = {}) {
     if (step.side) { sideBadge.style.display = ""; sideBadge.textContent = step.side; } else sideBadge.style.display = "none";
     setIllo(step.item);
     setCue(step.item.cue || "");
+    setSanskrit(step.type === "transition" ? "" : (step.item.sanskrit || ""));
+    setEasier(step.type === "transition" ? "" : (step.item.easier || ""));
 
     if (step.type === "checklist") {
       ring.style.display = "none"; big.style.display = "none";
@@ -325,9 +426,13 @@ export function runRoutine(container, def, program, opts = {}) {
     // since the lock timeline already voiced those steps while the screen was off.
     endHoldBtn.style.display = tracked(step) ? "" : "none";
     const sayLive = !stepOpts.silent && !document.hidden;
+    const kind = cueKindOf(step.item);
     if (step.type === "transition") { if (sayLive) say("position"); haptic(10); }
-    else if (isStretch(step.item)) { if (sayLive) say("stretch"); haptic(20); }
+    else if (kind === "hold") { if (sayLive) say("stretch"); haptic(20); }
+    else if (kind === "flow") { haptic(10); }        // linked movement: no announcement
+    else if (kind === "rest") { /* savasana — nothing at all */ }
     else { if (sayLive) cueItemStart(); haptic(20); }
+    startBreathPacer(step);
     buildTimeline();   // refresh the lock timeline for the new position
     render();
   }

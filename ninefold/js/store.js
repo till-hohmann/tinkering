@@ -17,7 +17,7 @@ import { DEFAULT_ZONE_BOUNDS, maxHRof } from "./cardio-intel.js";
 // reverted to picking by date — so someone deliberately running an older block
 // would come back from a wipe running a different one, with nothing to indicate
 // it had changed. The ids they reference are themselves in the backup.
-export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "stretchProg", "activeProgramId", "autoSelectProgram", "audioPrefs"];
+export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "stretchProg", "activeProgramId", "autoSelectProgram", "audioPrefs", "yogaLog", "yogaPrefs"];
 export async function syncedPrefs() {
   const out = {};
   for (const k of SYNCED_PREFS) { const v = await db.getPref(k); if (v !== undefined) out[k] = v; }
@@ -341,6 +341,44 @@ export async function removeMobilityDone(iso) {
 export async function mobilityEntryOn(iso) { return (await getMobilityLog()).find((e) => e.date === iso) || null; }
 export async function mobilityDoneOn(iso) { return (await getMobilityLog()).some((e) => e.date === iso); }
 export async function mobilityDoneDates() { return new Set((await getMobilityLog()).map((e) => e.date)); }
+// --- yoga practice log -------------------------------------------------------
+// Cloud-synced via SYNCED_PREFS ("yogaLog"). One entry per completed practice:
+//   { date, intent, style, minutes, peak, substitutes, poses }
+//
+// SEVERAL PRACTICES A DAY ARE ALLOWED, which is why this does NOT replace by
+// date the way the mobility log does. A yoga session can be a standalone extra
+// on top of a training day — that is one of the three things it is for — and a
+// log that silently overwrote the morning practice with the evening one would
+// undercount adherence in exactly the case the feature exists to serve.
+//
+// `substitutes` records what the practice STOOD IN FOR ("strength" | "mobility" |
+// null), which is what lets the week be read honestly: it counts for adherence,
+// it contributes zero hard sets, and Progress shows the resulting gap rather
+// than hiding it.
+export async function getYogaLog() { return (await db.getPref("yogaLog")) || []; }
+export async function addYogaDone(iso, entry) {
+  const raw = (await db.getPref("yogaLog")) || [];
+  raw.push({ date: iso, at: new Date().toISOString(), ...entry });
+  raw.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  await db.setPref("yogaLog", raw); pushCloud();
+  return raw;
+}
+export async function removeYogaDone(iso, at) {
+  const raw = ((await db.getPref("yogaLog")) || []).filter((e) => !(e.date === iso && (!at || e.at === at)));
+  await db.setPref("yogaLog", raw); pushCloud();
+}
+export async function yogaOn(iso) { return (await getYogaLog()).filter((e) => e.date === iso); }
+export async function yogaDoneDates() { return new Set((await getYogaLog()).map((e) => e.date)); }
+
+// How this person practises: breath rate, experience level, last choices. Synced
+// so a restored device does not go back to guessing.
+export async function getYogaPrefs() { return (await db.getPref("yogaPrefs")) || {}; }
+export async function setYogaPrefs(p) {
+  const next = { ...(await getYogaPrefs()), ...p };
+  await db.setPref("yogaPrefs", next); pushCloud();
+  return next;
+}
+
 // Per-exercise hold-progression state (target seconds, streak, variant level) —
 // consumed/advanced by mobility.js applyHoldResults after each tracked session.
 export async function getMobilityProg() { return (await db.getPref("mobilityProg")) || {}; }

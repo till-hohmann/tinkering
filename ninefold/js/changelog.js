@@ -13,6 +13,13 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 171, notes: [
+    "There is a Yoga tab. You say what you want from a practice and how long you have, and it composes one — warm-up, build, a peak pose it has actually prepared you for, its counter-pose, and a savasana in proportion to the session.",
+    "Holds are counted in breaths rather than seconds, with a soft tone marking the inhale and the exhale.",
+    "You can tell it what you're protecting — knees, low back, SI joint, wrists, neck, shoulders — and it builds around that rather than filtering afterwards. It names the poses it left out and what it put in their place.",
+    "The Ashtanga Primary Series is there in full, in its own fixed order, because that is what it is.",
+    "A practice counts towards your week but never as hard sets. If one stood in for a lifting day, Progress says which muscles came up short.",
+  ] },
   { v: 170, notes: [
     "The block builder now shows which of your picks actually shapes the lifting — with the reps, rest and effort it means — and says so when a second choice won't change anything.",
     "Generated blocks are checked before you start them: weekly sets per muscle, rep ranges suited to their job, rest matched to the loads, and nothing left untrained. Anything it can't fix, it names.",

@@ -27,7 +27,7 @@ const DIRS = ["js", "css", "fonts", "audio", "icons", "img", "backup-worker/src"
 const FILES = [
   "index.html", "manifest.webmanifest", "sw.js",
   "backup-worker/wrangler.toml", "whoop-worker/wrangler.toml", "whoop-worker/README.md",
-  "tools/check.mjs", "tools/test.mjs", "tools/build-public.mjs",
+  "tools/check.mjs", "tools/test.mjs", "tools/yoga-audit.mjs", "tools/build-public.mjs",
   "tools/deploy.ps1", "tools/make-icons.py", "tools/make-mark-nine.py", "tools/build-exercise-images.py",
   "tools/illustration-prompts.md",
   "docs/apple-health.md",

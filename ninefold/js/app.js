@@ -6,7 +6,7 @@ import { migrateIfNeeded, getProfile } from "./profile.js";
 import { loadPhotoManifest } from "./exercise-photo.js";
 import { applyTheme, DEFAULT_THEME } from "./theme.js";
 import { mountAurora } from "./components/aurora.js";
-import { mount, el, showTabs, hideTabs } from "./ui.js";
+import { mount, el, showTabs, hideTabs, setHiddenTabs } from "./ui.js";
 
 import { renderHome } from "./views/home.js";
 import { renderSession, renderPlannedSession } from "./views/session.js";
@@ -25,6 +25,7 @@ import { renderMobSummary } from "./views/mobsummary.js";
 import { renderExercise } from "./views/exercise.js";
 import { renderBuilder } from "./views/builder.js";
 import { renderWelcome } from "./views/welcome.js";
+import { renderYoga, renderYogaBuild, renderYogaSession } from "./views/yoga.js";
 
 // route table: hash pattern -> handler(params); tab = which bottom-nav tab is
 // active (null = a full-screen flow / drill-down, so the tab bar is hidden).
@@ -38,6 +39,12 @@ const routes = [
   [/^#\/week$/, () => renderWeek(), "plan"],
   [/^#\/week\/([\w-]+)\/(\d+)$/, (m) => renderWeek(m[1], Number(m[2])), "plan"],
   [/^#\/day\/([\w-]+)\/(\d+)\/(\w+)$/, (m) => renderDay(m[1], Number(m[2]), m[3]), null],
+  // Yoga sits between Plan and Progress. The build screen is a drill-down (tab
+  // bar visible, it's still the Yoga tab); the session itself is full-screen,
+  // like every other guided player.
+  [/^#\/yoga$/, () => renderYoga(), "yoga"],
+  [/^#\/yoga\/build\/(\w+)\/(\d+)(?:\/(\d+))?$/, (m) => renderYogaBuild(m[1], m[2], m[3]), "yoga"],
+  [/^#\/yoga\/do\/(\w+)\/(\d+)(?:\/(\d+))?$/, (m) => renderYogaSession(m[1], m[2], m[3]), null],
   [/^#\/progress$/, () => renderProgress(), "progress"],
   [/^#\/body$/, () => renderComposition(), "body"],
   [/^#\/records$/, () => renderRecords(), null],
@@ -124,6 +131,9 @@ async function boot() {
   // Same reasoning for the audio settings: they live in localStorage for speed,
   // which no backup carries, so the restored copy is applied here.
   try { await initAudioPrefs(); } catch (err) { console.warn("audio prefs init skipped", err); }
+  // Which tabs this install wants. Resolved after the restore, so a wiped device
+  // gets its own answer back rather than the default one.
+  try { await applyTabVisibility(); } catch (err) { console.warn("tab visibility skipped", err); }
   window.addEventListener("hashchange", router);
   // First run: onboarding, then the builder. Both only when landing on the
   // default route, so a deep link (a shared summary URL, a bookmark) still wins
@@ -142,6 +152,22 @@ async function boot() {
   // it must not hold up the first paint, and it fails silently offline.
   import("./health/index.js").then((h) => h.syncTrackerVO2max()).catch(() => {});
   cloudPush(snapshot);   // reflect local state up to the cloud
+}
+
+/**
+ * Hide the tabs whose feature is switched off.
+ *
+ * Exported because Settings has to call it the moment a toggle changes: a
+ * feature you just turned on that needs a reload before its tab appears is a
+ * feature that looks broken. This is also what makes `features.yoga` a real
+ * switch rather than a flag nobody reads — the v161 lesson, where the bodyweight
+ * card sat inside a card that was off by default and silently never appeared.
+ */
+export async function applyTabVisibility() {
+  const p = await getProfile();
+  const hidden = [];
+  if (p && p.features && p.features.yoga === false) hidden.push("yoga");
+  setHiddenTabs(hidden);
 }
 
 function registerSW() {
