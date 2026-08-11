@@ -483,6 +483,27 @@ export async function markNotesSeen(currentVersion) {
 // mobilityProg, and synced for the same reason: it is a record of what your body
 // actually does, not device bookkeeping.
 export async function getStretchProg() { return (await db.getPref("stretchProg")) || {}; }
+
+/**
+ * Undo the Skip-button flooring, once.
+ *
+ * ⚠ RUNS AFTER THE CLOUD MERGE, or it repairs a stale local copy and the
+ * restore then puts the flattened numbers straight back over the top.
+ *
+ * The flag is its own pref rather than a schema version because this is a
+ * one-off apology for a specific bug, not a shape change — and it must never
+ * run twice: a target legitimately re-based to 15 s tomorrow is not something
+ * to undo. Named for the bug rather than the release, because the release it
+ * ships in has already moved once.
+ */
+export async function repairStretchTargetsOnce() {
+  if (await db.getPref("stretchSkipRepairDone")) return { cleared: [] };
+  const { repairSkipFlooring } = await import("./stretch.js");
+  const { state, cleared } = repairSkipFlooring(await getStretchProg());
+  if (cleared.length) { await db.setPref("stretchProg", state); pushCloud(); }
+  await db.setPref("stretchSkipRepairDone", true);
+  return { cleared };
+}
 export async function setStretchProg(state) { await db.setPref("stretchProg", state || {}); pushCloud(); }
 
 // The routine ITSELF — which sessions exist and what's in them. Synced, because

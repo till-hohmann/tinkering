@@ -1,6 +1,7 @@
 // app.js — bootstrap, service-worker registration, and a tiny hash router.
 
-import { seedIfNeeded, mergeRestore, snapshot, getActiveProgram, initMobilityRoutine, initAudioPrefs } from "./store.js";
+import { seedIfNeeded, mergeRestore, snapshot, getActiveProgram, initMobilityRoutine, initAudioPrefs,
+  repairStretchTargetsOnce } from "./store.js";
 import { cloudPull, cloudPush } from "./cloudsync.js";
 import { migrateIfNeeded, getProfile } from "./profile.js";
 import { loadPhotoManifest } from "./exercise-photo.js";
@@ -168,6 +169,13 @@ async function boot() {
     active = await getActiveProgram();
     await migrateIfNeeded(active);
   } catch (err) { console.warn("profile migration skipped", err); }
+  // Undo the Skip-button flooring (see repairStretchTargetsOnce). Here, after the
+  // merge, for the same reason as everything else in this block: repairing the
+  // local copy first would just be overwritten by the restore.
+  try {
+    const { cleared } = await repairStretchTargetsOnce();
+    if (cleared.length) console.info(`stretch targets reset to plan defaults: ${cleared.join(", ")}`);
+  } catch (err) { console.warn("stretch repair skipped", err); }
   // Resolve the mobility routine before the first render, and AFTER the cloud
   // merge so a restored device gets its own routine back rather than capturing
   // the build's default over the top of it.

@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 183, notes: [
+    "Your stretch targets are back on the plan's numbers. The Skip bug had flattened them to the 15-second minimum and there is no record of what you had earned, so they start from the plan again and build back up from there. A target you genuinely hold at 15 seconds was left alone.",
+  ] },
   { v: 182, notes: [
     "Fixed: tapping Skip on a stretch logged it as a hold you'd managed for about a second, and the progression engine read that as failing it — so one pass of Skip through a cool-down dropped every stretch back to the 15-second minimum. Skip is navigation now; only finishing a hold, or the 'end hold — log my time' button, moves the target.",
   ] },

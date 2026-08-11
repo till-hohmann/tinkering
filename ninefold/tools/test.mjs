@@ -40,7 +40,7 @@ import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay, dayCellRole }
 import { parseAppleExport, summarise, appleTime } from "../js/health/apple-import.js";
 import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES, alternativesFor } from "../js/substitution.js";
 import * as mob from "../js/mobility.js";
-import { applyStretchResults, applyStretchTargets, stretchTarget, STRETCH_MIN, STRETCH_CAP } from "../js/stretch.js";
+import { applyStretchResults, applyStretchTargets, stretchTarget, STRETCH_MIN, STRETCH_CAP, repairSkipFlooring } from "../js/stretch.js";
 import { CHANGELOG, notesSince, versionNumber } from "../js/changelog.js";
 import { checkAsanas, byId as asanaById } from "../js/yoga/asanas.js";
 import { ASANA_ART_KEYS } from "../js/yoga/asana-art.js";
@@ -2192,6 +2192,55 @@ group("stretches — skipping is not failing", () => {
     assert.equal(target(learned, items[0]), 55);
     assert.equal(target({}, items[0]), 55);           // falls back to the plan's own number
     assert.equal(target(learned, { id: "brand_new", durationSeconds: 30 }), 30);
+  });
+});
+
+group("stretches — the repair undoes the bug, not the person", () => {
+  // One-time, on the first boot of v182. The Skip button had flattened learned
+  // targets to the 15s floor; the entry is dropped so stretchState falls back to
+  // the plan's own duration, which is where a new install starts.
+  it("clears what Skip flattened", () => {
+    const state = {
+      couch_stretch: { targetSec: STRETCH_MIN, streak: 0, lastActual: 1 },
+      dead_hang:     { targetSec: STRETCH_MIN, streak: 0, lastActual: 0 },
+    };
+    const { state: out, cleared } = repairSkipFlooring(state);
+    assert.deepEqual(cleared.sort(), ["couch_stretch", "dead_hang"]);
+    assert.deepEqual(out, {});
+    // and the fall-back is the plan's number, not 15
+    assert.equal(stretchTarget(out, { id: "couch_stretch", durationSeconds: 40 }), 40);
+  });
+
+  it("⚠ LEAVES A GENUINELY EARNED 15s ALONE", () => {
+    // The person who really can only hold 15s is the one the progression is
+    // working hardest for. Clearing every entry at the floor would take their
+    // honest number away and put them back on a 40s stretch they cannot hold.
+    const state = {
+      couch_stretch: { targetSec: STRETCH_MIN, streak: 0, lastActual: 12 },  // real short hold
+      dead_hang:     { targetSec: STRETCH_MIN, streak: 0, lastActual: 8 },   // real short hold
+    };
+    const { state: out, cleared } = repairSkipFlooring(state);
+    assert.deepEqual(cleared, []);
+    assert.deepEqual(out, state);
+  });
+
+  it("leaves everything above the floor alone", () => {
+    const state = {
+      couch_stretch: { targetSec: 55, streak: 1, lastActual: 55 },
+      dead_hang:     { targetSec: 20, streak: 0, lastActual: 2 },   // low, but not the floor
+    };
+    const { state: out, cleared } = repairSkipFlooring(state);
+    assert.deepEqual(cleared, []);
+    assert.deepEqual(out, state);
+  });
+
+  it("runs once, and after the cloud merge", () => {
+    const store = readFileSync(new URL("../js/store.js", import.meta.url), "utf8");
+    assert.match(store, /stretchSkipRepairDone/, "the repair must be flagged so it cannot run twice");
+    const app = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+    // Repairing before the restore just gets overwritten by it.
+    assert.ok(app.indexOf("mergeRestore") < app.indexOf("repairStretchTargetsOnce()"),
+      "the repair must run AFTER mergeRestore");
   });
 });
 

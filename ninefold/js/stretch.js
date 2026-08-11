@@ -107,3 +107,33 @@ export function applyStretchTargets(def, state, isStretch) {
   });
   return { def: { ...def, items }, items };
 }
+
+/**
+ * ONE-TIME REPAIR for what the Skip button wrote before it stopped logging.
+ *
+ * Skip logged the elapsed time as a hold — about a second, because that is when
+ * you press it — and the re-base rule floored the target at STRETCH_MIN. So a
+ * single pass of Skip through a cool-down flattened every learned target to 15
+ * seconds. The fix stops it recurring; it cannot know what you had earned.
+ *
+ * ⚠ IT MATCHES THE BUG'S FINGERPRINT, NOT JUST THE FLOOR. Clearing everything
+ * sitting at 15 s would also wipe a target somebody genuinely holds at 15 — the
+ * one person the progression is working hardest for. A Skip leaves `lastActual`
+ * at nought-to-two seconds; a real end-hold on a 45 s stretch that floors the
+ * target leaves it at eight or ten. Only the former is undone.
+ *
+ * Dropping the entry rather than guessing a number is deliberate: with no state,
+ * stretchState falls back to the plan's own duration, which is where a new
+ * install starts and the only honest answer to "we lost what you had earned".
+ */
+export function repairSkipFlooring(state, { maxActual = 5 } = {}) {
+  const next = {};
+  const cleared = [];
+  for (const [id, st] of Object.entries(state || {})) {
+    const floored = st && st.targetSec === STRETCH_MIN;
+    const barelyHeld = st && Number.isFinite(st.lastActual) && st.lastActual <= maxActual;
+    if (floored && barelyHeld) { cleared.push(id); continue; }
+    next[id] = st;
+  }
+  return { state: next, cleared };
+}
