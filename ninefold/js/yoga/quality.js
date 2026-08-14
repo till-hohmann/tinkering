@@ -23,6 +23,7 @@ import { byId, COUNTER_FAMILY, isContraindicated, limitsHit, PREP_MIN } from "./
 import { styleById, effectiveHoldBand } from "./styles.js";
 import { levelById } from "./levels.js";
 import { itemSeconds, flowSeconds, elapsedAt } from "./compose.js";
+import { faultsIn, positionChanges, positionReturns, onFeet } from "./transitions.js";
 
 // --- thresholds, named and in one place --------------------------------------
 /** Savasana takes 10-20% of total session time. */
@@ -51,6 +52,26 @@ export const HOLD_TOLERANCE = 0.5;
 export const SIDE_TOLERANCE = 0.02;
 /** A practice needs a warm-up before it asks for anything. */
 export const WARMUP_MIN_SHARE = 0.08;
+/**
+ * How often the body may change POSITION — standing, lunging, on the hands, the
+ * belly, the knees, sitting, lying down — per pose in the sequence.
+ *
+ * Generous on purpose. The teaching rule is "arrange poses to reduce frequent
+ * changes in body position", not "never change", and a class legitimately warms
+ * up on its knees, works standing and comes back down. This fires when a
+ * sequence has no order to it at all: plank, seated twist, sphinx, cow-face
+ * legs, chaturanga is five positions in five poses, and every one of them passed
+ * every check there was.
+ */
+export const POSITION_RETURN_RATE = 0.12;
+/** How often the standing series may flip between a wide stance and a square one. */
+export const FACING_CHURN_RATE = 0.45;
+/**
+ * The spine moves in flexion, extension, lateral bending and rotation, and a
+ * balanced practice visits all of them. Below this share of the sequence's
+ * directed poses, one direction is under-served.
+ */
+export const SPINE_MIN_SHARE = 0.08;
 
 const round1 = (x) => Math.round(x * 10) / 10;
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
@@ -290,12 +311,135 @@ export function auditFlow(flow, { limits = null } = {}) {
   // same absolute count as a 15-minute one.
   const planeAllowance = Math.max(3, Math.round(planed.length * PLANE_CHANGE_RATE));
   add("sequence.plane_changes", "warn", changes <= planeAllowance,
-    changes <= allowed
+    changes <= planeAllowance
       ? `${changes} change${changes === 1 ? "" : "s"} between standing and the floor.`
       : `${changes} changes between standing and the floor across ${planed.length} poses — a practice should come down and stay down.`,
     { changes, allowed: planeAllowance, poses: planed.length });
 
-  // --- 13. a "not enough poses" check WAS HERE AND HAS BEEN REMOVED ---------
+  // --- 13. no pose leads into the next one badly ---------------------------
+  //
+  // The hard adjacency rules, and the reason they are errors: each one is a pair
+  // that a body has to undo something to get through. Half moon into warrior III
+  // turns the standing hip over with the leg straight; a deep backbend into a
+  // deep forward fold is two peaks with no recovery between them; the authored
+  // pairs rebuild the feet underneath you mid-sequence.
+  //
+  // Every check before this one grades a pose, a phase or a proportion. None of
+  // them can see a pair, which is why "the flows don't flow" survived all of them.
+  const faults = faultsIn(items);
+  add("sequence.transitions", "error", faults.length === 0,
+    faults.length
+      ? `Transitions that do not work: ${faults.map((f) => f.message).join("; ")}`
+      : `Every pose leads into the next one.`,
+    { faults });
+
+  // --- 14. the body does not change position on every pose -----------------
+  //
+  // `plane` above only distinguishes standing from the floor, and "floor" covers
+  // lying on your front, lying on your back, sitting up and being on your hands.
+  // A sequence can hold its plane perfectly and still be nonsense inside it.
+  // FROM THE BUILD ONWARDS. Centering is seated and a warm-up happens on the
+  // floor, so a practice legitimately starts low, stands up, and comes back
+  // down — measured from the first pose, that ascent makes every later seated
+  // pose look like a return. The one-way descent is a property of the BODY of
+  // the practice, which is where the arc model says it is.
+  const DESCENT_PHASES = ["build", "peak", "counter", "cool"];
+  const positioned = items.filter((it) => DESCENT_PHASES.includes(it.phase)
+    && !it.linked && !it.round && !it.flowRound);
+  const returns = positionReturns(positioned);
+  const posAllowance = Math.max(1, Math.round(positioned.length * POSITION_RETURN_RATE));
+  // ⚠ NOT APPLIED TO AN AUTHORED SERIES. The Ashtanga Primary Series comes up to
+  // standing and back down between seated postures — that is the form, it is
+  // what a vinyasa between postures IS, and nothing here composed it or could
+  // change it. Grading a fixed sequence against a compositional rule is the
+  // check-fires-on-correct-output trap for the third time in this file.
+  add("sequence.position_changes", "error", flow.authored || returns <= posAllowance,
+    returns <= posAllowance
+      ? `${positionChanges(positioned)} change${positionChanges(positioned) === 1 ? "" : "s"} of body position across ${positioned.length} poses, and the descent holds.`
+      : `The sequence goes back to a position it had already left ${returns} times — a practice comes down and stays down.`,
+    { returns, changes: positionChanges(positioned), allowed: posAllowance, poses: positioned.length });
+
+  // --- 15. every hold is a hold this pose can actually take ----------------
+  //
+  // A style that counts in MINUTES may only ask for shapes you can hold in
+  // stillness for minutes. This is the check that would have caught a 30-minute
+  // yin practice prescribing upward plank for 225 seconds — the hold was inside
+  // yin's own band, so holds.suit_style passed it. The defect was never the
+  // number; it was asking that number of a pose that cannot answer it.
+  const tooLongFor = style.holdSeconds
+    ? items.filter((it) => {
+        const a = byId(it.asanaId);
+        return a && !a.still && !it.linked && it.phase !== "savasana" && it.durationSeconds > 90;
+      })
+    : [];
+  add("holds.can_be_held", "error", tooLongFor.length === 0,
+    tooLongFor.length
+      ? `Held far too long to be held at all: ${tooLongFor.map((i) => `${i.name} (${mmss(i.durationSeconds)})`).join(", ")}`
+      : `Every long hold is a shape that can be held.`,
+    { poses: tooLongFor.map((i) => i.asanaId) });
+
+  // --- 16. a flow block runs both sides ------------------------------------
+  // A block is emitted as one-sided items, so the bilateral check above cannot
+  // see it: to that check a block pose looks symmetric. Without this, a block
+  // truncated by the fitting pass would silently run the right side only.
+  const blocks = {};
+  for (const it of items) if (it.blockId) {
+    const k = `${it.blockId}#${it.blockRound || 1}`;
+    (blocks[k] = blocks[k] || { Right: 0, Left: 0 })[it.blockSide] += 1;
+  }
+  const halfBlocks = Object.entries(blocks).filter(([, s]) => s.Right !== s.Left);
+  add("block.both_sides", "error", halfBlocks.length === 0,
+    halfBlocks.length
+      ? `A sequence ran on one side only: ${halfBlocks.map(([k, s]) => `${k} (${s.Right} right, ${s.Left} left)`).join(", ")}`
+      : `${Object.keys(blocks).length} flow block${Object.keys(blocks).length === 1 ? "" : "s"}, each run both sides.`,
+    { blocks });
+
+  // --- 17. the standing series is not re-setting its feet every pose -------
+  // A wide stance open to the long edge and a square one facing the front of the
+  // mat are two different setups. Alternating them every pose is the standing
+  // version of changing position on every pose — you never settle into either.
+  const feet = positioned.filter((it) => {
+    const a = byId(it.asanaId);
+    return a && onFeet(a.position) && a.facing !== "neutral";
+  });
+  let churn = 0;
+  for (let i = 1; i < feet.length; i++) {
+    const prev = byId(feet[i - 1].asanaId), cur = byId(feet[i].asanaId);
+    if (prev && cur && prev.facing !== cur.facing) churn++;
+  }
+  const churnAllowance = Math.max(2, Math.round(feet.length * FACING_CHURN_RATE));
+  add("sequence.facing", "warn", flow.authored || churn <= churnAllowance,
+    churn <= churnAllowance
+      ? `${churn} change${churn === 1 ? "" : "s"} of stance across ${feet.length} standing poses.`
+      : `The standing work changes stance ${churn} times in ${feet.length} poses — open-hip and square-hip shapes want to be grouped.`,
+    { churn, allowed: churnAllowance, poses: feet.length });
+
+  // --- 18. the spine goes in more than one direction -----------------------
+  // The spine flexes, extends, side-bends and rotates, and a balanced practice
+  // visits all four. A warn rather than an error: a practice built for one
+  // intent — after a run, shoulders and neck — is entitled to favour one.
+  const directed = items
+    .map((it) => byId(it.asanaId))
+    .filter((a) => a && a.spine && a.spine !== "neutral");
+  const spineCounts = {};
+  for (const a of directed) spineCounts[a.spine] = (spineCounts[a.spine] || 0) + 1;
+  //
+  // ⚠ LATERAL BENDING IS DELIBERATELY NOT REQUIRED. The first version checked all
+  // four and fired on 1,322 of 2,835 swept flows — 47% — because side bending is
+  // genuinely rare in yoga outside a handful of standing shapes, and absent from
+  // any floor-based practice by construction. A check that fires on correct
+  // output is noise, and noise gets muted: the same lesson as the removed
+  // poses-per-minute floor directly below, and the builder's RAMP_MAX before it.
+  const CORE_DIRECTIONS = ["flexion", "extension", "rotation"];
+  const missing = CORE_DIRECTIONS
+    .filter((d) => (spineCounts[d] || 0) / Math.max(1, directed.length) < SPINE_MIN_SHARE);
+  add("spine.balance", "warn", missing.length <= 1,
+    missing.length <= 1
+      ? `The spine flexes, extends and rotates in this practice.`
+      : `The spine barely goes into ${missing.join(" or ")} in this practice.`,
+    { counts: spineCounts, missing });
+
+  // --- 19. a "not enough poses" check WAS HERE AND HAS BEEN REMOVED ---------
   //
   // Worth recording because the reasoning was wrong in an instructive way. A
   // 15-minute wind-down came out as one long hold and a savasana, which looked

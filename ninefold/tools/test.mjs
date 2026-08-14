@@ -55,6 +55,9 @@ import { checkLevels } from "../js/yoga/levels.js";
 import { checkScript, entryScript, exitScript, salutationScript, allHoldPhrases } from "../js/yoga/script.js";
 import { ASANAS } from "../js/yoga/asanas.js";
 import { flowSeconds as flowSecondsOf, elapsedAt as flowElapsedAt } from "../js/yoga/compose.js";
+import { transitionFault, transitionScore, faultsIn, positionChanges, positionReturns,
+  LINKS as TRANSITION_LINKS } from "../js/yoga/transitions.js";
+import { POSITION_OF, POSITION_TIERS, tierOf } from "../js/yoga/positions.js";
 
 let passed = 0, failed = 0;
 const groups = [];
@@ -2501,6 +2504,134 @@ async function workerTests() {
     });
   });
 }
+
+group("yoga — one pose leads into the next", () => {
+  it("refuses the rotation flip a straight standing leg cannot make", () => {
+    // Half moon into warrior III: external to internal rotation of the standing
+    // hip with the leg straight and nothing to unload the joint.
+    const f = transitionFault("ardha_chandrasana", "virabhadrasana_3");
+    assert.equal(f && f.code, "rotation_flip");
+    // Eagle bends the standing knee, so the same rotation change is fine.
+    assert.equal(transitionFault("ardha_chandrasana", "garudasana"), null);
+  });
+
+  it("refuses two deep opposing shapes back to back", () => {
+    // Both deep, opposite spinal directions. A counterpose is meant to be
+    // SIMPLER than what it answers, so a gentle fold after a wheel is fine.
+    assert.equal(transitionFault("urdhva_dhanurasana", "kurmasana").code, "deep_opposition");
+    assert.equal(transitionFault("urdhva_dhanurasana", "paschimottanasana"), null);
+  });
+
+  it("prefers similarity, which is the opposite of what the old picker did", () => {
+    // The authored standing series scores far above a pose that asks you to
+    // re-set your feet, which in turn scores above lying down mid-series.
+    const good = transitionScore("virabhadrasana_2", "utthita_trikonasana");
+    const churn = transitionScore("virabhadrasana_2", "parivrtta_anjaneyasana");
+    const leap = transitionScore("virabhadrasana_2", "supta_matsyendrasana");
+    assert.ok(good > churn && churn > leap, `${good} > ${churn} > ${leap}`);
+    assert.equal(good, 3, "an authored link is worth triple an unremarkable one");
+  });
+
+  it("counts RETURNING, not moving", () => {
+    // ⚠ THE NUMBERS ARE PINNED. Counting raw position changes fired on 309
+    // correct flows: a six-pose practice genuinely visits six places, one pose
+    // each. A pure descent costs n-1 changes and zero returns; going back to
+    // somewhere already left is the defect.
+    const seq = (...ids) => ids.map((id) => ({ asanaId: id }));
+    const descent = seq("virabhadrasana_2", "phalakasana", "bhujangasana", "paschimottanasana", "savasana");
+    assert.equal(positionChanges(descent), 4);
+    assert.equal(positionReturns(descent), 0, "a one-way descent never returns");
+    const bounce = seq("phalakasana", "ardha_matsyendrasana", "salamba_bhujangasana", "gomukhasana_legs", "chaturanga");
+    assert.equal(positionReturns(bounce), 2, "the sequence the whole rewrite exists to prevent");
+  });
+
+  it("treats standing and lunging as one place to be", () => {
+    // Warrior II is a lunge and triangle is a standing pose; moving between them
+    // is not moving. Counting them apart made an ordinary standing series look
+    // like the worst thrash in the sweep.
+    assert.equal(tierOf("standing"), tierOf("lunge"));
+    assert.equal(positionChanges([{ asanaId: "virabhadrasana_2" }, { asanaId: "utthita_trikonasana" }]), 0);
+  });
+
+  it("gives every pose a position, and every position row a pose", () => {
+    // checkAsanas covers this too; asserted separately because a pose with no
+    // position scores identically to a perfect neighbour in every adjacency rule.
+    for (const a of ASANAS) assert.ok(POSITION_OF[a.id], `${a.id} has no position`);
+    for (const id of Object.keys(POSITION_OF)) assert.ok(asanaById(id), `${id} is not a pose`);
+    const tiered = POSITION_TIERS.flat();
+    for (const a of ASANAS) assert.ok(tiered.includes(a.position), `${a.position} is in no tier`);
+  });
+
+  it("never asks a pose to be held longer than it can be held", () => {
+    // The defect: a 30-minute yin practice prescribing upward plank for 225s and
+    // a deep squat for 245s. Both were inside yin's own hold band, so the
+    // existing holds.suit_style check passed them — the number was never wrong,
+    // the pose was.
+    for (const seed of [1, 2, 3, 4, 5]) {
+      for (const intent of ["wind_down", "sleep"]) {
+        const f = generateFlow({ intent, minutes: 30, seed, level: "advanced" });
+        for (const it of f.items) {
+          if (it.phase === "savasana" || it.linked) continue;
+          const a = asanaById(it.asanaId);
+          if (it.durationSeconds > 90)
+            assert.ok(a.still, `${it.name} held ${it.durationSeconds}s and cannot be`);
+        }
+      }
+    }
+  });
+
+  it("keeps a standing peak on its feet instead of inverting the sequence", () => {
+    // The old model chose which of the standing and floor blocks came FIRST from
+    // the peak's plane, so a standing peak put twelve minutes of deep floor work
+    // ahead of the standing series. The descent runs one way now and simply
+    // stops at the peak.
+    const f = generateFlow({ intent: "strong_flow", minutes: 45, seed: 3, level: "advanced" });
+    assert.equal(f.peak, "virabhadrasana_3");
+    const build = f.items.filter((it) => it.phase === "build" && !it.prepFor);
+    const floorFirst = build.findIndex((it) => tierOf(it.position) > 0);
+    const feetLast = build.map((it) => tierOf(it.position)).lastIndexOf(0);
+    assert.ok(floorFirst === -1 || floorFirst > feetLast,
+      "the build reached the floor before it had finished standing up");
+  });
+
+  it("runs a flow block down one side and then the other, and loops cleanly", () => {
+    const f = generateFlow({ intent: "strong_flow", minutes: 45, seed: 3, level: "advanced" });
+    const blocked = f.items.filter((it) => it.blockId);
+    assert.ok(blocked.length >= 4, "a flowing style of this length should compose a block");
+    const right = blocked.filter((it) => it.blockSide === "Right");
+    const left = blocked.filter((it) => it.blockSide === "Left");
+    assert.equal(right.length, left.length, "a block that ran one side only");
+    assert.deepEqual(right.map((it) => it.asanaId), left.map((it) => it.asanaId));
+    // ⚠ THE SEAM AT THE TURN. The block's last pose is adjacent to its first when
+    // it starts again on the other side — a pair that appears nowhere in the
+    // chain itself, and the only fault the sweep still had after the rewrite.
+    assert.equal(transitionFault(right[right.length - 1].asanaId, right[0].asanaId), null);
+    // A one-sided item names its side rather than declaring itself two-sided.
+    for (const it of blocked) assert.equal(it.bilateral, false);
+  });
+
+  it("sweeps the whole space with no transition and no return left in it", () => {
+    // The sweep is the check; this pins it so a future tuning pass that
+    // reintroduces a bad neighbour fails here rather than on someone's mat.
+    let flows = 0, faults = 0, errors = [];
+    for (const intent of YOGA_INTENTS) {
+      if (intent.style === "ashtanga") continue;
+      for (const minutes of [10, 20, 30, 45, 60]) {
+        for (const limits of [[], ["knees", "si_joint"], ["wrists"], ["low_back", "shoulders"]]) {
+          for (const level of ["beginner", "advanced", "expert"]) {
+            const f = generateFlow({ intent: intent.id, minutes, limits, level, seed: minutes });
+            flows++;
+            faults += faultsIn(f.items).length;
+            for (const e of auditFlow(f).errors) errors.push(`${intent.id} ${minutes} ${level}: ${e.id}`);
+          }
+        }
+      }
+    }
+    assert.ok(flows >= 400, `only swept ${flows} flows`);
+    assert.equal(faults, 0, "transitions that do not work");
+    assert.deepEqual(errors.slice(0, 5), [], "error-level defects");
+  });
+});
 
 await workerTests();
 

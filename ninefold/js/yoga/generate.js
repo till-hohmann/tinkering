@@ -28,6 +28,8 @@ import { intentById, emphasisFor, accountingFor } from "./intents.js";
 import { primarySeries } from "./ashtanga.js";
 import { rng, seedFrom, resolvePose, REPEATABLE, itemSeconds, flowSeconds } from "./compose.js";
 import { levelById, normaliseLevel, poseCeiling } from "./levels.js";
+import { POSITION_TIERS, tierOf } from "./positions.js";
+import { transitionScore, transitionFault, faultsIn } from "./transitions.js";
 
 // Re-exported so callers that think of these as "the generator's" keep working;
 // they live in compose.js because the authored Primary Series needs them too.
@@ -150,7 +152,14 @@ function makeItem(asana, ctx, { phase, breaths = null, t = 0.5, linked = false }
         breaths: breaths != null ? breaths : dynamicBreaths });
   const floor = ["seated", "supine", "restorative", "hip_opener", "forward_fold"].includes(asana.family);
   // The requested LENGTH is a constraint on every pose in it. See MAX_ITEM_SHARE.
-  const capSeconds = ctx.targetSeconds ? ctx.targetSeconds * MAX_ITEM_SHARE : Infinity;
+  //
+  // ⚠ AN ASYMMETRIC POSE COSTS THE SHARE TWICE. The cap was applied to the hold
+  // and the hold is per SIDE, so a bilateral pose at the ceiling took 44% of the
+  // practice: a 30-minute yin session gave dragon 245 seconds a side, eight
+  // minutes on one shape, and the check that exists to prevent exactly that
+  // reported it as compliant.
+  const capSeconds = ctx.targetSeconds
+    ? (ctx.targetSeconds * MAX_ITEM_SHARE) / (asana.bilateral ? 2 : 1) : Infinity;
   const capTrans = ctx.targetSeconds ? ctx.targetSeconds * MAX_TRANSITION_SHARE : Infinity;
   const rawTrans = linked ? 0 : (floor ? style.floorTransitionSeconds : style.transitionSeconds);
   return {
@@ -176,6 +185,13 @@ function makeItem(asana, ctx, { phase, breaths = null, t = 0.5, linked = false }
       seconds * (asana.id === "savasana" ? 1 : ((ctx.L && ctx.L.holdScale) || 1)), capSeconds))),
     dynamic: !!asana.dynamic,
     plane: asana.plane,
+    // Carried onto the item so the ordering, the fitting pass and quality.js can
+    // all reason about the sequence without re-looking-up every pose.
+    position: asana.position,
+    facing: asana.facing,
+    hipRotation: asana.hipRotation,
+    spine: asana.spine,
+    still: asana.still,
     // A vinyasa's linked movements have NO transition — that is what "one breath,
     // one movement" means. A change to or from the floor needs real time.
     transitionSeconds: Math.round(Math.min(rawTrans * ((ctx.L && ctx.L.transitionScale) || 1), capTrans)),
@@ -184,8 +200,31 @@ function makeItem(asana, ctx, { phase, breaths = null, t = 0.5, linked = false }
 }
 
 // --- the picker --------------------------------------------------------------
+//
+// SELECTION AND ORDER ARE NOW TWO DIFFERENT QUESTIONS, and conflating them was
+// most of what made the old flows read like a random walk.
+//
+// The picker below answers "does this pose belong in this practice at all" —
+// suitability for the phase, the intent's emphasis, spread across families. It
+// deliberately says NOTHING about neighbours, because the answer to "what should
+// follow triangle" is not knowable while you are still choosing the cast.
+//
+// orderGroup() answers the second question, once the set is known. That split is
+// what lets family variety and adjacency-by-similarity both be true: the old
+// scorer served both with one number, penalising a pose 65% for sharing a family
+// with its neighbour, and so optimised directly against the thing the sequencing
+// literature says to reach for.
 function scoreFor(asana, ctx, phase, used, recentFamilies, allowRepeat = false, state = {}) {
-  if (!asana.phases.includes(phase)) return 0;
+  // ⚠ A LONG-HOLD STYLE HAS NO "BUILD" IN THE VINYASA SENSE, and the library is
+  // written that way: shoelace, sleeping swan, caterpillar and banana are all
+  // marked cool-only, because in a flowing practice that is the only place they
+  // belong. Read literally that left a yin BUILD with almost nothing eligible —
+  // a 30-minute wind-down came out as three shapes, one of them the whole build.
+  // Where the style holds in minutes, the body of the practice and its cool-down
+  // are the same pool.
+  const phaseOk = asana.phases.includes(phase)
+    || (ctx.style.holdSeconds && phase === "build" && asana.phases.includes("cool"));
+  if (!phaseOk) return 0;
   // A long practice legitimately revisits a warrior; a short one that repeats
   // triangle six times is padding. So repetition is forbidden on the first pass
   // and merely expensive on the second, which only runs when the pool of unused
@@ -198,39 +237,85 @@ function scoreFor(asana, ctx, phase, used, recentFamilies, allowRepeat = false, 
   if (emph === 0) return 0;
   // A pose that is only ever a peak must not be picked as ordinary build work.
   if (asana.peak > 0 && phase !== "peak") return 0;
+  // A LINK IS NOT A DESTINATION. Half lift and upward salute exist to get you
+  // somewhere; the authored salutations place them and nothing else should. They
+  // used to be pickable and it never showed, because the picker ranged over the
+  // whole library at once and they were two candidates among ninety. Restricted
+  // to one body position at a time the pool is small enough that the roulette
+  // reaches them constantly — a build came out as seven half lifts.
+  if (asana.transitional) return 0;
+  // HOW MANY TIMES ONE POSE MAY APPEAR. `allowRepeat` was meant to permit a
+  // repeat when the pool runs dry before the time does; with no cap it permitted
+  // ALL of them, and a standing block filled itself with nine chairs.
+  // Only the neutral shapes a practice keeps returning to may come round again.
+  // Extending the allowance to everything is how one build ran warrior I twice
+  // three poses apart: the second pass exists for the case where the pool is
+  // exhausted before the time is, and under-running a phase by a minute is a far
+  // smaller defect than teaching the same warrior twice.
+  const cap = REPEATABLE.has(asana.id) ? 2 : 1;
+  if (((state.counts && state.counts[asana.id]) || 0) >= cap) return 0;
   // A transitional pose is never a long hold. In a breath-counted style it is
   // fine — a few breaths in a half lift is what a half lift is — but a style that
   // holds in MINUTES must not reach for one.
   if (asana.transitional && ctx.style.holdSeconds) return 0;
+  // ⚠ A STYLE THAT HOLDS IN MINUTES MAY ONLY REACH FOR SHAPES YOU CAN HOLD FOR
+  // MINUTES. Nothing said which those were, so a 30-minute yin practice
+  // prescribed upward plank for 225 seconds and a deep squat for 245 — a
+  // strength shape and a loaded squat, each held for around four minutes. The
+  // hold length was inside the style's own band every time, which is why the
+  // existing holds.suit_style check passed it: the defect was never the number,
+  // it was asking that number of a pose that cannot answer it.
+  if (ctx.style.holdSeconds && !asana.still) return 0;
   let s = emph;
   // intensity fit: how close the pose sits to what this phase wants
   s *= 1 / (1 + Math.abs(asana.intensity - PHASE_INTENSITY[phase]) * 0.55);
-  // spread across families — the same fix as the lifting picker's quality tags,
-  // where penalising a repeated EXERCISE but not a repeated MUSCLE reliably
-  // produced two curls and no triceps.
+  // SPREAD ACROSS FAMILIES OVER THE WHOLE PRACTICE, not against the last three
+  // poses. Measuring it locally is what made neighbours repel each other: two
+  // hip openers in a row is how a hip sequence is taught, while eleven hip
+  // openers in a forty-minute flow is a practice with a hole in it. Same
+  // intention as the lifting picker's quality tags, at the right scale.
   const rep = recentFamilies.filter((f) => f === asana.family).length;
-  s *= Math.pow(0.35, rep);
+  s *= Math.pow(FAMILY_SPREAD, rep);
   if (used.has(asana.id)) s *= REPEATABLE.has(asana.id) ? 0.16 : 0.12;
   // A pose that appeared four poses ago is a repeat whatever the pool says.
   if (state.recentIds && state.recentIds.includes(asana.id)) s *= 0.05;
-
-  // STAY ON ONE PLANE UNTIL IT IS TIME TO CHANGE. A sequence works through the
-  // standing poses and then goes to the floor; it does not stand up and lie down
-  // twelve times. Once the practice HAS come down, going back up is penalised
-  // harder than coming down was — the descent is one-way in a real class, and
-  // the cool-down that follows is all floor work anyway.
-  if (state.plane && state.plane !== asana.plane) {
-    s *= asana.plane === "standing" ? PLANE_RETURN_PENALTY : PLANE_CHANGE_PENALTY;
-  }
+  // A LIGHT PREFERENCE FOR SOMETHING THAT FOLLOWS ON, and light is the point.
+  // Selection is not ordering: applying the full transition score here would
+  // discard, at zero, poses that orderGroup would have placed perfectly happily
+  // three steps later in the same group. Damped to [0.5, 1.5] it never removes a
+  // candidate — it just means a phase that can only hold one pose picks one that
+  // belongs where the practice already is.
+  if (state.prev) s *= 0.5 + 0.5 * Math.min(transitionScore(state.prev, asana), 2);
   return s;
 }
 
-// Soft, not absolute: a single standing pose in the middle of floor work is
-// sometimes right, and a ban would make the generator refuse sequences a teacher
-// would write. These are the numbers that turned "tree, cobra, wide-legged fold,
-// plank, warrior II" into a standing series followed by a floor series.
-const PLANE_CHANGE_PENALTY = 0.18;
-const PLANE_RETURN_PENALTY = 0.06;
+/** Per earlier appearance of a family. Gentler than the 0.35 it replaced, which
+ *  measured only the last three poses and so made neighbours repel each other. */
+const FAMILY_SPREAD = 0.6;
+
+/**
+ * WHAT COMES LATE IN A GROUP whatever its intensity says.
+ *
+ * Balance work belongs after the standing strength work, not before it: you
+ * balance better on a leg that has been loaded, and a standing peak is almost
+ * always a balance, so this is also what walks the practice up to it. Ordering
+ * on intensity alone put tree and eagle ahead of the warriors, which reads as
+ * the class starting with its garnish.
+ */
+const LATE_FAMILIES = { balance: 1.5 };
+
+/**
+ * WHERE A STYLE SPENDS ITS BUILD. A vinyasa is a standing practice that visits
+ * the floor; a yin practice is a floor practice that occasionally stands up.
+ * Without this the split followed the LIBRARY, which holds 35 seated poses to 24
+ * standing ones — so every style would have drifted onto the floor.
+ */
+const POSITION_BIAS_ACTIVE = {
+  standing: 2.2, lunge: 2.0, quadruped: 0.8, prone: 1.0, kneeling: 0.7, seated: 1.0, supine: 0.8,
+};
+const POSITION_BIAS_STILL = {
+  standing: 0.35, lunge: 0.6, quadruped: 0.3, prone: 0.9, kneeling: 0.8, seated: 1.7, supine: 1.4,
+};
 /** Settling is a minute or two, never a proportional slice of a long practice. */
 const CENTERING_MAX = 120;
 
@@ -242,6 +327,286 @@ function pick(pool, ctx, phase, used, recentFamilies, rand, allowRepeat = false,
   for (const [a, s] of scored) { r -= s; if (r <= 0) return a; }
   return scored[scored.length - 1][0];
 }
+
+// --- ordering a chosen set ---------------------------------------------------
+/**
+ * PUT A SET OF POSES IN AN ORDER THAT LEADS SOMEWHERE.
+ *
+ * Greedy nearest-neighbour over transitionScore, seeded either with whatever the
+ * practice was doing a moment ago or, at the start of a group, with the gentlest
+ * pose in it. Two teaching rules fall out of that one loop:
+ *
+ *   krama — the gentle-before-deep bias means a group opens at its easiest shape
+ *           and climbs, rather than arriving at the deepest backbend cold.
+ *   adjacency — every step asks which of the remaining poses this one leads into
+ *           best, which is the question the old picker never asked at all.
+ *
+ * Greedy is the right shape here rather than an optimal tour: a group is five to
+ * ten poses, the score is a preference and not a distance, and a teacher writing
+ * a sequence works forwards too.
+ */
+function orderGroup(items, { from = null, descend = false } = {}) {
+  if (items.length <= 1) return items.slice();
+  // THE COOL-DOWN IS THE TAIL OF THE DESCENT, so it is ordered by where the body
+  // is first and by adjacency second. Pure greedy stranded whatever scored worst
+  // at the END — which, after a run of supine poses, is the one kneeling shape,
+  // so a practice that had finished lying down got up onto its knees to close.
+  if (descend) {
+    const tiers = [...new Set(items.map((it) => tierOf(it.position)))].sort((a, b) => a - b);
+    const out = [];
+    let at = from;
+    for (const t of tiers) {
+      const part = orderGroup(items.filter((it) => tierOf(it.position) === t), { from: at });
+      out.push(...part);
+      if (part.length) at = byId(part[part.length - 1].asanaId) || at;
+    }
+    return repairOrder(out, from);
+  }
+  const pool = items.slice();
+  const out = [];
+  let prev = from;
+  while (pool.length) {
+    let bestI = 0, best = -Infinity;
+    for (let i = 0; i < pool.length; i++) {
+      const a = byId(pool[i].asanaId);
+      if (!a) continue;
+      // THE ONE POSE THAT CANNOT FOLLOW A POSE IS ITSELF. A repeatable shape may
+      // come round twice in a practice; it may not come round twice in a row,
+      // which is just the same hold with a pause in it. Two chairs and two high
+      // lunges landed back to back because an identical pose scores identically
+      // and greedy has no reason to prefer either.
+      if (prev && a.id === prev.id) continue;
+      const krama = 1 / (1 + (a.intensity + (LATE_FAMILIES[a.family] || 0)) * 0.35);
+      const link = prev ? transitionScore(prev, a) : 1;
+      const s = link * krama;
+      if (s > best) { best = s; bestI = i; }
+    }
+    const [chosen] = pool.splice(bestI, 1);
+    out.push(chosen);
+    prev = byId(chosen.asanaId) || prev;
+  }
+  return repairOrder(out, from);
+}
+
+/**
+ * Greedy can still strand a pose: it places something early that nothing left in
+ * the pool follows cleanly. So every remaining fault gets one chance to move
+ * somewhere it does not fault, and is dropped if there is nowhere.
+ *
+ * DROPPING IS THE HONEST OUTCOME, the same call the peak selection already makes
+ * when it cannot prepare a pose. A sequence one pose shorter is a practice; a
+ * sequence with a transition that grinds a hip is a defect with a timer on it.
+ */
+function repairOrder(items, from = null) {
+  const faults = (list) => {
+    const out = [];
+    for (let i = 0; i < list.length; i++) {
+      const prev = i === 0 ? from : byId(list[i - 1].asanaId);
+      if (!prev) continue;
+      if (transitionFault(prev, byId(list[i].asanaId))) out.push(i);
+    }
+    return out;
+  };
+  let list = items.slice();
+  let guard = 0;
+  while (guard++ < 12) {
+    const bad = faults(list);
+    if (!bad.length) break;
+    const i = bad[0];
+    const [item] = list.splice(i, 1);
+    // Try every other slot; keep the first that introduces no fault anywhere.
+    let placed = false;
+    for (let j = 0; j <= list.length && !placed; j++) {
+      const trial = list.slice();
+      trial.splice(j, 0, item);
+      if (!faults(trial).length) { list = trial; placed = true; }
+    }
+    if (!placed) continue;   // it stays out — nowhere in this group works
+  }
+  return list;
+}
+
+/**
+ * THE SEAM BETWEEN TWO PHASES IS WHERE THE LAST FAULTS LIVE.
+ *
+ * orderGroup repairs adjacency inside a group and structurally cannot see the
+ * join between the end of the build and the start of the counter, or between the
+ * counter and the cool-down. Each of those joins is a pair like any other, and a
+ * pair is exactly what nothing else in the pipeline was looking at.
+ *
+ * The fix is a drop, not a reorder, because the phases are already in the only
+ * order they are allowed to be in. What may never be dropped is anything the arc
+ * depends on: a preparation, a counter-pose, the peak, savasana, a linked
+ * salutation movement, or half of a flow block.
+ */
+/**
+ * MAKE THE LAST POSE OF A LIST LEAD INTO WHAT COMES NEXT.
+ *
+ * orderGroup only ever looks backwards — each pose is chosen for the one before
+ * it — so the final pose of a group is chosen with no knowledge of what follows
+ * the group. That is harmless everywhere except immediately before the peak,
+ * where the list is the peak's own preparation and cannot be dropped or
+ * reordered freely. Triangle is a declared preparation for revolved triangle and
+ * is also the worst possible thing to do immediately before it: same stance,
+ * opposite rotation, the whole pose rebuilt underneath you. Both facts are
+ * correct; they just have to be resolved in the order rather than in the data.
+ */
+function endWellBefore(list, next) {
+  if (!next || list.length < 2) return list;
+  const out = list.slice();
+  const last = byId(out[out.length - 1].asanaId);
+  if (!last || !transitionFault(last, next)) return out;
+  for (let i = out.length - 2; i >= 0; i--) {
+    const cand = byId(out[i].asanaId);
+    if (!cand || transitionFault(cand, next)) continue;
+    const before = i > 0 ? byId(out[i - 1].asanaId) : null;
+    if (before && transitionFault(before, last)) continue;   // don't move the fault
+    const tmp = out[i];
+    out[i] = out[out.length - 1];
+    out[out.length - 1] = tmp;
+    return out;
+  }
+  return out;
+}
+
+function dropSeamFaults(items) {
+  const canGo = (it) => it && !it.prepFor && !it.counterTo && !it.linked && !it.blockId
+    && it.phase !== "peak" && it.phase !== "savasana" && it.phase !== "centering";
+  let list = items.slice();
+  // The same pose twice in a row. orderGroup already forbids it inside a group
+  // and faultsIn deliberately ignores it, so the only place it survives is a
+  // seam — a downward dog closing the last salutation and another opening the
+  // build.
+  //
+  // ⚠ CONSERVATIVE ON PURPOSE. The first version dropped any adjacent duplicate
+  // and broke two things at once: a restorative warm-up whose only pose repeated
+  // the centering shape was emptied, which is a broken arc, and peak.prepared
+  // counts a declared preparation per ITEM, so removing a copy dropped a peak
+  // below its minimum. Neither is worth a cosmetic repeat.
+  const phaseCount = {};
+  for (const it of list) phaseCount[it.phase] = (phaseCount[it.phase] || 0) + 1;
+  for (let i = list.length - 1; i > 0; i--) {
+    const cur = list[i], prev = list[i - 1];
+    if (cur.asanaId !== prev.asanaId) continue;
+    if (cur.linked || prev.linked || cur.blockId) continue;
+    if (cur.prepFor || cur.counterTo) continue;
+    if (cur.phase === "peak" || cur.phase === "savasana") continue;
+    if ((phaseCount[cur.phase] || 0) <= 1) continue;
+    list.splice(i, 1);
+    phaseCount[cur.phase] -= 1;
+  }
+  let guard = 0;
+  while (guard++ < 12) {
+    const f = faultsIn(list)[0];
+    if (!f) break;
+    if (canGo(list[f.index])) { list.splice(f.index, 1); continue; }
+    if (canGo(list[f.index - 1])) { list.splice(f.index - 1, 1); continue; }
+    break;      // both ends are load-bearing; quality.js will report it
+  }
+  return list;
+}
+
+// --- flow blocks -------------------------------------------------------------
+/**
+ * THE SHORT SEQUENCE A CLASS RUNS ON ONE SIDE, THEN THE OTHER.
+ *
+ * This is how a standing series is actually taught and it is not what the
+ * generator was doing. A class does low lunge, warrior II, triangle down the
+ * RIGHT side, comes back through, and repeats the whole thing on the LEFT. The
+ * old model ran each pose left-and-right in place and then moved on, so twenty
+ * minutes of standing work needed twenty-eight DIFFERENT poses — which is why a
+ * 45-minute flow read like a tour of the catalogue and kept running out of
+ * library before it ran out of time.
+ *
+ * A block is emitted as one-sided items carrying an explicit `side`; the routine
+ * player already draws that, so nothing about the block is special once it is
+ * built. `blockId` and `blockRound` are for the review screen and for quality.js
+ * to check that both sides ran.
+ */
+function flowBlockItems(poses, ctx, { blockId, round = 1, rounds = 1 }) {
+  const out = [];
+  for (const side of ["Right", "Left"]) {
+    for (const a of poses) {
+      const it = makeItem(a, ctx, { phase: "build", t: 0.5 });
+      // A symmetric pose inside a block runs on both passes, unlabelled — chair
+      // between two warriors is chair both times round.
+      it.side = a.bilateral ? side : null;
+      it.bilateral = false;
+      it.blockId = blockId;
+      it.blockRound = round;
+      it.blockRounds = rounds;
+      it.blockSide = side;
+      out.push(it);
+    }
+  }
+  return out;
+}
+
+/**
+ * COMPOSE THE BLOCK AS A CHAIN, not as a selection that gets sorted afterwards.
+ *
+ * Ordinary phase filling asks "which poses belong in this practice" and then
+ * puts the answer in a sensible order. That is the wrong question for a block: a
+ * block is defined by carrying from each shape into the next, so every step has
+ * to be chosen FOR the step before it. Choosing three good standing poses and
+ * ordering them gave reverse warrior, revolved lunge, pyramid — open-hip,
+ * square-hip, square-hip, re-setting the feet twice inside a sequence whose
+ * whole purpose is not to.
+ *
+ * It starts on a lunge where it can, because that is where a standing series
+ * begins, and it stops as soon as nothing left is better than an unremarkable
+ * transition. A two-pose block is a real block; a padded four-pose one is not.
+ */
+function chooseBlock(candidates, want, rand) {
+  if (candidates.length < 2) return [];
+  const starts = candidates.filter((a) => a.position === "lunge");
+  const from = starts.length
+    ? starts[Math.floor(rand() * starts.length)]
+    : candidates[Math.floor(rand() * candidates.length)];
+  const chain = [from];
+  const left = candidates.filter((a) => a.id !== from.id);
+  while (chain.length < want && left.length) {
+    const prev = chain[chain.length - 1];
+    let best = null, bestScore = 1;
+    for (const a of left) {
+      const s = transitionScore(prev, a);
+      if (s > bestScore) { bestScore = s; best = a; }
+    }
+    if (!best) break;
+    chain.push(best);
+    left.splice(left.indexOf(best), 1);
+  }
+  // ⚠ THE BLOCK HAS TO LOOP. It runs down the right side and then starts again
+  // on the left, so its LAST pose is adjacent to its FIRST — a seam that exists
+  // nowhere in the chain the greedy walk just checked. A block of side angle
+  // into triangle is textbook forwards and, at the turn, asks you to re-bend a
+  // straightened front leg into a deep lunge. Shorten the chain until the loop
+  // closes; two poses run cleanly both ways is a better block than three that
+  // grind at the changeover.
+  while (chain.length > 2 && transitionFault(chain[chain.length - 1], chain[0])) chain.pop();
+  if (chain.length === 2 && transitionFault(chain[1], chain[0])) return [];
+  return chain.length >= 2 ? chain : [];
+}
+
+/** Poses per block. Three is a sequence you can remember; six is a class. */
+const BLOCK_POSES = [3, 4];
+/** Below this much time in the tier, a block cannot pay for itself. */
+const BLOCK_MIN_SECONDS = 240;
+
+/**
+ * Build time a body position has to be worth before the practice goes there.
+ * Roughly three poses: below that you arrive, do one thing and leave, which
+ * costs two position changes to place a single pose.
+ */
+const SECONDS_PER_TIER = 165;
+
+/**
+ * WHERE A COOL-DOWN HAPPENS. The end of a practice is the bottom of the descent
+ * — the standing releases belong to the counter phase, which runs first. Left
+ * unconstrained the cool-down picked freely across every position and undid the
+ * descent in the last four poses.
+ */
+const COOL_POSITIONS = ["prone", "kneeling", "seated", "supine"];
 
 // --- fitting a built sequence to the requested length ------------------------
 const BODY_PHASES = ["centering", "warmup", "build", "peak", "counter", "cool"];
@@ -294,9 +659,16 @@ function fitToTarget(sections, peak, ctx, savShare) {
   if (!cur) return;
   const f = Math.max(SCALE_BOUNDS[0], Math.min(SCALE_BOUNDS[1], bodyTarget / cur));
   if (Math.abs(f - 1) < 0.03) return;
+  // ⚠ THE SCALE PASS HAS TO RESPECT THE SAME CEILING makeItem DOES. It did not,
+  // so an item capped at 22% of the practice was scaled straight back through
+  // the cap by up to 45% — which is how a yin session that had just been told
+  // dragon could have 198 seconds a side ended up giving it 210.
+  const capFor = (it) => (ctx.targetSeconds
+    ? (ctx.targetSeconds * MAX_ITEM_SHARE) / (it.bilateral ? 2 : 1) : Infinity);
   for (const p of BODY_PHASES) for (const it of sections[p] || []) {
     if (it.linked) continue;
-    it.durationSeconds = Math.max(MIN_HOLD_SECONDS, Math.round((it.durationSeconds * f) / 5) * 5);
+    it.durationSeconds = Math.min(capFor(it),
+      Math.max(MIN_HOLD_SECONDS, Math.round((it.durationSeconds * f) / 5) * 5));
     if (it.holdBreaths != null && ctx.breathSeconds)
       it.holdBreaths = Math.max(1, Math.round(it.durationSeconds / ctx.breathSeconds));
   }
@@ -388,44 +760,74 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
   const used = new Set();
   const sections = {};
   let recentFamilies = [];
-  // Running sequence state the picker reads: where the body currently is, and
-  // what it has just done. Threaded through phases rather than reset per phase,
-  // because the standing-to-floor descent is a property of the whole practice.
-  const seq = { plane: null, recentIds: [] };
+  // What the practice has done lately, so the picker does not re-offer it.
+  // Threaded through phases rather than reset per phase.
+  const seq = { recentIds: [], counts: {} };
   const noteChoice = (a) => {
-    seq.plane = a.plane;
+    seq.counts[a.id] = (seq.counts[a.id] || 0) + 1;
     seq.recentIds.push(a.id);
     if (seq.recentIds.length > 8) seq.recentIds.shift();
   };
+  /** The pose the practice is standing in right now — what the next one follows. */
+  const lastOf = (...lists) => {
+    for (let i = lists.length - 1; i >= 0; i--) {
+      const l = lists[i];
+      if (l && l.length) return byId(l[l.length - 1].asanaId);
+    }
+    return null;
+  };
 
+  /**
+   * Choose poses for a phase until its time is spent, then put them in order.
+   *
+   * Returns the items rather than assigning them, because the build calls it
+   * once per body position and needs to keep the results apart. The old version
+   * wrote straight into `sections[phase]` and the caller read the section back
+   * between two calls to recover the first batch — which worked, and would have
+   * stopped working the moment a third call was added.
+   */
   const fillPhase = (phase, budget, opts = {}) => {
     const items = [];
     let spent = 0;
     let guard = 0;
+    let prev = opts.from || null;
     // Two passes. The first refuses to repeat a pose at all; the second allows it
     // at a heavy penalty, and only runs if the first ran out of poses before it
     // ran out of time. Without it a 60-minute vinyasa finished at 49 minutes,
     // because the eligible pool for one phase is simply smaller than an hour.
     for (const allowRepeat of [false, true]) {
       while (spent < budget * 0.92 && guard++ < 60) {
-        const eligible = opts.plane ? pool.filter((x) => x.plane === opts.plane) : pool;
-        const a = pick(eligible, ctx, phase, used, recentFamilies.slice(-3), rand, allowRepeat, seq);
+        const eligible = pool.filter((x) =>
+          (!opts.positions || opts.positions.includes(x.position))
+          && (!opts.filter || opts.filter(x)));
+        const a = pick(eligible, ctx, phase, used, recentFamilies, rand, allowRepeat,
+          { recentIds: seq.recentIds, counts: seq.counts, prev });
         if (!a) break;
         const t = opts.t == null ? rand() : opts.t;
         const it = makeItem(a, ctx, { phase, t });
         const cost = itemSeconds(it);
         // Don't blow the budget by more than half an item to place one more pose.
-        if (spent + cost > budget * 1.12 && items.length) { spent = budget; break; }
+        //
+        // ⚠ THE "ALWAYS PLACE AT LEAST ONE" ALLOWANCE IS FOR PHASES, NOT TIERS.
+        // A phase with nothing in it is a broken arc, so the first pose goes in
+        // whatever it costs. A body position with almost no time allotted is not
+        // a broken anything — it is the sequence saying this practice does not
+        // go there. Applied to tiers the allowance put a seven-minute dragon
+        // lunge into a yin practice that had budgeted twenty-eight seconds for
+        // standing, and the whole wind-down read supine, then lunging, then
+        // kneeling: the exact bounce the descent exists to remove.
+        if (spent + cost > budget * 1.12 && (items.length || opts.strict)) { spent = budget; break; }
         items.push(it);
+        if (opts.limit && items.length >= opts.limit) { spent = budget; }
         used.add(a.id);
         recentFamilies.push(a.family);
         noteChoice(a);
+        prev = a;
         spent += cost;
       }
       if (spent >= budget * 0.92) break;
     }
-    sections[phase] = items;
-    return items;
+    return orderGroup(items, { from: opts.from || null, descend: !!opts.descend });
   };
 
   const budgetFor = (phase) => (plan.find(([p]) => p === phase) || [null, 0])[1] * targetSeconds;
@@ -446,7 +848,6 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
       Math.min(CENTERING_MAX, Math.max(30, Math.round(budgetFor("centering"))));
     sections.centering[0].holdBreaths = null;
     sections.centering[0].transitionSeconds = 0;
-    seq.plane = centeringPose.plane;
   }
 
   // 2. warm-up — sun salutations where the style flows, discrete poses otherwise
@@ -476,7 +877,8 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
     sections.warmup = items;
     recentFamilies.push("standing");
   } else {
-    fillPhase("warmup", budgetFor("warmup"), { t: 0.35 });
+    sections.warmup = fillPhase("warmup", budgetFor("warmup"),
+      { t: 0.35, from: lastOf(sections.centering) });
   }
 
   // 3. build — general work, then the peak's OWN preparation, in order
@@ -494,41 +896,121 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
     preps.forEach(noteChoice);
   }
   const prepCost = flowSeconds(prepItems);
-  // THE BUILD DESCENDS ONCE: standing work, then floor work, then the peak's own
-  // preparation. Scoring the plane as a preference alone was not enough — a
-  // penalty is a bias and the roulette still reached past it often enough that a
-  // fifth of swept flows were still bouncing up and down. Splitting the budget
-  // makes the descent structural, which is what a class actually does: the
-  // standing series, then down, and you stay down.
   const usable = Math.max(0, buildBudget - prepCost);
-  const standingShare = style.flowLinked ? 0.55 : 0.5;
-  // WHICH HALF COMES SECOND IS DECIDED BY THE PEAK. A standing peak wants the
-  // standing block immediately before it, so the practice arrives there already
-  // on its feet; a floor peak wants the floor block. Getting this backwards costs
-  // two plane changes at the most important moment in the sequence — you stand
-  // up, lie down, and stand up again to reach the pose you built toward.
-  const first = peak && peak.plane === "standing" ? "floor" : "standing";
-  const second = first === "standing" ? "floor" : "standing";
-  const firstShare = first === "standing" ? standingShare : 1 - standingShare;
-  fillPhase("build", usable * firstShare, { plane: first });
-  const firstItems = sections.build;
-  fillPhase("build", usable * (1 - firstShare), { plane: second });
-  // ⚠ THE PREPARATION GOES INTO THE BLOCKS, NOT AFTER THEM. Appending the whole
-  // prep list to the tail undid the descent it had just built: a peak's preps
-  // are chosen for what they open, not for what plane they are in, so a standing
-  // prep for a floor peak landed on its own between floor poses. Flows came out
-  // as ...floor, floor, floor, STANDING, floor, floor, peak — four plane changes
-  // for two standing poses.
+
+  // ⚠ THE BUILD IS A DESCENT THROUGH BODY POSITIONS, AND IT STOPS AT THE PEAK.
   //
-  // Each prep now joins the block of its own plane, in its declared order, and
-  // the preps that share the peak's plane come last: you do the standing
-  // preparation while you are standing, and the practice arrives at the peak
-  // having just done the closest thing to it. Every prep is still before the
-  // peak, which is the only ordering constraint that carries meaning.
-  const prepsOn = (pl) => prepItems.filter((it) => it.plane === pl);
-  const prepRest = prepItems.filter((it) => it.plane !== first && it.plane !== second);
-  sections.build = [...firstItems, ...prepsOn(first),
-    ...sections.build, ...prepsOn(second), ...prepRest];
+  // The previous model split the build into a standing half and a floor half and
+  // decided which came FIRST from the peak's plane — so a standing peak put the
+  // floor block first, and a 45-minute flow spent twelve minutes on deep floor
+  // work before standing up for sixteen minutes of warriors. That is the reverse
+  // of every class ever taught, and it was a deliberate choice: the code wanted
+  // the peak's own plane adjacent to the peak, and got there by inverting the
+  // sequence around it.
+  //
+  // The real rule is simpler. The descent runs one way — standing, lunging, onto
+  // the hands, the belly, the knees, sitting, lying down — and the build simply
+  // STOPS at the position the peak is in. A standing peak means the practice
+  // never leaves its feet before it and the floor work becomes the cool-down
+  // that follows; a floor peak means the practice descends the whole way and the
+  // peak sits at the bottom. Nothing is reordered, so nothing is inverted.
+  //
+  // "floor" was too coarse to do this with: it covers lying on your front, lying
+  // on your back, sitting up and being on your hands, which is why a single
+  // floor block came out as plank, seated twist, sphinx, cow-face legs,
+  // chaturanga — four positions, no order.
+  // With no peak the build descends as far as SEATED, not all the way down. The
+  // bottom of the descent belongs to the cool-down, and a build that had already
+  // reached supine left the cool-down nowhere to go but back up — which is how a
+  // practice ended seated, supine, and then prone again.
+  const peakTier = peak ? tierOf(peak.position) : POSITION_TIERS.length - 2;
+  let groups = POSITION_TIERS.slice(0, Math.max(0, peakTier) + 1);
+
+  // ⚠ A PRACTICE ONLY GOES SOMEWHERE IF IT CAN STAY THERE.
+  //
+  // Visiting every tier is right for an hour and absurd for ten minutes: a
+  // 10-minute wake-up given all six tiers placed one pose in each, so the body
+  // changed position on nearly every pose and the sequence was the random walk
+  // again — arrived at, this time, by a rule meant to prevent it. The descent is
+  // an order, not a quota. Where the time only buys a couple of stations, take
+  // the couple the style cares most about and stay in them.
+  // Where the practice spends its build time. Weighted by what the style is FOR
+  // — a vinyasa lives on its feet, a long-hold style on the floor — and by how
+  // much of the library is actually reachable there, damped so a tier with twice
+  // the poses gets more time but not twice as much.
+  const bias = style.flowLinked || !style.holdSeconds ? POSITION_BIAS_ACTIVE : POSITION_BIAS_STILL;
+  const reachable = (positions) => pool.filter((a) => positions.includes(a.position)
+    && scoreFor(a, ctx, "build", new Set(), [], false, {}) > 0).length;
+  const biasOf = (positions) =>
+    positions.reduce((s, p) => s + (bias[p] || 1), 0) / positions.length;
+  const tierWeight = (g) => biasOf(g) * Math.sqrt(reachable(g));
+
+  if (groups.length > 1) {
+    const room = Math.max(1, Math.min(groups.length, Math.round(usable / SECONDS_PER_TIER)));
+    if (room < groups.length) {
+      groups = groups
+        .map((g, idx) => ({ g, idx, w: tierWeight(g) }))
+        .sort((a, b) => b.w - a.w)
+        .slice(0, room)
+        .sort((a, b) => a.idx - b.idx)       // back into descent order
+        .map((r) => r.g);
+    }
+  }
+  const weights = groups.map(tierWeight);
+  const weightSum = weights.reduce((s, w) => s + w, 0);
+
+  // ⚠ THE PREPARATION JOINS THE BLOCK OF ITS OWN POSITION, NOT THE TAIL.
+  // Appending the whole prep list after the build undid the descent it had just
+  // made: preps are chosen for what they open, not for where they happen, so a
+  // standing prep for a floor peak landed alone between two floor poses. Within
+  // a group the preps go last, so the practice arrives at the peak having just
+  // done the closest thing to it, and every prep is still before the peak —
+  // which is the only ordering constraint here that carries meaning.
+  const built = [];
+  for (let i = 0; i < groups.length; i++) {
+    const positions = groups[i];
+    const share = weightSum > 0 ? weights[i] / weightSum : 0;
+    const groupPreps = prepItems.filter((it) => positions.includes(it.position));
+    const budget = usable * share;
+    const chosen = [];
+    // THE STANDING SERIES RUNS AS A BLOCK, in a style that flows. Only the feet
+    // tier: a block is a sequence you carry from one shape into the next without
+    // resetting, which is what standing and lunging are and what lying on the
+    // floor for four minutes at a time is not.
+    if (share > 0 && style.flowLinked && i === 0 && budget >= BLOCK_MIN_SECONDS) {
+      const want = BLOCK_POSES[Math.floor(rand() * BLOCK_POSES.length)];
+      // ⚠ ONLY ASYMMETRIC POSES BELONG IN A BLOCK. A block exists to be run down
+      // one side and then the other, so a symmetric shape inside one is simply
+      // performed again identically — an early version put big toe pose in a
+      // block and the practice did the same fold four times in a row.
+      const candidates = pool.filter((a) => positions.includes(a.position) && a.bilateral
+        && scoreFor(a, ctx, "build", used, recentFamilies, false, { counts: seq.counts }) > 0);
+      const poses = chooseBlock(candidates, want, rand);
+      if (poses.length >= 2) {
+        // ONE ROUND IS ALREADY BOTH SIDES. Running the block twice back to back
+        // is four passes of the same three poses, which is not what a class that
+        // repeats a sequence does — it comes back to it later, after other work.
+        poses.forEach((a) => { used.add(a.id); recentFamilies.push(a.family); noteChoice(a); });
+        chosen.push(...flowBlockItems(poses, ctx, { blockId: `blk${i}` }));
+      }
+    }
+    const singlesBudget = budget - flowSeconds(chosen);
+    if (singlesBudget > 0)
+      chosen.push(...fillPhase("build", singlesBudget,
+        { positions, from: lastOf(sections.warmup, built, chosen), strict: true }));
+    built.push(...chosen, ...orderGroup(groupPreps, { from: lastOf(built, chosen) }));
+  }
+  // A prep whose position the build never reaches still has to happen — it is
+  // the reason the peak is reachable at all.
+  // A prep whose position the build never reaches goes at the FRONT, not the
+  // back. It still has to happen — it is the reason the peak is reachable — but
+  // it belongs on the floor the practice has not stood up from yet. Appended at
+  // the end it landed immediately before the peak: a wrist limitation sends
+  // downward dog up the substitution chain to seated centering, so a flow
+  // building to warrior III sat down on the mat and then stood up into it.
+  const placed = new Set(built.map((it) => it.asanaId));
+  const strays = prepItems.filter((it) => !placed.has(it.asanaId));
+  sections.build = endWellBefore([...orderGroup(strays, { descend: true }), ...built], peak);
 
   // 4. peak
   sections.peak = peak ? [makeItem(peak, ctx, { phase: "peak", t: 1 })] : [];
@@ -543,10 +1025,20 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
       .map((id) => resolvePose(id, { limits, level: ceiling }))
       .filter(Boolean)
       .filter((a, i, arr) => arr.findIndex((b) => b.id === a.id) === i);
+    // ⚠ YOU DO NOT STAND BACK UP TO COUNTER SOMETHING. A counter-pose is declared
+    // for what it undoes, not for where it happens, so crow — which you are on
+    // your hands for — listed a standing forward fold among its counters, and the
+    // practice climbed all the way back to its feet and straight down again in
+    // the four poses after the peak. Counters at or below the peak's own tier
+    // only; if that leaves nothing, the counter matters more than the descent and
+    // the whole list stands.
+    const peakTierIdx = tierOf(peak.position);
+    const belowPeak = counters.filter((a) => tierOf(a.position) >= peakTierIdx);
+    const counterPool = belowPeak.length ? belowPeak : counters;
     const items = [];
     let spent = 0;
     const budget = budgetFor("counter");
-    for (const a of counters) {
+    for (const a of counterPool) {
       const it = makeItem(a, ctx, { phase: "counter", t: 0.5 });
       it.counterTo = peak.id;
       items.push(it);
@@ -555,11 +1047,22 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
       spent += itemSeconds(it);
       if (spent >= budget * 0.8 && items.length >= 1) break;
     }
-    sections.counter = items;
+    sections.counter = orderGroup(items, { from: peak });
   } else sections.counter = [];
 
-  // 6. cool-down
-  fillPhase("cool", budgetFor("cool"), { t: 0.7 });
+  // 6. cool-down — and it follows on from whatever the practice was just doing,
+  // which after a standing peak means this is where the descent to the floor
+  // finally happens.
+  // The cool-down carries on DOWN from wherever the practice has got to. Fixed
+  // to the same four positions regardless, it would start at prone after a build
+  // that had already reached the floor and lain down — a climb, in the phase
+  // whose whole job is the last of the descent.
+  const at = lastOf(sections.build, sections.peak, sections.counter);
+  const fromTier = at ? tierOf(at.position) : 0;
+  const coolPositions = COOL_POSITIONS.filter((p) => tierOf(p) >= fromTier);
+  sections.cool = fillPhase("cool", budgetFor("cool"),
+    { t: 0.7, descend: true, from: at,
+      positions: coolPositions.length ? coolPositions : COOL_POSITIONS });
 
   // 6b. fit the body of the practice to the length that was asked for.
   //
@@ -591,7 +1094,7 @@ export function generateFlow({ intent: intentId, minutes, limits = [], style: st
   const order = peak
     ? ["centering", "warmup", "build", "peak", "counter", "cool", "savasana"]
     : ["centering", "warmup", "build", "cool", "savasana"];
-  const items = order.flatMap((p) => sections[p] || []);
+  const items = dropSeamFaults(order.flatMap((p) => sections[p] || []));
   items.forEach((it, i) => { it.id = `${it.asanaId}-${i}`; });
 
   const totalSeconds = flowSeconds(items);
@@ -648,6 +1151,13 @@ export function toRoutineDef(flow) {
       durationSeconds: it.durationSeconds,
       transitionSeconds: it.transitionSeconds,
       bilateral: it.bilateral,
+      // ⚠ A ONE-SIDED ITEM HAS TO CARRY ITS SIDE ACROSS. The player reads `side`
+      // off the routine item, not off the flow, so leaving it behind here meant
+      // a flow block composed correctly, ran correctly, and told you nothing —
+      // warrior II twice with no idea which leg. The generator was right and the
+      // hand-off dropped it, which no unit test on either side would have caught.
+      side: it.side || null,
+      blockId: it.blockId || null,
       cue: it.cue,
       easier: it.easier,
       holdBreaths: it.holdBreaths,

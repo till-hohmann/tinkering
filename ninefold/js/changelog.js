@@ -13,6 +13,11 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 184, notes: [
+    "Yoga practices are put together the way a class is taught. The standing work now runs as a short sequence down your right side and then your left, rather than every pose on its own; the practice comes down to the floor once and stays there instead of getting up and down; and each pose is chosen for what it leads into rather than for being different from the last one.",
+    "Fixed: a wind-down or bedtime practice could ask you to hold upward plank for nearly four minutes, or sit in a deep squat for four. Long holds are now only ever asked of shapes that can be held.",
+    "Fixed: a few pose pairs asked you to rebuild the pose underneath you — half moon straight into warrior III turns the standing hip over while you balance on a straight leg. Those no longer come up.",
+  ] },
   { v: 183, notes: [
     "Your stretch targets are back on the plan's numbers. The Skip bug had flattened them to the 15-second minimum and there is no record of what you had earned, so they start from the plan again and build back up from there. A target you genuinely hold at 15 seconds was left alone.",
   ] },

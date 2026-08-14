@@ -96,7 +96,12 @@ function buildSteps(def) {
       if (it.mode === "checklist") {
         steps.push({ type: "checklist", item: it, round: r });
       } else {
-        const sides = it.bilateral ? ["Left", "Right"] : [null];
+        // An item may name its OWN side rather than declaring itself two-sided.
+        // That is what a flow block needs: the block runs right side through,
+        // then left, so each pose in it belongs to one side and the pair of
+        // passes is the sequence rather than the pose. Everything downstream
+        // already reads `step.side`, so this is the whole change.
+        const sides = it.side ? [it.side] : (it.bilateral ? ["Left", "Right"] : [null]);
         for (const side of sides) {
           const trans = transFor(it);
           if (trans > 0) steps.push({ type: "transition", item: it, side, seconds: trans, round: r });

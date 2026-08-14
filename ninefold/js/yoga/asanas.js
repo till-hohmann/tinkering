@@ -18,6 +18,8 @@
 // carries which sites a given person is protecting. Nothing here knows about any
 // individual.
 
+import { POSITION_OF, POSITIONS, FACINGS, ROTATIONS, SPINE_DIRECTIONS, planeOf } from "./positions.js";
+
 /** Body sites a pose can stress. A profile ticks the ones it is protecting. */
 export const LIMITATIONS = {
   knees:      { label: "Knees", note: "Skips deep knee flexion with rotation — lotus, hero, full pigeon." },
@@ -755,6 +757,31 @@ export const ASANAS = [
       easier: "A bolster under the knees, a blanket over you.", props: ["bolster", "blanket"] }),
 ];
 
+// ------------------------------------------------------- sequencing metadata
+//
+// WHERE THE BODY IS, folded in from positions.js. It lives in its own file for
+// one reason: it has to be read as a TABLE. Judging whether prone belongs before
+// kneeling means seeing every prone and kneeling pose at once, which you cannot
+// do when the rows are eight hundred lines apart in an entry that also carries
+// cues, props and contraindications.
+//
+// `plane` is DERIVED from the position rather than declared, so the coarse fact
+// (standing or floor) and the precise one can never drift apart. It used to be
+// hand-set per pose, and dragon — a lunge — was filed as floor.
+for (const a of ASANAS) {
+  const p = POSITION_OF[a.id];
+  if (!p) continue;                     // checkAsanas() reports it; don't crash the app
+  a.position = p.pos;
+  a.facing = p.face;
+  a.hipRotation = p.rot;
+  a.spine = p.spine;
+  // Can this be held for MINUTES in stillness? Yin and restorative hold in
+  // minutes and had no way to know that upward plank is not such a shape.
+  a.still = p.still;
+  a.straightLeg = p.leg;
+  a.plane = planeOf(p.pos);
+}
+
 // --------------------------------------------------------------------- lookup
 const BY_ID = new Map(ASANAS.map((a) => [a.id, a]));
 export const byId = (id) => BY_ID.get(id) || null;
@@ -812,6 +839,23 @@ export function checkAsanas({ art } = {}) {
     if (!a.easier && a.family !== "breath" && a.id !== "tadasana") problems.push(`${a.id}: no easier variation offered`);
     if (!a.cue) problems.push(`${a.id}: no cue`);
     if (art && !art.has(a.art)) problems.push(`${a.id}: no figure for art key "${a.art}"`);
+    // A POSE WITH NO POSITION CANNOT BE SEQUENCED. It would fall through every
+    // adjacency rule scoring the same as a perfect neighbour, which is how the
+    // old plane-only model let a seated twist sit between two prone backbends —
+    // silently, because nothing was wrong with either pose on its own.
+    const p = POSITION_OF[a.id];
+    if (!p) problems.push(`${a.id}: no row in positions.js`);
+    else {
+      if (!POSITIONS[p.pos]) problems.push(`${a.id}: unknown position "${p.pos}"`);
+      if (!FACINGS.includes(p.face)) problems.push(`${a.id}: unknown facing "${p.face}"`);
+      if (!ROTATIONS.includes(p.rot)) problems.push(`${a.id}: unknown hip rotation "${p.rot}"`);
+      if (!SPINE_DIRECTIONS.includes(p.spine)) problems.push(`${a.id}: unknown spinal direction "${p.spine}"`);
+      // Only a straight standing leg can commit the rotation flip that half moon
+      // into warrior III commits, so the flag is meaningless anywhere else.
+      if (p.leg && p.pos !== "standing") problems.push(`${a.id}: straight-leg balance outside a standing position`);
+    }
   }
+  for (const id of Object.keys(POSITION_OF))
+    if (!BY_ID.has(id)) problems.push(`positions.js: "${id}" is not in the library`);
   return problems;
 }
