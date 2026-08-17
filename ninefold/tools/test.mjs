@@ -2132,7 +2132,18 @@ group("yoga — every pose can be pictured, and none borrows another's", () => {
 
   it("the import map names every pose, and no filename is claimed twice", () => {
     const py = readFileSync(new URL("../tools/import-exercise-images.py", import.meta.url), "utf8");
-    const map = py.slice(py.indexOf("MAP = {"), py.indexOf("\n}\n", py.indexOf("MAP = {")));
+    // ⚠ THE FILE IS CRLF, so the old `indexOf("\n}\n")` never matched: it
+    // returned -1, `slice` read to the end, and this test was quietly grading
+    // MAP *and* SKIP together. It passed for a year because SKIP's five reason
+    // strings happened to be distinct; the moment three skipped push-up variants
+    // shared the reason "no library id — push-up variant", it reported two
+    // filenames claiming the same exercise id. The values it was comparing were
+    // English sentences. Match the closing brace at the start of a line instead,
+    // with the line ending left out of it.
+    const from = py.indexOf("MAP = {");
+    const end = py.slice(from).search(/\r?\n\}\r?\n/);
+    assert.ok(end > 0, "could not find the end of MAP");
+    const map = py.slice(from, from + end);
     const pairs = [...map.matchAll(/^\s*"([^"]+)":\s*"([^"]+)",/gm)].map((m) => [m[1], m[2]]);
     const byFile = new Map(pairs);
     assert.equal(byFile.size, pairs.length, "a filename is mapped twice");
@@ -2143,6 +2154,30 @@ group("yoga — every pose can be pictured, and none borrows another's", () => {
     // hand one of them the other's photograph with no error anywhere.
     const missing = ASANAS.filter((a) => byFile.get("yoga-" + kebab(a.name)) !== a.id);
     assert.deepEqual(missing.map((a) => a.name), []);
+  });
+
+  it("actually ships a photograph for every pose", () => {
+    // The map naming a pose and the app HAVING that pose's picture are two
+    // different facts, and the gap between them is where the last import bug
+    // lived: the yoga renders arrive in a `Yoga/` subfolder and the importer
+    // globbed one level, so it reported a clean run having copied none of them.
+    const ids = new Set(JSON.parse(readFileSync(
+      new URL("../img/exercises/manifest.json", import.meta.url), "utf8")).ids);
+    assert.deepEqual(ASANAS.filter((a) => !ids.has(a.id)).map((a) => a.id), []);
+  });
+
+  it("takes a pose render as it is, rather than cropping it like a composite", () => {
+    // A lift render is a two-panel composite and its thumbnail is the demo half,
+    // found per image and brightened for a near-black list row. A pose render is
+    // one full-frame photograph. Run through the composite path, find_divider()
+    // picks the darkest column of an ordinary room and warrior II loses the arm
+    // it is reaching with.
+    const py = readFileSync(new URL("../tools/build-exercise-images.py", import.meta.url), "utf8");
+    assert.match(py, /def asana_ids\(\)/, "the builder must know which renders are poses");
+    assert.match(py, /convert_thumb\(png, single_panel=single\)/);
+    const single = py.slice(py.indexOf("if single_panel:"), py.indexOf("return out", py.indexOf("if single_panel:")));
+    assert.doesNotMatch(single, /find_divider|ImageEnhance/,
+      "a pose thumbnail must not be cropped to a panel or retouched");
   });
 });
 

@@ -13,6 +13,10 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 185, notes: [
+    "Every yoga pose now has a photograph — all 110 of them, in the practice player, the sequence list and your logged practices. The drawn figures were only ever a stand-in.",
+    "Photographs for the rest of the library too: deadlifts, pull-ups, push-ups, front squat and a dozen others were borrowing a picture of a near-enough lift and now have their own. Eight machine movements still show a drawing.",
+  ] },
   { v: 184, notes: [
     "Yoga practices are put together the way a class is taught. The standing work now runs as a short sequence down your right side and then your left, rather than every pose on its own; the practice comes down to the floor once and stays there instead of getting up and down; and each pose is chosen for what it leads into rather than for being different from the last one.",
     "Fixed: a wind-down or bedtime practice could ask you to hold upward plank for nearly four minutes, or sit in a deep squat for four. Long holds are now only ever asked of shapes that can be held.",

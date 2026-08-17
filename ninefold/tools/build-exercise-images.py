@@ -26,6 +26,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent.parent
 IMG_DIR = ROOT / "img" / "exercises"
 ANATOMY_JS = ROOT / "js" / "exercise-anatomy.js"
+ASANAS_JS = ROOT / "js" / "yoga" / "asanas.js"
 
 SIZE = 1024
 QUALITY = 82
@@ -38,6 +39,23 @@ def expected_ids():
     body = body.split("\n};", 1)[0]
     # top-level keys only (two-space indent); nested m(...) calls are deeper
     return [m.group(1) for m in re.finditer(r"^  ([a-z0-9_]+):", body, re.M)]
+
+
+def asana_ids():
+    """Every pose in the yoga library, read from its A("id", ...) entries.
+
+    ⚠ THE TWO SETS OF RENDERS ARE NOT THE SAME KIND OF PICTURE, and everything
+    below turns on knowing which is which. A strength render is a two-panel
+    composite — a dark gym demo beside a muscle chart. A yoga render is a single
+    full-frame photograph of one pose in a bright room.
+
+    Run a yoga frame through the composite handling and find_divider() picks the
+    darkest column of an ordinary photograph, which is nothing at all: warrior II
+    came out with her outstretched arm cropped off at the wrist, and the
+    brightness lift meant for a near-black gym washed a warm studio flat.
+    """
+    src = ASANAS_JS.read_text(encoding="utf-8")
+    return [m.group(1) for m in re.finditer(r'^  A\("([a-z0-9_]+)"', src, re.M)]
 
 
 THUMB = 512
@@ -62,14 +80,28 @@ def find_divider(im):
     return best_x
 
 
-def convert_thumb(png: Path) -> Path:
+def convert_thumb(png: Path, single_panel: bool = False) -> Path:
     """The DEMO half alone, square, for tiles and list rows.
 
     The full composite is right for the anatomy card, where it's read at 340px+.
     At the 40-74px an exercise row gives it, the two panels together are mush —
     so lists get the photograph only, cropped square around the lifter.
+
+    A SINGLE-PANEL RENDER IS TAKEN AS IT IS. It is already one square photograph
+    of the whole pose, so there is no half to find and nothing to improve: the
+    thumbnail is a resize. Anything else here would be cropping and retouching a
+    picture that arrived finished.
     """
     out = png.with_name(png.stem + ".thumb.webp")
+    if single_panel:
+        with Image.open(png) as im:
+            im = im.convert("RGB")
+            w, h = im.size
+            side = min(w, h)
+            im = im.crop(((w - side) // 2, (h - side) // 2,
+                          (w - side) // 2 + side, (h - side) // 2 + side))
+            im.resize((THUMB, THUMB), Image.LANCZOS).save(out, "WEBP", quality=80, method=6)
+        return out
     with Image.open(png) as im:
         im = im.convert("RGB")
         w, h = im.size
@@ -112,29 +144,42 @@ def main():
         print(f"created {IMG_DIR.relative_to(ROOT)} — drop the renders in and re-run")
         return
 
+    poses = set(asana_ids())
     pngs = sorted(IMG_DIR.glob("*.png"))
     for png in pngs:
+        single = png.stem in poses
         out = convert(png)
-        th = convert_thumb(png)
-        print(f"  {png.name:30s} -> {out.stat().st_size/1024:5.0f} KB  + thumb {th.stat().st_size/1024:4.0f} KB")
+        th = convert_thumb(png, single_panel=single)
+        kind = "pose " if single else "lift "
+        print(f"  {kind}{png.name:34s} -> {out.stat().st_size/1024:5.0f} KB  + thumb {th.stat().st_size/1024:4.0f} KB")
 
     ids = sorted(p.stem for p in IMG_DIR.glob("*.webp") if not p.stem.endswith(".thumb"))
     (IMG_DIR / "manifest.json").write_text(
         json.dumps({"ids": ids}, indent=2) + "\n", encoding="utf-8"
     )
 
-    want = expected_ids()
-    missing = [i for i in want if i not in set(ids)]
-    unknown = [i for i in ids if i not in set(want)]
+    # Two libraries share this directory and this manifest, so they are reported
+    # separately — a run that shipped every lift and no pose used to read as a
+    # clean run with 110 lines of "not in exercise-anatomy.js" under it.
+    want, shipped = expected_ids(), set(ids)
+    missing = [i for i in want if i not in shipped]
+    missing_poses = [i for i in sorted(poses) if i not in shipped]
+    unknown = [i for i in ids if i not in set(want) and i not in poses]
 
-    print(f"\n{len(ids)}/{len(want)} renders shipped -> img/exercises/manifest.json")
+    print(f"\n{len([i for i in ids if i not in poses])}/{len(want)} lift renders"
+          f" and {len([i for i in ids if i in poses])}/{len(poses)} pose renders"
+          f" -> img/exercises/manifest.json")
     if unknown:
-        print("\nnot in exercise-anatomy.js (typo in the filename?):")
+        print("\nin neither library (typo in the filename?):")
         for i in unknown:
             print(f"  {i}")
     if missing:
-        print(f"\nstill to generate ({len(missing)}):")
+        print(f"\nlifts still to generate ({len(missing)}):")
         for i in missing:
+            print(f"  {i}")
+    if missing_poses:
+        print(f"\nposes still to generate ({len(missing_poses)}):")
+        for i in missing_poses:
             print(f"  {i}")
 
 
