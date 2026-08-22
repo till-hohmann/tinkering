@@ -1200,3 +1200,21 @@ body.yoga-dawn .timer-big, body.yoga-night .timer-big { font-weight: 300; letter
 /* ⚠ NO AURORA DURING A PRACTICE. The living gradient backdrop is motion you did
    not ask for at the one moment the whole screen is asking you to be still. */
 body.yoga-dawn #aurora-cv, body.yoga-night #aurora-cv { display: none; }
+
+/* A timed set counts down in front of you, the way the same hold does in a
+   warm-up. Big enough to read from the floor in a side plank. */
+.holdrun { margin-top: 4px; }
+.holdclock {
+  font-variant-numeric: tabular-nums;
+  font-size: 3.2rem; font-weight: 800; line-height: 1.05;
+  text-align: center; color: var(--text); margin: 6px 0 12px;
+}
+.holdrun .endhold { margin-top: 10px; }
+/* Which half of a superset you are in, on the exercise header. */
+.sschip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: 999px; font-size: .74rem; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase;
+  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}

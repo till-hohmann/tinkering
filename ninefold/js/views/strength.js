@@ -4,6 +4,8 @@
 // dismissible rest timer. Calls onComplete(strengthResult[]) when all exercises done.
 
 import { el, clear, haptic, go, registerCleanup } from "../ui.js";
+import { expandComposites, usableSupersets, orderWithSupersets, supersetsAllowed,
+  groupLabel, nextInGroup } from "../supersets.js";
 import { interruptSheet } from "../components/interrupt.js";
 import { illustration } from "../illustrations.js";
 import { photoURL, loadPhotoManifest } from "../exercise-photo.js";
@@ -12,7 +14,7 @@ import { getProfile, withPlace } from "../profile.js";
 import { PlateCalc } from "../components/plate-calc.js";
 import { WeightStepper } from "../components/db-scroller.js";
 import { Ticker } from "../components/timer.js";
-import { cueItemEnd, cueTick } from "../components/sound.js";
+import { cueItemStart, cueItemEnd, cueTick } from "../components/sound.js";
 import { celebrate } from "../components/confetti.js";
 import { recommend, detectStall, roundLoad, isDeloadWeek, e1rm, warmupPlan, replanSets, loadCeiling, rackAt } from "../progression.js";
 import { availableAt } from "../exercise-library.js";
@@ -219,6 +221,34 @@ export async function runStrength(container, program, day, weekday, iso, locatio
   // future week. `_plannedSets` remembers what was asked of you before you
   // changed it, which is the baseline the end-of-session question compares to.
   let exercises = (opts.exercises || day.exercises).map((e) => ({ ...e, _plannedSets: e.prescribedSets }));
+
+  // --- supersets and circuits -------------------------------------------------
+  //
+  // ⚠ THE PLAN HAS CARRIED A `supersets` FIELD SINCE THE FIRST BLOCK AND NOTHING
+  // HAS EVER READ IT. Two of Till's blocks declare one — curls with pushdowns,
+  // curls with overhead extensions — and both have been running as plain
+  // straight sets for their whole life. Honoured here, at the one point every
+  // caller passes through: the planned session and the substitute flow both
+  // arrive in this function.
+  //
+  // A COMPOSITE IS EXPANDED WHATEVER THE ANSWER ABOUT SUPERSETS. "Core Circuit"
+  // is one library row whose own name lists three movements; splitting it is not
+  // a superset, it is the exercise finally being written down as what it is, and
+  // it is what lets each hold be timed and ended early on its own.
+  //
+  // Pairings are NOT invented here. The generator decides them at build time,
+  // where it can see the whole block and answer for it once; a session that
+  // paired things up on the fly would hand you a different workout each time you
+  // opened the same day.
+  {
+    const place = (profile.places || []).find((p) => p.id === location || p.name === location) || null;
+    const allowSS = supersetsAllowed(program, opts.adhocPlace || place);
+    const { entries, groups: circuits } = expandComposites(exercises);
+    const declared = usableSupersets(day.supersets || [], { allow: allowSS });
+    supersetGroups = [...usableSupersets(circuits, { allow: true }), ...declared];
+    exercises = supersetGroups.length ? orderWithSupersets(entries, supersetGroups) : entries;
+  }
+  let supersetGroups = [];
   let prevs, recs, stalls;
   if (opts.recs) {
     recs = opts.recs;
@@ -513,6 +543,21 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       const reps = timed ? (ps ? ps.seconds ?? top : top) : fillReps;
       sets.push({ weightKg: weight, reps: timed ? null : reps, seconds: timed ? reps : undefined, rir: null, done: false, edited: false });
     }
+    // ⚠ RE-ENTERING A LIFT MUST NOT FORGET WHAT YOU LOGGED IN IT. The screen is
+    // rebuilt from the plan every time it is opened, so leaving an exercise and
+    // coming back — which the jump list openly invites, and which a superset now
+    // does on every single set — showed zero sets done and then committed that
+    // emptiness over the top of the real ones.
+    const prior = results.find((r) => r.exerciseId === rx.exerciseId);
+    if (prior) {
+      for (let i = 0; i < prior.sets.length && i < sets.length; i++) {
+        const ps = prior.sets[i];
+        sets[i] = { ...sets[i], weightKg: ps.weightKg,
+          reps: timed ? null : (ps.reps != null ? ps.reps : sets[i].reps),
+          seconds: timed ? (ps.seconds != null ? ps.seconds : sets[i].seconds) : undefined,
+          rir: ps.rir != null ? ps.rir : null, done: true };
+      }
+    }
     return { timed, sets };
   }
 
@@ -529,13 +574,27 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     const rec = recs[exIndex];
     const stall = stalls[exIndex];
     const state = initSets(rx, prevEx, implement, rec);
-    let active = 0;
+    // Open on the first set still to do, not on set one — coming back into the
+    // second half of a superset, set one is already behind you.
+    let active = Math.max(0, state.sets.findIndex((x) => !x.done));
     // Held rather than inlined so adding or dropping a set can repaint it: the
     // header said "3 ×" over a four-row set list, which reads as a bug in the
     // logging rather than a change the user just made.
     const rxLine = el("div.rx");
+    // WHICH HALF OF WHAT, in words. Being handed a different exercise after every
+    // set is either a superset or a bug, and the only thing that tells them
+    // apart is the screen saying so before it happens.
+    const partnerNames = () => {
+      if (rx.supersetId == null) return "";
+      const others = exercises
+        .filter((e) => e.supersetId === rx.supersetId && e.exerciseId !== rx.exerciseId)
+        .map((e) => metaFor(program, e.exerciseId).name || e.exerciseId);
+      if (!others.length) return "";
+      const kind = groupLabel(new Array(rx.supersetSize));
+      return ` · ${kind} ${rx.supersetIndex + 1}/${rx.supersetSize} with ${others.join(" + ")}`;
+    };
     const paintRx = () => { rxLine.textContent =
-      `${rx.prescribedSets} × ${rx.repRange} · rest ${rx.restSeconds}s${rx.role === "core" ? " · core" : ""}`; };
+      `${rx.prescribedSets} × ${rx.repRange} · rest ${rx.restSeconds}s${rx.role === "core" ? " · core" : ""}${partnerNames()}`; };
     paintRx();
 
     // --- header ---
@@ -790,6 +849,17 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       }
       if (prHit) { haptic(25); celebrate(1400); toast("🏆 New best · " + lib.name); }
       else haptic(15);
+      // --- SUPERSET: GO TO THE PARTNER, AND REST AFTER THE PAIR, NOT INSIDE IT.
+      // That ordering IS the superset. Resting between the two halves would make
+      // it two exercises done in a row, which is what the app did for every
+      // superset any block ever declared.
+      const partner = supersetPartnerFor(state.sets.filter((x) => x.done).length);
+      if (partner >= 0) {
+        commit();
+        exIndex = partner;
+        renderExercise();
+        return;
+      }
       const next = state.sets.findIndex((x) => !x.done);
       if (next >= 0) {
         startRest(exercises[exIndex].restSeconds);
@@ -806,7 +876,57 @@ export async function runStrength(container, program, day, weekday, iso, locatio
 
     // the editor panel that expands under the active set row (weight widget +
     // reps stepper + optional RIR + the commit button)
-    editor = el("div.set-editor", {}, [weightZone, repsRow, rirRow, logBtn].filter(Boolean));
+    // --- TIMED HOLDS RUN ON A CLOCK, NOT ON A NUMBER PAD -----------------------
+    //
+    // A plank, a dead hang, a side plank: you start it, it counts down, and you
+    // either make the target or you stop when you cannot hold any more. The app
+    // asked you to type the seconds afterwards from memory, which is both a
+    // worse measurement and the only place in the app where a hold behaved
+    // differently from the identical hold in a warm-up. Same controls as the
+    // routine engine, because it is the same act.
+    let holdCtl = null;
+    if (state.timed) {
+      const bigTime = el("div.holdclock", { text: `${curRep()}s` });
+      const startBtn = el("button.btn.primary.big.block", {}, "▶ Start hold");
+      const endBtn = el("button.btn.block.endhold", { style: "display:none" },
+        "✋ End hold — log my time");
+      let ticker = null, target = 0, startedAt = 0;
+      const stop = () => { if (ticker) { ticker.stop(); ticker = null; } };
+      const finish = (heldSec) => {
+        stop();
+        setRep(Math.max(0, Math.round(heldSec)));
+        bigTime.textContent = `${curRep()}s`;
+        startBtn.style.display = "";
+        startBtn.textContent = "▶ Start hold";
+        endBtn.style.display = "none";
+        try { cueItemEnd(); } catch (_) {}
+        logSet();
+      };
+      startBtn.onclick = () => {
+        target = Math.max(1, curRep());
+        startedAt = performance.now();
+        startBtn.style.display = "none";
+        endBtn.style.display = "";
+        try { cueItemStart(); } catch (_) {}
+        ticker = new Ticker({
+          onTick: (rem) => {
+            bigTime.textContent = `${rem}s`;
+            // The last three seconds get the same ticks the routine engine gives
+            // them, so a hold sounds the same wherever you meet it.
+            if (rem <= 3 && rem > 0) { try { cueTick(); } catch (_) {} }
+          },
+          onDone: () => finish(target),
+        });
+        ticker.start(target);
+      };
+      endBtn.onclick = () => finish((performance.now() - startedAt) / 1000);
+      holdCtl = el("div.holdrun", {}, [bigTime, startBtn, endBtn]);
+      // Leaving the screen mid-hold must not leave a ticker running behind it.
+      registerCleanup(stop);
+    }
+
+    editor = el("div.set-editor", {},
+      [weightZone, repsRow, rirRow, holdCtl, holdCtl ? null : logBtn].filter(Boolean));
     container.appendChild(el("div.row", { style: "margin:10px 2px 6px" }, [
       el("span.dim", { text: "Session volume" }), el("span.spacer"), volEl,
     ]));
@@ -889,6 +1009,19 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       if (opts.onProgress) opts.onProgress(results.slice(), Math.min(exIndex + 1, exercises.length));   // resumable draft
     }
     commitCurrent = commit;
+
+    /**
+     * The next member of this superset still owing a set for the round just
+     * completed, or -1 when the round is finished and it is time to rest.
+     *
+     * Counted from `results` rather than from any screen state, because the
+     * partner's screen does not exist while you are standing in this one — its
+     * sets live in the committed results and nowhere else.
+     */
+    const supersetPartnerFor = (round) => nextInGroup(exercises, exIndex, round, (j) => {
+      const r = results.find((x) => x.exerciseId === exercises[j].exerciseId);
+      return r ? r.sets.length : 0;
+    });
 
     function finishExercise() {
       clearRest();

@@ -13,6 +13,13 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 186, notes: [
+    "Fixed: your dead hang had been getting SHORTER. It was progressing under the rule written for stretches, which lowers the target whenever you fall short — and a dead hang ends when your grip goes, so falling short is the point of it. Every honest session pushed the number down; it had reached 20 seconds from a planned 40 while every stretch beside it in the same cool-down had climbed. Strength holds now progress from your best instead: two full holds add five seconds, coming up short costs nothing, and only three bad sessions in a row move the target down — to the best of those three. Your dead hang is back at the 40 seconds the plan asks for. Planks, side planks, wall sits and hollow holds were all quietly doing the same thing and are all fixed.",
+    "The core circuit is a circuit now. Plank, leg raise and side plank each get their own countdown, their own \"end hold\" button and their own progression, instead of one line asking you to type a number of seconds from memory afterwards. Every timed exercise in a workout works this way now — same clock, same controls as the identical hold in a warm-up.",
+    "Supersets work. The plan format has carried a supersets field since the very first block, two of your blocks declare one, and nothing in the app has ever read it — so your curls and pushdowns have been running as ordinary straight sets all along. They now alternate properly, with the rest taken after the pair rather than between the two halves.",
+    "New blocks can be built with supersets. The builder asks; the default is no. Anything needing equipment is paired at most two deep and matched on the same kit wherever it can be, so a pairing costs the room one station rather than two. Bodyweight core work can run as a longer circuit. Two heavy lower-body lifts are never paired.",
+    "A training place can overrule it. Profile → Places → Supersets here: follow the block, always, or never. Useful when the same programme is fine at home and impossible in a busy gym.",
+  ] },
   { v: 185, notes: [
     "Every yoga pose now has a photograph — all 110 of them, in the practice player, the sequence list and your logged practices. The drawn figures were only ever a stand-in.",
     "Photographs for the rest of the library too: deadlifts, pull-ups, push-ups, front squat and a dozen others were borrowing a picture of a near-enough lift and now have their own. Eight machine movements still show a drawing.",

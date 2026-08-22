@@ -55,6 +55,10 @@ import { checkLevels } from "../js/yoga/levels.js";
 import { checkScript, entryScript, exitScript, salutationScript, allHoldPhrases } from "../js/yoga/script.js";
 import { ASANAS } from "../js/yoga/asanas.js";
 import { flowSeconds as flowSecondsOf, elapsedAt as flowElapsedAt } from "../js/yoga/compose.js";
+import { isStrengthHold, applyHoldResults, repairHoldRatchet, HOLD_CAP } from "../js/holds.js";
+import { pairScore, buildSupersets, usableSupersets, orderWithSupersets, occupiesEquipment,
+  supersetsAllowed, expandComposites, exerciseById as ssExercise, MIN_PAIR_SCORE,
+  nextInGroup } from "../js/supersets.js";
 import { transitionFault, transitionScore, faultsIn, positionChanges, positionReturns,
   LINKS as TRANSITION_LINKS } from "../js/yoga/transitions.js";
 import { POSITION_OF, POSITION_TIERS, tierOf } from "../js/yoga/positions.js";
@@ -2198,14 +2202,22 @@ group("stretches — skipping is not failing", () => {
     { id: "adductor_rockback", name: "Adductor rock-back", mode: "timed", durationSeconds: 50, bilateral: true },
   ];
 
-  it("a near-zero hold really does collapse a learned target — which is why Skip must not log one", () => {
+  it("a near-zero hold really does collapse a learned STRETCH — which is why Skip must not log one", () => {
     // The engine is RIGHT to do this: pressing "end hold" at 1s means 1s. The
     // protection has to live at the recording boundary, not in here. Pinned so
     // the danger stays visible if anyone re-wires Skip.
-    const holds = items.map((it) => ({ id: it.id, side: it.bilateral ? "Left" : null,
+    //
+    // ⚠ THE DEAD HANG IS NO LONGER PART OF THIS. It is a strength hold now, and
+    // a strength hold deliberately does not collapse on one bad rep — see the
+    // holds.js group below. Its presence here was the whole defect: the rule
+    // being pinned as correct was the rule quietly halving it every month.
+    const stretches = items.filter((it) => it.id !== "dead_hang");
+    const holds = stretches.map((it) => ({ id: it.id, side: it.bilateral ? "Left" : null,
       targetSec: it.durationSeconds, heldSec: 1 }));
-    const { state } = applyStretchResults(learned, items, holds);
-    assert.deepEqual(Object.values(state).map((v) => v.targetSec), [STRETCH_MIN, STRETCH_MIN, STRETCH_MIN]);
+    const { state } = applyStretchResults(learned, stretches, holds);
+    assert.equal(state.couch_stretch.targetSec, STRETCH_MIN);
+    assert.equal(state.adductor_rockback.targetSec, STRETCH_MIN);
+    assert.equal(state.dead_hang.targetSec, 45, "the strength hold is untouched by the stretch rule");
   });
 
   it("Skip logs nothing", () => {
@@ -2665,6 +2677,208 @@ group("yoga — one pose leads into the next", () => {
     assert.ok(flows >= 400, `only swept ${flows} flows`);
     assert.equal(faults, 0, "transitions that do not work");
     assert.deepEqual(errors.slice(0, 5), [], "error-level defects");
+  });
+});
+
+group("holds — a strength hold is not a stretch", () => {
+  const hang = { id: "dead_hang", name: "Dead hang", mode: "timed", durationSeconds: 40 };
+  const run = (state, held) => applyHoldResults(state, [hang],
+    [{ id: "dead_hang", side: null, targetSec: (state.dead_hang || {}).targetSec || 40, heldSec: held }]);
+
+  it("knows which timed items go to failure", () => {
+    for (const id of ["dead_hang", "plank", "side_plank", "hollow_hold", "wall_sit", "copenhagen"])
+      assert.ok(isStrengthHold({ id }), `${id} should be a strength hold`);
+    for (const id of ["hamstrings", "couch_stretch", "lats", "adductors", "tspine_rotation"])
+      assert.ok(!isStrengthHold({ id }), `${id} is a stretch and must keep the stretch rule`);
+  });
+
+  it("⚠ does NOT lower the target when you come up short", () => {
+    // THE WHOLE BUG. Under the stretch rule a 26-second hang against a 40-second
+    // target re-based to 25 on the spot — and a dead hang comes up short every
+    // time it is done properly. Measured on a real install: 40s down to 20s,
+    // while every stretch beside it in the same cool-down had climbed.
+    let st = {};
+    for (const held of [26, 31, 28, 33]) st = run(st, held).state;
+    assert.equal(st.dead_hang.targetSec, 40, "a hold taken to failure kept its target");
+  });
+
+  it("raises after two full holds, and only then", () => {
+    let st = run({}, 40).state;
+    assert.equal(st.dead_hang.targetSec, 40, "one good hold is not two");
+    st = run(st, 40).state;
+    assert.equal(st.dead_hang.targetSec, 45);
+  });
+
+  it("re-bases to the BEST of a bad run, never the worst", () => {
+    // Three sessions all well under target means the target is out of reach. The
+    // honest replacement is the most you managed across them; under the stretch
+    // rule this ran off the worst, which is how one bad day became a permanent cut.
+    let st = { dead_hang: { targetSec: 50, streak: 0, misses: [], lastActual: 50 } };
+    for (const held of [22, 34, 26]) st = run(st, held).state;
+    assert.equal(st.dead_hang.targetSec, 35, "35 is the best of 22/34/26, rounded to 5");
+  });
+
+  it("a good session in the middle wipes the slate", () => {
+    let st = { dead_hang: { targetSec: 50, streak: 0, misses: [], lastActual: 50 } };
+    st = run(st, 22).state;
+    st = run(st, 50).state;                       // made it
+    st = run(st, 24).state;
+    st = run(st, 26).state;
+    assert.equal(st.dead_hang.targetSec, 50,
+      "two bad sessions either side of a good one is not a run of three");
+  });
+
+  it("a strength hold may go past the ceiling a stretch stops at", () => {
+    assert.ok(HOLD_CAP > 90, "90s is a warm-up stretch ceiling, not a plank one");
+  });
+
+  it("the repair puts back what the ratchet took, and nothing else", () => {
+    const state = {
+      dead_hang: { targetSec: 20, streak: 1, lastActual: 20 },   // ratcheted down from 40
+      plank: { targetSec: 75, streak: 0, lastActual: 75 },       // earned above the plan
+      hamstrings: { targetSec: 25, streak: 0, lastActual: 25 },  // a stretch: not ours to touch
+    };
+    const { state: next, cleared } = repairHoldRatchet(state,
+      { dead_hang: 40, plank: 45, hamstrings: 40 });
+    assert.equal(next.dead_hang, undefined, "cleared, so it falls back to the 40s the plan asks for");
+    assert.equal(next.plank.targetSec, 75, "earned under the raise rule, which both engines share");
+    assert.equal(next.hamstrings.targetSec, 25, "a stretch is left alone");
+    assert.equal(cleared.length, 1);
+  });
+});
+
+group("supersets — training, and manners", () => {
+  const ex = (id) => ssExercise(id);
+
+  it("refuses the pairings a coach would refuse", () => {
+    assert.equal(pairScore(ex("back_squat"), ex("deadlift")), 0, "two heavy lower compounds");
+    assert.equal(pairScore(ex("farmers_carry"), ex("plank")), 0, "you cannot alternate with a walk");
+    assert.equal(pairScore(ex("bench_press"), ex("db_bench_press")), 0,
+      "the same pattern twice is a drop set with extra steps");
+  });
+
+  it("prefers the same kit over blocking two stations", () => {
+    // Rule 4, and the reason it is weighted heavily: both are legal supersets
+    // and only one of them leaves the room usable by anybody else.
+    const same = pairScore(ex("db_bench_press"), ex("db_bent_row"));
+    const split = pairScore(ex("db_bench_press"), ex("seated_cable_row"));
+    assert.ok(same > split, `same-kit ${same} should beat split-kit ${split}`);
+    assert.ok(split < MIN_PAIR_SCORE, "holding two stations for no gain should not form a pair");
+  });
+
+  it("pairs bench with rows, and curls with pushdowns", () => {
+    // The worked example, and the two supersets the blocks have declared since
+    // the very first one, which nothing has ever read.
+    assert.ok(pairScore(ex("bench_press"), ex("bent_over_row")) >= MIN_PAIR_SCORE);
+    assert.ok(pairScore(ex("ez_curl"), ex("triceps_pushdown")) >= MIN_PAIR_SCORE);
+  });
+
+  it("caps anything needing equipment at two, and lets floor work run long", () => {
+    const gym = usableSupersets([["bench_press", "bent_over_row", "leg_press"]]);
+    assert.deepEqual(gym, [["bench_press", "bent_over_row"]], "three stations held by one person");
+    const floor = usableSupersets([["plank", "hanging_knee_raise", "side_plank"]]);
+    assert.equal(floor[0].length, 3, "a floor circuit costs the room nothing");
+  });
+
+  it("knows a pull-up is not free just because it is bodyweight", () => {
+    assert.ok(occupiesEquipment(ex("pull_up")), "it is the only bar in the room");
+    assert.ok(!occupiesEquipment(ex("plank")));
+  });
+
+  it("expands the core circuit into the three holds it always was", () => {
+    const { entries, groups } = expandComposites([
+      { exerciseId: "db_goblet_squat", prescribedSets: 3 },
+      { exerciseId: "core_circuit", prescribedSets: 3, restSeconds: 60 },
+    ]);
+    assert.deepEqual(entries.map((e) => e.exerciseId),
+      ["db_goblet_squat", "plank", "hanging_knee_raise", "side_plank"]);
+    assert.deepEqual(groups, [["plank", "hanging_knee_raise", "side_plank"]]);
+    // Each member inherits the rounds and the rest the circuit carried, because
+    // the rounds were always rounds of the whole circuit.
+    assert.equal(entries[1].prescribedSets, 3);
+    assert.equal(entries[1].restSeconds, 60);
+  });
+
+  it("runs a group members adjacently, tagged with their position", () => {
+    const day = ["bench_press", "ohp_barbell", "bent_over_row"].map((id) => ({ exerciseId: id }));
+    const ordered = orderWithSupersets(day, [["bench_press", "bent_over_row"]]);
+    assert.deepEqual(ordered.map((e) => e.exerciseId),
+      ["bench_press", "bent_over_row", "ohp_barbell"]);
+    assert.equal(ordered[0].supersetIndex, 0);
+    assert.equal(ordered[1].supersetIndex, 1);
+    assert.equal(ordered[1].supersetSize, 2);
+    assert.equal(ordered[2].supersetId, undefined, "an unpaired lift is left alone");
+  });
+
+  it("alternates A, B, A, B and rests only after the pair", () => {
+    // The behaviour that makes it a superset rather than two exercises in a row.
+    // Walked as a real session would: log a set, ask who is next, log theirs.
+    const ex = orderWithSupersets(
+      [{ exerciseId: "bench_press", prescribedSets: 3 },
+       { exerciseId: "bent_over_row", prescribedSets: 3 }],
+      [["bench_press", "bent_over_row"]]);
+    const done = [0, 0];
+    const path = [];
+    let at = 0;
+    for (let step = 0; step < 6; step++) {
+      done[at]++;
+      path.push(`${ex[at].exerciseId}#${done[at]}`);
+      const nxt = nextInGroup(ex, at, done[at], (j) => done[j]);
+      if (nxt >= 0) at = nxt;                       // straight on, no rest
+      else at = ex.findIndex((e, i) => done[i] < e.prescribedSets);
+      if (at < 0) break;
+    }
+    assert.deepEqual(path, [
+      "bench_press#1", "bent_over_row#1",
+      "bench_press#2", "bent_over_row#2",
+      "bench_press#3", "bent_over_row#3",
+    ]);
+  });
+
+  it("a three-element circuit cycles rather than ping-ponging off its first member", () => {
+    const ex = orderWithSupersets(
+      ["plank", "hanging_knee_raise", "side_plank"].map((id) => ({ exerciseId: id, prescribedSets: 2 })),
+      [["plank", "hanging_knee_raise", "side_plank"]]);
+    const done = [0, 0, 0];
+    const path = [];
+    let at = 0;
+    for (let step = 0; step < 6; step++) {
+      done[at]++;
+      path.push(ex[at].exerciseId);
+      const nxt = nextInGroup(ex, at, done[at], (j) => done[j]);
+      at = nxt >= 0 ? nxt : ex.findIndex((e, i) => done[i] < e.prescribedSets);
+      if (at < 0) break;
+    }
+    assert.deepEqual(path,
+      ["plank", "hanging_knee_raise", "side_plank", "plank", "hanging_knee_raise", "side_plank"]);
+  });
+
+  it("hands back to the round when the group is done, not to a partner", () => {
+    const ex = orderWithSupersets(
+      [{ exerciseId: "bench_press", prescribedSets: 2 }, { exerciseId: "bent_over_row", prescribedSets: 2 }],
+      [["bench_press", "bent_over_row"]]);
+    // Both have finished round 1: nobody owes it, so the answer is rest.
+    assert.equal(nextInGroup(ex, 1, 1, () => 1), -1);
+    // A partner with fewer sets prescribed is never asked for a round it does
+    // not have — the pair simply ends early and the longer one finishes alone.
+    const uneven = orderWithSupersets(
+      [{ exerciseId: "bench_press", prescribedSets: 4 }, { exerciseId: "bent_over_row", prescribedSets: 2 }],
+      [["bench_press", "bent_over_row"]]);
+    assert.equal(nextInGroup(uneven, 0, 3, () => 2), -1);
+  });
+
+  it("is opt-in, and a place may say no without rebuilding the block", () => {
+    assert.equal(supersetsAllowed({ supersets: false }, null), false, "never assumed");
+    assert.equal(supersetsAllowed({ supersets: true }, null), true);
+    assert.equal(supersetsAllowed({ supersets: true }, { supersets: false }), false, "not in this gym");
+    assert.equal(supersetsAllowed({ supersets: false }, { supersets: true }), true);
+    // ⚠ null is not false. An untouched place must not switch off a block that
+    // asked for supersets, which is what every place would do on the day it was
+    // created if this defaulted to a boolean.
+    assert.equal(supersetsAllowed({ supersets: true }, { supersets: null }), true);
+    assert.deepEqual(buildSupersets(
+      [{ exerciseId: "bench_press" }, { exerciseId: "bent_over_row" }], { allow: false }), [],
+      "nothing is paired when the answer was no");
   });
 });
 

@@ -24,6 +24,17 @@
 //   - stop under 70% of target             -> re-base to what you actually held
 //   - anywhere in between                  -> unchanged, earn it again
 
+import { isStrengthHold, holdTarget, applyHoldResults } from "./holds.js";
+
+// ⚠ A STRENGTH HOLD IS NOT A STRETCH AND MUST NOT MEET THE RULE BELOW.
+//
+// Dead hang, plank, side plank, hollow hold and wall sit all end when you fail,
+// which the re-base rule reads as a target set too high — so it lowered them,
+// every session, for months. holds.js carries the inverse rule. These two
+// functions are the single place the two engines meet: everything upstream keeps
+// calling one entry point, and each item is routed to the engine that suits it.
+export { isStrengthHold } from "./holds.js";
+
 export const STRETCH_MIN = 15;      // never prescribe less; below this it isn't a stretch
 export const STRETCH_CAP = 90;      // a warm-up is not the place for a 3-minute hold
 const FULL_STREAK = 2;
@@ -41,7 +52,8 @@ const clampTarget = (s) =>
   Number.isFinite(s) ? Math.max(STRETCH_MIN, Math.min(STRETCH_CAP, Math.round(s))) : STRETCH_MIN;
 
 /** The seconds to prescribe for this item now. */
-export const stretchTarget = (state, item) => stretchState(state, item).targetSec;
+export const stretchTarget = (state, item) =>
+  isStrengthHold(item) ? holdTarget(state, item) : stretchState(state, item).targetSec;
 
 /**
  * Consume one session's hold records → { state, changes }.
@@ -51,12 +63,15 @@ export const stretchTarget = (state, item) => stretchState(state, item).targetSe
  * entirely must not be read as failing every stretch in it.
  */
 export function applyStretchResults(state, items, holds) {
-  const next = { ...(state || {}) };
-  const changes = [];
+  // Strength holds first, through their own engine and into the same store: one
+  // set of targets keyed by item id, two rules for moving them.
+  const strength = applyHoldResults(state, items, holds);
+  const next = { ...strength.state };
+  const changes = [...strength.changes];
   if (!holds || !holds.length) return { state: next, changes };
 
   for (const it of items) {
-    if (!it || it.mode !== "timed") continue;
+    if (!it || it.mode !== "timed" || isStrengthHold(it)) continue;
     const recs = holds.filter((h) => h && h.id === it.id);
     if (!recs.length) continue;
     // The worst side governs: a stretch held 45 s left and 20 s right is a 20 s

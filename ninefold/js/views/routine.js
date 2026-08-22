@@ -23,6 +23,7 @@ import { cueTick, cueItemStart, cueItemEnd, cueRoutineDone, say, muteToggle,
   beginRunAudio, endRunAudio, setRunTimeline, clearRunTimeline, preloadVoice, ensureAudioRunning,
   cueInhale, cueExhale } from "../components/sound.js";
 import { lockButton, closeScreenLock } from "../components/screenlock.js";
+import { isStrengthHold } from "../holds.js";
 import { breathsRemaining, breathPhaseAt, isInhale, breathSwell } from "../yoga/breath.js";
 import { loadNarration, narrationReady, speak, prefetch, stopNarration, resumeNarration,
   stageNarration, resetNarration } from "../yoga/narrate.js";
@@ -140,7 +141,10 @@ export const isStretch = (item) => STRETCH_RE.test(item.id || "") || /stretch/i.
 // warm-ups are untouched.
 export function cueKindOf(item) {
   if (item && item.cueKind) return item.cueKind;
-  return isStretch(item) ? "hold" : "dynamic";
+  // A strength hold is a hold: it gets the settle-in cue and the end-hold button,
+  // not the beep meant for leg swings. See holds.js for why the two kinds of
+  // hold progress under opposite rules while behaving identically in the player.
+  return isStretch(item) || isStrengthHold(item) ? "hold" : "dynamic";
 }
 
 // The breath arithmetic lives in yoga/breath.js — pure, DOM-free and tested.

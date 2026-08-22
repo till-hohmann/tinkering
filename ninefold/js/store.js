@@ -506,6 +506,40 @@ export async function repairStretchTargetsOnce() {
 }
 export async function setStretchProg(state) { await db.setPref("stretchProg", state || {}); pushCloud(); }
 
+/**
+ * ONE-TIME REPAIR: undo what the stretch rule did to the strength holds.
+ *
+ * The re-base rule lowered a target whenever the hold came up short, which is
+ * correct for a stretch and wrong for anything you take to failure. On a real
+ * install the dead hang had ratcheted from the plan's 40 s to 20 while every
+ * flexibility hold in the same cool-down had climbed. holds.js stops it
+ * recurring; this puts back what it took.
+ *
+ * The plan's own number is the reference, gathered across every program's
+ * routines, because that is what the target would be on a fresh install. Only
+ * holds sitting BELOW it are cleared — anything above was earned under the raise
+ * rule, which both engines share.
+ */
+export async function repairHoldRatchetOnce() {
+  if (await db.getPref("holdRatchetRepairDone")) return { cleared: [] };
+  const { repairHoldRatchet } = await import("./holds.js");
+  const planSeconds = {};
+  for (const p of await getAllPrograms()) {
+    for (const r of Object.values((p && p.routines) || {})) {
+      for (const it of (r && r.items) || []) {
+        if (!it || it.mode !== "timed" || !Number.isFinite(it.durationSeconds)) continue;
+        // The most generous number any plan asks of it: the ratchet is what we
+        // are undoing, so the highest prescription is the fairest reference.
+        planSeconds[it.id] = Math.max(planSeconds[it.id] || 0, it.durationSeconds);
+      }
+    }
+  }
+  const { state, cleared } = repairHoldRatchet(await getStretchProg(), planSeconds);
+  if (cleared.length) { await db.setPref("stretchProg", state); pushCloud(); }
+  await db.setPref("holdRatchetRepairDone", true);
+  return { cleared };
+}
+
 // The routine ITSELF — which sessions exist and what's in them. Synced, because
 // a routine written around one person's knees is personal data and belongs in
 // their backup, not in the build everybody downloads. See mobility.js.

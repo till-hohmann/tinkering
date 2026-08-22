@@ -56,6 +56,11 @@ function freshState(profile) {
     optionalDays: 1,
     cardioPerWeek: 1,
     mobility: false,
+    // ⚠ ASKED, NEVER ASSUMED. A superset is a training choice and a social one:
+    // it halves your rest and doubles what you are holding in a shared gym. The
+    // default is NO, so someone who never answers the question never finds
+    // themselves camped on two stations. See supersets.js.
+    supersets: false,
     places: null,
     startDate: nextMonday(),
     startMode: "after",          // resolved in renderBuilder once the blocks are known
@@ -413,6 +418,14 @@ function stepSchedule(body) {
     el("p.note", { style: "margin-top:4px", text: "Taken out of the total above — the rest become lifting days." }),
     chips(S.cardioPerWeek, Math.min(5, S.mandatoryDays + S.optionalDays), (n) => { S.cardioPerWeek = n; render(); }),
 
+    el("div.label", { style: "margin-top:18px", text: "Supersets" }),
+    el("p.note", { style: "margin-top:4px", text: "Two exercises alternated with the rest taken after the pair — shorter sessions, and for opposing movements a little more out of each. Needs two things free at once, which a busy gym may not allow." }),
+    el("div", { style: "display:flex;gap:8px;margin-top:9px" }, [
+      el("button.progchip" + (S.supersets ? ".on" : ""), { onclick: () => { S.supersets = true; render(); } }, "Yes, pair them up"),
+      el("button.progchip" + (!S.supersets ? ".on" : ""), { onclick: () => { S.supersets = false; render(); } }, "No, straight sets"),
+    ]),
+    el("p.note", { style: "margin-top:6px", text: "Anything needing equipment is paired at most two deep, and matched on the same kit where it can be. Bodyweight core work can run as a longer circuit. A place can override this in Profile → Places." }),
+
     el("div.label", { style: "margin-top:18px", text: "Mobility & stability" }),
     el("p.note", { style: "margin-top:4px", text: "A short supplemental routine — hips, ankles, trunk control — on days it won't compete with training." }),
     el("div", { style: "display:flex;gap:8px;margin-top:9px" }, [
@@ -516,6 +529,7 @@ async function buildAndReview() {
     places,
     blockShapeId: S.blockShapeId,
     goalText: S.goalText,
+    supersets: S.supersets,
     previousBlocks,
   });
   // Grade the finished block against the same landmarks the Progress tab uses.

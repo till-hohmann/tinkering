@@ -16,6 +16,7 @@ import { ADAPTATIONS, byId as adaptationById, isCardio, isStrength, sessionOrder
   analysePriorities, blockShape, PROGRESSION, floorGaps, WEEKLY_FLOOR } from "./adaptations.js";
 import { EXERCISE_LIBRARY, PATTERNS, availableAt, pickForPattern, qualityOf, byId as exerciseById } from "../exercise-library.js";
 import { MUSCLE_MAP, LANDMARKS } from "../volume.js";
+import { buildSupersets } from "../supersets.js";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -373,6 +374,9 @@ export function generateProgram(input) {
     // rear delt: each block is individually defensible and the sequence has a
     // hole in it. See `history` below for what this actually drives.
     previousBlocks = [],
+    // ASKED IN THE BUILDER, defaulting to no. See supersets.js for why this is a
+    // question about the room as much as about the training.
+    supersets: allowSupersets = false,
   } = input || {};
 
   const warnings = [];
@@ -473,7 +477,11 @@ export function generateProgram(input) {
     dayTemplates[weekday] = {
       weekday, location: primaryPlace, type: "strength",
       label: dayPlan.label, preRoutine: "warmupStrength", postRoutine: "cooldownStrength",
-      optional: optionalSet.has(weekday), exercises: chosen, supersets: [],
+      optional: optionalSet.has(weekday), exercises: chosen,
+      // PAIRED AT BUILD TIME, NOT AT RUN TIME. The generator can see the whole
+      // day at once and answers for it once; a session that paired things up on
+      // the fly would hand you a different workout every time you opened it.
+      supersets: allowSupersets ? buildSupersets(chosen, { allow: true }) : [],
     };
   });
 
@@ -635,6 +643,10 @@ export function generateProgram(input) {
     notes: goalText || "",
     generatedBy: "ninefold-builder",
     priorities,
+    // The block's own answer, so a session knows whether the pairings in its day
+    // templates were ever meant to run — and so a PLACE has something to
+    // override. See supersets.js supersetsAllowed().
+    supersets: !!allowSupersets,
     equipmentProfile: buildEquipmentProfile(places),
     exercises,
     routines: buildRoutines(),

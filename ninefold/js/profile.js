@@ -141,6 +141,11 @@ export function makePlace(name, patch = {}) {
     ezBarPlatesKg: [10, 5, 2.5, 1.25],
     cable: null,                    // { minKg, maxKg, stepKg }
     dumbbells: null,                // { minKg, maxKg, stepKg } | { valuesKg: [...] }
+    // TRI-STATE, and null is not false. null = follow whatever the block says;
+    // true/false = this place overrides it. A busy commercial gym is a place you
+    // cannot hold two stations in, whatever the programme was written for, and
+    // saying so must not require rebuilding the block. See supersets.js.
+    supersets: null,
     ...patch,
   };
 }

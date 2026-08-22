@@ -98,6 +98,23 @@ export function placeEditor(place, profile, { onChange = () => {}, compact = fal
         style: FIELD + ";margin-top:6px", oninput: (e) => { place.name = e.target.value; onChange(); } }));
     }
 
+    // CAN YOU SUPERSET HERE? A property of the ROOM, not of the programme.
+    //
+    // Three states, and the middle one is the default: "follow the block" has to
+    // be distinguishable from "no", or every place ever created would silently
+    // switch supersets off for a block that asked for them. Only a deliberate
+    // answer overrides.
+    if (!compact) {
+      kids.push(el("div.label", { style: "margin-top:16px", text: "Supersets here" }));
+      kids.push(el("p.note", { style: "margin-top:4px", text:
+        "Pairing two exercises means holding both while you alternate. Fine in a quiet room; antisocial in a busy gym at six in the evening." }));
+      const opts = [[null, "Follow the block"], [true, "Yes, fine here"], [false, "Not in this gym"]];
+      kids.push(el("div", { style: "display:flex;gap:8px;margin-top:9px;flex-wrap:wrap" },
+        opts.map(([val, label]) =>
+          el("button.progchip" + ((place.supersets ?? null) === val ? ".on" : ""), {
+            onclick: () => { place.supersets = val; render(); onChange(); } }, label))));
+    }
+
     // presets first — most people are one of these, and correcting a near-miss
     // beats building the answer from nothing
     if (!compact) {

@@ -1,7 +1,7 @@
 // app.js — bootstrap, service-worker registration, and a tiny hash router.
 
 import { seedIfNeeded, mergeRestore, snapshot, getActiveProgram, initMobilityRoutine, initAudioPrefs,
-  repairStretchTargetsOnce } from "./store.js";
+  repairStretchTargetsOnce, repairHoldRatchetOnce } from "./store.js";
 import { cloudPull, cloudPush } from "./cloudsync.js";
 import { migrateIfNeeded, getProfile } from "./profile.js";
 import { loadPhotoManifest } from "./exercise-photo.js";
@@ -176,6 +176,14 @@ async function boot() {
     const { cleared } = await repairStretchTargetsOnce();
     if (cleared.length) console.info(`stretch targets reset to plan defaults: ${cleared.join(", ")}`);
   } catch (err) { console.warn("stretch repair skipped", err); }
+  // And undo the other direction: a strength hold the stretch rule ratcheted
+  // DOWN every time it was taken to failure, which is every time it was done
+  // properly. Same placement, same reason — after the merge, or the restore
+  // would put the ratcheted number straight back.
+  try {
+    const { cleared } = await repairHoldRatchetOnce();
+    if (cleared.length) console.info(`strength holds restored to plan: ${cleared.join(", ")}`);
+  } catch (err) { console.warn("hold repair skipped", err); }
   // Resolve the mobility routine before the first render, and AFTER the cloud
   // merge so a restored device gets its own routine back rather than capturing
   // the build's default over the top of it.

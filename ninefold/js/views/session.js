@@ -17,6 +17,7 @@ import { recommend, roundLoad, isDeloadWeek } from "../progression.js";
 import { needsSub, primarySubstitute, candidatesFor, isApprox, metaFor, seedSubLoad,
   backCalcOriginal, SUB_EXERCISES } from "../substitution.js";
 import { runRoutine, isStretch } from "./routine.js";
+import { isStrengthHold } from "../holds.js";
 import { runStrength } from "./strength.js";
 import { runCardioCore, logCardio } from "./cardio.js";
 import { recoveryToday, body as trackerBody, provider, has, CAP } from "../health/index.js";
@@ -139,9 +140,14 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
       const raw = program.routines[routineKey];
       if (!raw) return res(true);
       const prog = await getStretchProg();
-      const { def, items } = applyStretchTargets(raw, prog, isStretch);
+      // A STRENGTH HOLD IS TRACKED TOO. isStretch happens to match dead hang by
+      // name, but not plank, side plank or hollow hold — so a routine carrying
+      // those offered no end-hold button and recorded nothing, which is the same
+      // silence the stretches were in before they got an engine.
+      const tracked = (it) => isStretch(it) || isStrengthHold(it);
+      const { def, items } = applyStretchTargets(raw, prog, tracked);
       runRoutine(stage, def, program, {
-        title, trackHolds: true, trackWhen: isStretch,
+        title, trackHolds: true, trackWhen: tracked,
         onComplete: async ({ completed, holds }) => {
           try {
             const { state } = applyStretchResults(prog, items, holds);
