@@ -13,6 +13,13 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 188, notes: [
+    "Edits to a block now travel between your devices. Correcting a set count or importing a revised plan on one device used to stay on that device for ever — the backup would add a block it had never seen, but never update one it already had.",
+  ] },
+  { v: 187, notes: [
+    "Block 3 is paired up. Every lifting day now runs as supersets: squat with hip thrust, RDL with the Pallof press, bench with rows, overhead press with pullovers, pulldowns with face pulls, and the curls and pushdowns you had already written down. The Saturday core circuit runs as its three holds. Nothing was added, removed or reordered in the plan itself.",
+    "Fixed: archiving a block did not stick. A block you had archived came back as active the next time the shipped plans were updated, because the update replaced the whole block including the bit you had changed.",
+  ] },
   { v: 186, notes: [
     "Fixed: your dead hang had been getting SHORTER. It was progressing under the rule written for stretches, which lowers the target whenever you fall short — and a dead hang ends when your grip goes, so falling short is the point of it. Every honest session pushed the number down; it had reached 20 seconds from a planned 40 while every stretch beside it in the same cool-down had climbed. Strength holds now progress from your best instead: two full holds add five seconds, coming up short costs nothing, and only three bad sessions in a row move the target down — to the best of those three. Your dead hang is back at the 40 seconds the plan asks for. Planks, side planks, wall sits and hollow holds were all quietly doing the same thing and are all fixed.",
     "The core circuit is a circuit now. Plank, leg raise and side plank each get their own countdown, their own \"end hold\" button and their own progression, instead of one line asking you to type a number of seconds from memory afterwards. Every timed exercise in a workout works this way now — same clock, same controls as the identical hold in a warm-up.",

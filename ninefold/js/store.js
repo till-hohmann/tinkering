@@ -84,10 +84,39 @@ const pushCloud = () => cloudPushDebounced(snapshot);
 //     silently refused the real profile that was sitting in the backup — zones,
 //     max HR, goal, places, every feature toggle. The restore reported success
 //     and quietly gave you a stranger's blank settings.
+/**
+ * Should the backup's copy of a block replace the one on this device?
+ *
+ * Pure, and separate, because it is the whole of the decision and the rest of
+ * mergeRestore cannot be tested without a browser. A strictly newer `updatedAt`
+ * wins; no timestamp means "unknown age" and loses, since silently replacing a
+ * block someone is mid-way through is a worse failure than leaving it stale.
+ */
+export function shouldAdoptProgram(incoming, stored) {
+  if (!incoming || !stored) return !!incoming;
+  const a = Date.parse(incoming.updatedAt || "") || 0;
+  const b = Date.parse(stored.updatedAt || "") || 0;
+  return a > b;
+}
+
 export async function mergeRestore(data, { overwrite = false } = {}) {
   if (!data) return 0;
   for (const p of data.programs || []) {
-    if (!(await db.get("programs", p.id))) await db.put("programs", p);
+    const stored = await db.get("programs", p.id);
+    if (!stored) { await db.put("programs", p); continue; }
+    // ⚠ AN EDIT TO A BLOCK HAS NEVER SYNCED. This loop only ever added programs
+    // the device was missing, so correcting Wednesday on one device and opening
+    // the app on another showed the old Wednesday for ever — the block was
+    // treated as immutable once it had arrived anywhere.
+    //
+    // A strictly newer `updatedAt` wins. No timestamp on the cloud copy means
+    // "unknown age", which loses: the risk of silently replacing a block someone
+    // is mid-way through is worse than the staleness it leaves behind.
+    if (shouldAdoptProgram(p, stored)) {
+      // The device owns whether it has archived the thing. Same reasoning as the
+      // re-seed above, and the same bug if it is left out.
+      await db.put("programs", { ...p, status: stored.status || p.status });
+    }
   }
   let added = 0;
   if (data.sessions && data.sessions.length) {
@@ -112,7 +141,7 @@ export async function mergeRestore(data, { overwrite = false } = {}) {
 //    on the next launch instead of permanently flagging the device "seeded".
 //  - reject the SPA index.html fallback (a 404 returns the app shell with a 200
 //    status), so we never try to JSON-parse HTML.
-const PROGRAM_VERSION = 18;  // bump when any data/program-N.json (the plans) change
+const PROGRAM_VERSION = 19;  // bump when any data/program-N.json (the plans) change
 const SEED_VERSION = 5;      // bump when data/seed-sessions.json changes
 // All shipped program plans, in chronological block order. The app stores them
 // all and resolves which one is active by date (see getActiveProgram). Blocks 3-5
@@ -135,6 +164,16 @@ export async function seedIfNeeded() {
         if (!text.trim().startsWith("{")) continue;       // reject the SPA fallback HTML
         const { program } = JSON.parse(text);
         if (program && program.id) {
+          // ⚠ THE UPSERT REPLACES THE WHOLE OBJECT, so anything the DEVICE owns
+          // has to be carried across or the re-seed quietly undoes it. `status`
+          // is the one that bites: a block you archived comes back as active on
+          // the next PROGRAM_VERSION bump, and the plan you had finished with
+          // reappears. Found on a real install, where block 1 sat archived on
+          // the phone and active in the seed it was about to be overwritten by.
+          const stored = await db.get("programs", program.id);
+          if (stored && stored.status && stored.status !== program.status) {
+            program.status = stored.status;
+          }
           await db.put("programs", program);              // upsert by id
           loadedAny = true;
           if (!firstId) firstId = program.id;
@@ -278,12 +317,16 @@ export async function deleteProgram(programId) {
 // you just imported and wrong for a plan correction made from inside a session —
 // adjusting Wednesday's set count must not silently repoint the whole app.
 export async function saveProgram(program) {
+  // Stamped so the change can travel. Without it a block edit is invisible to
+  // every other device you own — see mergeRestore().
+  program.updatedAt = new Date().toISOString();
   await db.put("programs", program);
   pushCloud();
   return program;
 }
 
 export async function importProgram(program, makeActive = true) {
+  program.updatedAt = new Date().toISOString();
   await db.put("programs", program);
   if (makeActive) {
     // demote previously active to allow only one active comparison set

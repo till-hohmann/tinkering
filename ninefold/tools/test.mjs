@@ -56,6 +56,7 @@ import { checkScript, entryScript, exitScript, salutationScript, allHoldPhrases 
 import { ASANAS } from "../js/yoga/asanas.js";
 import { flowSeconds as flowSecondsOf, elapsedAt as flowElapsedAt } from "../js/yoga/compose.js";
 import { isStrengthHold, applyHoldResults, repairHoldRatchet, HOLD_CAP } from "../js/holds.js";
+import { shouldAdoptProgram } from "../js/store.js";
 import { pairScore, buildSupersets, usableSupersets, orderWithSupersets, occupiesEquipment,
   supersetsAllowed, expandComposites, exerciseById as ssExercise, MIN_PAIR_SCORE,
   nextInGroup } from "../js/supersets.js";
@@ -2879,6 +2880,34 @@ group("supersets — training, and manners", () => {
     assert.deepEqual(buildSupersets(
       [{ exerciseId: "bench_press" }, { exerciseId: "bent_over_row" }], { allow: false }), [],
       "nothing is paired when the answer was no");
+  });
+});
+
+group("backup — a block edit finally travels between devices", () => {
+  const at = (iso) => ({ id: "b", updatedAt: iso });
+
+  it("adopts a strictly newer copy", () => {
+    assert.equal(shouldAdoptProgram(at("2026-08-18T10:00:00Z"), at("2026-08-17T10:00:00Z")), true);
+  });
+
+  it("leaves an equal or older copy alone", () => {
+    assert.equal(shouldAdoptProgram(at("2026-08-17T10:00:00Z"), at("2026-08-17T10:00:00Z")), false);
+    assert.equal(shouldAdoptProgram(at("2026-08-16T10:00:00Z"), at("2026-08-17T10:00:00Z")), false);
+  });
+
+  it("an untimestamped backup copy never wins", () => {
+    // Unknown age loses on purpose: replacing a block somebody is mid-way
+    // through is a worse failure than leaving it stale for a while.
+    assert.equal(shouldAdoptProgram({ id: "b" }, at("2026-08-17T10:00:00Z")), false);
+    assert.equal(shouldAdoptProgram({ id: "b" }, { id: "b" }), false);
+  });
+
+  it("but a timestamped one does, over a device copy that predates the field", () => {
+    assert.equal(shouldAdoptProgram(at("2026-08-18T10:00:00Z"), { id: "b" }), true);
+  });
+
+  it("a block the device has never seen is simply taken", () => {
+    assert.equal(shouldAdoptProgram(at("2026-08-18T10:00:00Z"), null), true);
   });
 });
 

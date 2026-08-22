@@ -149,7 +149,12 @@ export function buildSupersets(entries, { allow = true } = {}) {
   if (!allow || !Array.isArray(entries) || entries.length < 2) return [];
   const items = entries
     .map((e) => ({ entry: e, ex: exerciseById(e.exerciseId) }))
-    .filter((x) => x.ex);
+    // A COMPOSITE IS ALREADY A GROUP AND CANNOT JOIN ANOTHER ONE. Left in, the
+    // generator cheerfully paired a goblet squat with the Core Circuit, which
+    // expands at run time into three more exercises — a two-element superset
+    // that turns into a four-element one the moment it is opened, and a squat
+    // rack held for the duration of a floor circuit.
+    .filter((x) => x.ex && !COMPOSITE[x.entry.exerciseId]);
   const groups = [];
   const taken = new Set();
 
