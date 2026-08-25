@@ -3,7 +3,7 @@
 // back-fill a past day, view a finished one, or just preview a future one.
 
 import { getActiveProgram, getProgram, resolveDay, getSessionsForProgram } from "../store.js";
-import { todayISO, WEEKDAYS } from "../model.js";
+import { todayISO, WEEKDAYS, finisherRoundsFor, isReducedPhase } from "../model.js";
 import { el, mount, go, locationBadge, backBtn, addActionBar } from "../ui.js";
 import { illustration, workoutFigure } from "../illustrations.js";
 import { icon } from "../icons.js";
@@ -65,7 +65,8 @@ export async function renderDay(pid, n, wd) {
     return mount(children);
   }
 
-  if (type === "strength" && week.focus) children.push(el("p.note", { style: "margin:14px 2px 2px", text: week.focus }));
+  // Week-level text, said as such — its facts describe the week, not this day.
+  if (type === "strength" && week.focus) children.push(el("p.note", { style: "margin:14px 2px 2px", text: `This week: ${week.focus}` }));
 
   if (type === "strength") {
     children.push(el("h2", { text: "Exercises" }));
@@ -92,6 +93,14 @@ export async function renderDay(pid, n, wd) {
           el("div", { style: "flex:1;min-width:0" }, [
             el("div.label", { text: "Finisher" }),
             el("p.note", { style: "margin:5px 0 0", text: template.finisher }),
+            // The round count for THIS week, from the template's own numbers —
+            // the same formula the session player runs.
+            (() => {
+              const r = isReducedPhase(week.phaseName) ? null : finisherRoundsFor(template, n);
+              const f = template.finisherIntervals;
+              return r && f ? el("p.note", { style: "margin:5px 0 0;color:var(--cyan)",
+                text: `This week: ${r} × ${f.workSec} s / ${f.easySec} s` }) : null;
+            })(),
           ]),
         ]),
       ]));

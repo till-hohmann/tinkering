@@ -36,7 +36,7 @@ import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT,
   defaultEquipmentFor, plateLabel, plateColor, weightLabel, isImperialWeight, setDisplayProfile,
   distanceValue, distanceToKm, lengthValue, lengthToCm, fmtPace as fmtPaceU, paceLabel,
   METRIC_PROFILE, readEdit, isStockRack, rackFields, isImperialRack } from "../js/units.js";
-import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay, dayCellRole } from "../js/model.js";
+import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay, dayCellRole, finisherRoundsFor, isReducedPhase } from "../js/model.js";
 import { parseAppleExport, summarise, appleTime } from "../js/health/apple-import.js";
 import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES, alternativesFor } from "../js/substitution.js";
 import * as mob from "../js/mobility.js";
@@ -2931,6 +2931,46 @@ group("supersets — the one call the session makes", () => {
     assert.deepEqual(out.map((e) => e.exerciseId),
       ["db_goblet_squat", "plank", "hanging_knee_raise", "side_plank"],
       "the circuit is what the exercise IS; the superset was an option");
+  });
+});
+
+group("the week's prose and the day's numbers", () => {
+  // "13 intervals." sat in a WEEK's focus text and was shown on all seven days
+  // of it — a Wednesday-only number, wrong six days out of seven, and drifting
+  // from the template the moment anyone changed it. The rule now: machine facts
+  // come from the machine. The cards compute the round count with the same
+  // function the session player runs, and no generated prose may carry one.
+  const wed = { finisherIntervals: { workSec: 30, easySec: 30, baseRounds: 10, addPerWeek: 1, maxRounds: 14 } };
+
+  it("computes the week's rounds with the player's own formula", () => {
+    assert.equal(finisherRoundsFor(wed, 1), 10);
+    assert.equal(finisherRoundsFor(wed, 4), 13);
+    assert.equal(finisherRoundsFor(wed, 5), 14);
+    assert.equal(finisherRoundsFor(wed, 6), 14, "capped at maxRounds");
+    assert.equal(finisherRoundsFor({}, 3), null, "no finisher, no number");
+    assert.equal(finisherRoundsFor(null, 3), null);
+  });
+
+  it("knows a reduced week when it sees one", () => {
+    assert.equal(isReducedPhase("Taper & Test"), true);
+    assert.equal(isReducedPhase("Deload"), true);
+    assert.equal(isReducedPhase("Progressive Overload"), false);
+    assert.equal(isReducedPhase(null), false);
+  });
+
+  it("no generated prose carries an interval count", () => {
+    // Static, not behavioural: the defect was data baked at authoring time, so
+    // the check reads the authoring sources. Files private to the dev repo are
+    // skipped when absent — the public tree does not carry them.
+    const suspects = ["tools/build-program-2.py", "tools/build-program-3.py",
+      "overlay/data/program-2.json", "overlay/data/program-3.json", "js/builder/generate.js"];
+    for (const f of suspects) {
+      let text;
+      try { text = readFileSync(new URL("../" + f, import.meta.url), "utf-8"); }
+      catch { continue; }
+      const m = text.match(/\b\d+ intervals\b/);
+      assert.ok(!m, `${f} bakes an interval count into prose: "${m && m[0]}"`);
+    }
   });
 });
 

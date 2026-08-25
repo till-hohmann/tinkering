@@ -483,6 +483,14 @@ export async function renderHome() {
     const est = estimateMinutes(day);
     const seqTip = sequencingTip(program, iso, day);
     const vo2Tip = await vo2RetestTip(program, week);
+    // The finisher line is COMPUTED from the day's own template — the same
+    // formula the session player runs — never read out of the week's prose.
+    // Quiet on reduced weeks, where the player itself suggests sitting it out.
+    const fRounds = dayType === "strength" && week && !M.isReducedPhase(week.phaseName)
+      ? M.finisherRoundsFor(template, weekNumber) : null;
+    const finisherLine = fRounds
+      ? `Finisher today: ${fRounds} × ${template.finisherIntervals.workSec} s hard / ${template.finisherIntervals.easySec} s easy on the bike or crosstrainer.`
+      : null;
     const heroClass = dayType === "cardio" ? ".cardio" : ".strength";
     children.push(el("div.hero" + heroClass, {}, [
       el("div.htop", {}, [
@@ -493,7 +501,9 @@ export async function renderHome() {
           el("div.hsub", { text: summaryLine(day) }),
         ]),
       ]),
-      week && week.focus ? el("p.hfocus", { text: week.focus }) : null,
+      // The focus text describes the WEEK — saying so stops Wednesday-only
+      // facts reading as instructions for today.
+      week && week.focus ? el("p.hfocus", { text: `This week: ${week.focus}` }) : null,
       el("div.hstats", {}, [
         el("div.hstat", {}, [el("div.label", { text: "Location" }), el("div.v", { text: template.location || "—" })]),
         est ? el("div.hstat", {}, [el("div.label", { text: "Est. time" }), el("div.v", {}, [String(est), el("span", { style: "font-size:.8rem;color:var(--text-dim);font-weight:700", text: " min" })])]) : null,
@@ -501,6 +511,7 @@ export async function renderHome() {
       ]),
       seqTip ? el("div.seqtip", {}, [el("span.seqtip-i", { text: "↯" }), el("span", { text: seqTip })]) : null,
       vo2Tip ? el("div.seqtip", {}, [el("span.seqtip-i", { text: "◎" }), el("span", { text: vo2Tip })]) : null,
+      finisherLine ? el("div.seqtip", {}, [el("span.seqtip-i", { text: "⚡" }), el("span", { text: finisherLine })]) : null,
       // A practice that stood in for this session says so ON the session, not
       // only on its own card. Two cards telling different stories about the same
       // day is how a log stops being trusted.

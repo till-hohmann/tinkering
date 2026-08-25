@@ -164,8 +164,8 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
   // skip — and runs it through the routine engine with cues + timer.
   const finisherPhase = () => new Promise((res) => {
     const f = template.finisherIntervals;
-    const rounds = Math.min(f.baseRounds + (weekNumber - 1) * (f.addPerWeek || 0), f.maxRounds || 99);
-    const taper = /taper|test|deload/i.test((week && week.phaseName) || "");
+    const rounds = M.finisherRoundsFor(template, weekNumber);
+    const taper = M.isReducedPhase(week && week.phaseName);
     const start = () => {
       const items = [{ id: "easy_cardio", name: "Spin easy — get ready", mode: "timed",
         durationSeconds: 60, bilateral: false, cue: "Settle in on the bike or crosstrainer" }];

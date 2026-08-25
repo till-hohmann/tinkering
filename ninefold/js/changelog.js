@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 190, notes: [
+    "The Today card now says which advice is the week's and which is the day's. The week focus reads as \"This week: …\", and a day with an interval finisher gets its own line with this week's round count — computed from the plan itself, so it can no longer disagree with what the workout actually runs. The counts that used to sit baked into the week text were right on one day of seven.",
+  ] },
   { v: 189, notes: [
     "Fixed: strength sessions froze after the warm-up. Since v186 the warm-up's \"Complete\" screen was as far as any lifting day could get — the workout behind it crashed before it could draw. If a session of yours went unlogged because of this, it can be added from the day's screen; nothing already logged was touched.",
   ] },

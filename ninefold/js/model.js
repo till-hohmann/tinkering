@@ -221,3 +221,21 @@ export function compareCardio(current, previous) {
     curPace, prevPace,
   };
 }
+
+// ---------------------------------------------------------------------------
+// The finisher's round count for a given week — THE formula the session player
+// runs, exported so any card that previews the finisher can never disagree with
+// the player. The week focus texts used to bake these counts into their prose
+// ("13 intervals."), where they were wrong on six days out of seven — the count
+// belongs to ONE day's template — and would silently drift from the real number
+// the moment the template changed. Machine facts come from the machine; prose
+// carries what only prose can say.
+export function finisherRoundsFor(template, weekNumber) {
+  const f = template && template.finisherIntervals;
+  if (!f) return null;
+  return Math.min(f.baseRounds + ((weekNumber || 1) - 1) * (f.addPerWeek || 0), f.maxRounds || 99);
+}
+
+// A reduced week: the finisher defaults to "sit this one out", so preview cards
+// stay quiet about it. Same test the session flow applies.
+export const isReducedPhase = (phaseName) => /taper|test|deload/i.test(phaseName || "");
