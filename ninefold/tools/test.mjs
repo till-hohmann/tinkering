@@ -59,7 +59,7 @@ import { isStrengthHold, applyHoldResults, repairHoldRatchet, HOLD_CAP } from ".
 import { shouldAdoptProgram } from "../js/store.js";
 import { pairScore, buildSupersets, usableSupersets, orderWithSupersets, occupiesEquipment,
   supersetsAllowed, expandComposites, exerciseById as ssExercise, MIN_PAIR_SCORE,
-  nextInGroup } from "../js/supersets.js";
+  nextInGroup, arrangeWithSupersets } from "../js/supersets.js";
 import { transitionFault, transitionScore, faultsIn, positionChanges, positionReturns,
   LINKS as TRANSITION_LINKS } from "../js/yoga/transitions.js";
 import { POSITION_OF, POSITION_TIERS, tierOf } from "../js/yoga/positions.js";
@@ -2880,6 +2880,57 @@ group("supersets — training, and manners", () => {
     assert.deepEqual(buildSupersets(
       [{ exerciseId: "bench_press" }, { exerciseId: "bent_over_row" }], { allow: false }), [],
       "nothing is paired when the answer was no");
+  });
+});
+
+group("supersets — the one call the session makes", () => {
+  // v186 shipped this logic inline in runStrength with the `let` for its groups
+  // variable BELOW the block that assigned it — a temporal-dead-zone
+  // ReferenceError that crashed EVERY strength session the moment the warm-up
+  // completed, stranding the player on the warm-up's "Complete ✓" screen. The
+  // 2026-08-25 lower-body day is the session that surfaced it, reproduced here
+  // as data. The cure is structural: the arrangement is a pure function now, and
+  // these tests RUN it, which no test of the building blocks ever did.
+  const block2Tue = [
+    { exerciseId: "back_squat", prescribedSets: 5 },
+    { exerciseId: "rdl_barbell", prescribedSets: 5 },
+    { exerciseId: "bulgarian_split_squat_db", prescribedSets: 4 },
+    { exerciseId: "barbell_hip_thrust", prescribedSets: 4 },
+    { exerciseId: "standing_calf_raise_db", prescribedSets: 4 },
+    { exerciseId: "cable_pallof", prescribedSets: 3 },
+  ];
+
+  it("a day with nothing declared passes through unchanged — and above all, runs", () => {
+    const out = arrangeWithSupersets(block2Tue, undefined, { allow: true });
+    assert.deepEqual(out.map((e) => e.exerciseId), block2Tue.map((e) => e.exerciseId));
+    assert.ok(out.every((e) => e.supersetId == null), "nothing invented on the fly");
+  });
+
+  it("honours a declared pair and stamps the group onto its members", () => {
+    const day = [
+      { exerciseId: "bench_press", prescribedSets: 5 },
+      { exerciseId: "ez_curl", prescribedSets: 4 },
+      { exerciseId: "lat_pulldown", prescribedSets: 4 },
+      { exerciseId: "triceps_pushdown", prescribedSets: 4 },
+    ];
+    const out = arrangeWithSupersets(day, [["ez_curl", "triceps_pushdown"]], { allow: true });
+    assert.deepEqual(out.map((e) => e.exerciseId),
+      ["bench_press", "ez_curl", "triceps_pushdown", "lat_pulldown"],
+      "the pair is adjacent, anchored where its first member stood");
+    const curl = out.find((e) => e.exerciseId === "ez_curl");
+    assert.equal(curl.supersetSize, 2);
+    assert.equal(curl.supersetIndex, 0);
+  });
+
+  it("allow:false drops the declared pair but still expands a composite", () => {
+    const day = [
+      { exerciseId: "db_goblet_squat", prescribedSets: 4 },
+      { exerciseId: "core_circuit", prescribedSets: 3 },
+    ];
+    const out = arrangeWithSupersets(day, [["db_goblet_squat", "db_rdl"]], { allow: false });
+    assert.deepEqual(out.map((e) => e.exerciseId),
+      ["db_goblet_squat", "plank", "hanging_knee_raise", "side_plank"],
+      "the circuit is what the exercise IS; the superset was an option");
   });
 });
 

@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 189, notes: [
+    "Fixed: strength sessions froze after the warm-up. Since v186 the warm-up's \"Complete\" screen was as far as any lifting day could get — the workout behind it crashed before it could draw. If a session of yours went unlogged because of this, it can be added from the day's screen; nothing already logged was touched.",
+  ] },
   { v: 188, notes: [
     "Edits to a block now travel between your devices. Correcting a set count or importing a revised plan on one device used to stay on that device for ever — the backup would add a block it had never seen, but never update one it already had.",
   ] },

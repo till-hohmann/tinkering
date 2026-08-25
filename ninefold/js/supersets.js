@@ -298,6 +298,29 @@ export function supersetsAllowed(program, place) {
 }
 
 /**
+ * THE ONE CALL A SESSION MAKES: expand composites, honour the day's declared
+ * groups, and hand back the entries in running order.
+ *
+ * Extracted pure after v186 shipped this logic inline in runStrength — with the
+ * `let` for its groups variable placed BELOW the block that assigned it. That is
+ * a temporal-dead-zone ReferenceError on entry, and it crashed EVERY strength
+ * session at the moment the warm-up completed: the session flow rethrows
+ * anything that is not a deliberate exit, so the player froze on the warm-up's
+ * "Complete ✓" screen with no way forward. A pure function has no ordering to
+ * get wrong at the call site, and the Node tests can run it — which is how this
+ * class of failure gets caught instead of shipped.
+ *
+ * Composite expansion always happens; whether declared supersets run is the
+ * caller's `allow` (block flag × place override, via supersetsAllowed).
+ */
+export function arrangeWithSupersets(exercises, daySupersets, { allow = true } = {}) {
+  const { entries, groups: circuits } = expandComposites(exercises);
+  const groups = [...usableSupersets(circuits, { allow: true }),
+                  ...usableSupersets(daySupersets || [], { allow })];
+  return groups.length ? orderWithSupersets(entries, groups) : entries;
+}
+
+/**
  * WHO IS NEXT, mid-superset.
  *
  * After finishing set `round` of the exercise at `exIndex`, this returns the

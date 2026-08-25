@@ -4,7 +4,7 @@
 // dismissible rest timer. Calls onComplete(strengthResult[]) when all exercises done.
 
 import { el, clear, haptic, go, registerCleanup } from "../ui.js";
-import { expandComposites, usableSupersets, orderWithSupersets, supersetsAllowed,
+import { arrangeWithSupersets, supersetsAllowed,
   groupLabel, nextInGroup } from "../supersets.js";
 import { interruptSheet } from "../components/interrupt.js";
 import { illustration } from "../illustrations.js";
@@ -243,12 +243,8 @@ export async function runStrength(container, program, day, weekday, iso, locatio
   {
     const place = (profile.places || []).find((p) => p.id === location || p.name === location) || null;
     const allowSS = supersetsAllowed(program, opts.adhocPlace || place);
-    const { entries, groups: circuits } = expandComposites(exercises);
-    const declared = usableSupersets(day.supersets || [], { allow: allowSS });
-    supersetGroups = [...usableSupersets(circuits, { allow: true }), ...declared];
-    exercises = supersetGroups.length ? orderWithSupersets(entries, supersetGroups) : entries;
+    exercises = arrangeWithSupersets(exercises, day.supersets, { allow: allowSS });
   }
-  let supersetGroups = [];
   let prevs, recs, stalls;
   if (opts.recs) {
     recs = opts.recs;
