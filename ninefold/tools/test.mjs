@@ -38,7 +38,11 @@ import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT,
   METRIC_PROFILE, readEdit, isStockRack, rackFields, isImperialRack } from "../js/units.js";
 import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay, dayCellRole, finisherRoundsFor, isReducedPhase } from "../js/model.js";
 import { parseAppleExport, summarise, appleTime } from "../js/health/apple-import.js";
-import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES, alternativesFor } from "../js/substitution.js";
+import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES, alternativesFor,
+  ceilingPlan, progressionSource, backCalcOriginal, HEAVIER_EQUIVALENT, MATCH_REPS_MAX } from "../js/substitution.js";
+import { e1rm } from "../js/progression.js";
+import { holdsPerSide, byId as libById } from "../js/exercise-library.js";
+import { dexaSchedule, addMonthsISO } from "../js/dexa.js";
 import * as mob from "../js/mobility.js";
 import { applyStretchResults, applyStretchTargets, stretchTarget, STRETCH_MIN, STRETCH_CAP, repairSkipFlooring } from "../js/stretch.js";
 import { CHANGELOG, notesSince, versionNumber } from "../js/changelog.js";
@@ -2999,6 +3003,189 @@ group("backup — a block edit finally travels between devices", () => {
 
   it("a block the device has never seen is simply taken", () => {
     assert.equal(shouldAdoptProgram(at("2026-08-18T10:00:00Z"), null), true);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// v191 — a lighter rack elsewhere, two-sided holds, a DEXA reminder that goes away
+// ---------------------------------------------------------------------------
+
+// Two places: a home rack of fixed dumbbells to 40 kg, and a gym with a barbell
+// and adjustable dumbbells that stop at 22.5 kg.
+const TWO_RACKS = {
+  barWeightKg: 20, barbellPlatesKg: [20, 10, 5, 2.5, 1.25],
+  dumbbells: {
+    Gym: { minKg: 7.5, maxKg: 22.5, stepKg: 2.5 },
+    Home: { valuesKg: [5, 7, 9, 11, 13, 15, 18, 20, 22, 25, 27, 29, 32, 34, 36, 38, 40] },
+  },
+  locations: {
+    Gym: ["barbell", "ez_bar", "cable", "dumbbell_pair", "dumbbell_single"],
+    Home: ["dumbbell_pair", "dumbbell_single"],
+  },
+};
+const gymHas = (id) => ["incline_barbell_press", "bench_press", "ohp_barbell", "rdl_barbell"].includes(id);
+
+group("substitution — a dumbbell lift heavier than the rack you are standing at", () => {
+  it("the incline press from the bug report moves to the barbell rather than losing a third of its load", () => {
+    const cap = ceilingPlan({ originalId: "incline_db_press", implement: "dumbbell_pair", plannedLoad: 32,
+      plannedReps: 9, repHi: 10, location: "Gym", equip: TWO_RACKS, canUse: gymHas });
+    assert.ok(cap, "32 kg is above Gym's 22.5");
+    assert.equal(cap.ceiling, 22.5);
+    assert.equal(cap.prefer, "swap");
+    assert.equal(cap.swap.subId, "incline_barbell_press");
+    // 32 × 9 is e1RM 41.6; 22.5 kg needs ~26 reps to match it, which is not a set of 8-10.
+    assert.ok(cap.reps.exactReps >= 25 && cap.reps.exactReps <= 27, `exactReps ${cap.reps.exactReps}`);
+    assert.equal(cap.reps.reps, MATCH_REPS_MAX);
+  });
+
+  it("a small gap keeps the dumbbells and adds reps that match the planned effort", () => {
+    const cap = ceilingPlan({ originalId: "incline_db_press", implement: "dumbbell_pair", plannedLoad: 25,
+      plannedReps: 8, repHi: 10, location: "Gym", equip: TWO_RACKS, canUse: gymHas });
+    assert.equal(cap.prefer, "reps");
+    assert.equal(cap.reps.load, 22.5);
+    // e1RM(25, 8) = 31.67; at 22.5 that is 12.2 reps → 13, and 13 × 22.5 is not easier than the plan.
+    assert.equal(cap.reps.reps, 13);
+    assert.ok(e1rm(22.5, cap.reps.reps) >= e1rm(25, 8));
+  });
+
+  it("with no barbell version available it keeps the dumbbells, capped at a sane rep count", () => {
+    const cap = ceilingPlan({ originalId: "incline_db_press", implement: "dumbbell_pair", plannedLoad: 32,
+      plannedReps: 9, repHi: 10, location: "Gym", equip: TWO_RACKS, canUse: () => false });
+    assert.equal(cap.prefer, "reps");
+    assert.equal(cap.swap, null);
+    assert.equal(cap.reps.reps, MATCH_REPS_MAX);
+  });
+
+  it("is silent when the planned load fits the rack, and for anything that is not a dumbbell", () => {
+    assert.equal(ceilingPlan({ originalId: "incline_db_press", implement: "dumbbell_pair", plannedLoad: 22.5,
+      plannedReps: 9, location: "Gym", equip: TWO_RACKS }), null);
+    assert.equal(ceilingPlan({ originalId: "bench_press", implement: "barbell", plannedLoad: 200,
+      plannedReps: 5, location: "Gym", equip: TWO_RACKS }), null);
+    assert.equal(ceilingPlan({ originalId: "incline_db_press", implement: "dumbbell_pair", plannedLoad: null,
+      plannedReps: 9, location: "Gym", equip: TWO_RACKS }), null);
+  });
+
+  it("every heavier equivalent is a real library lift that really is heavier-loadable", () => {
+    for (const [from, subs] of Object.entries(HEAVIER_EQUIVALENT)) {
+      const f = libById(from);
+      assert.ok(f, `${from} is in the library`);
+      assert.ok(/dumbbell/.test(f.implement), `${from} is a dumbbell lift`);
+      for (const [to, ratio] of subs) {
+        const t = libById(to);
+        assert.ok(t, `${to} is in the library`);
+        assert.ok(["barbell", "ez_bar"].includes(t.implement), `${to} loads past a dumbbell rack`);
+        assert.ok(ratio > 1 && ratio < 4, `${from}>${to} ratio ${ratio}`);
+      }
+    }
+  });
+
+  it("reps at the ceiling convert back onto the planned lift at the planned load when the set was met", () => {
+    const out = backCalcOriginal({ originalId: "incline_db_press", originalImplement: "dumbbell_pair",
+      plannedLocation: "Home", plannedLoad: 25, plannedReps: 8,
+      subId: "incline_db_press", subTargetLoad: 22.5, subTargetReps: 13,
+      subSets: [{ weightKg: 22.5, reps: 13 }, { weightKg: 22.5, reps: 13 }], equip: TWO_RACKS });
+    assert.deepEqual(out.sets.map((s) => [s.weightKg, s.reps]), [[25, 8], [25, 8]]);
+    assert.equal(out.substituted, true);
+  });
+
+  it("and without subTargetReps the old behaviour is unchanged", () => {
+    const out = backCalcOriginal({ originalId: "bench_press", originalImplement: "barbell",
+      plannedLocation: "Gym", plannedLoad: 80, plannedReps: 6,
+      subId: "db_bench_press", subTargetLoad: 32, subSets: [{ weightKg: 32, reps: 6 }], equip: TWO_RACKS });
+    assert.equal(out.sets[0].weightKg, 80);
+  });
+});
+
+group("progression — a set that only measured a lighter rack is not the one to progress from", () => {
+  const occ = (location, weightKg, reps, extra = {}) =>
+    ({ location, exercise: { sets: [{ weightKg, reps }, { weightKg, reps }], ...extra } });
+
+  it("back in Home, the Gym session pinned at 22.5 is skipped for the 32 kg one before it", () => {
+    const hist = [occ("Home", 32, 9), occ("Gym", 22.5, 10)];
+    const src = progressionSource(hist, { implement: "dumbbell_pair", location: "Home", equip: TWO_RACKS });
+    assert.equal(src.exercise.sets[0].weightKg, 32);
+  });
+
+  it("a Gym session BELOW its ceiling measured you, and counts", () => {
+    const hist = [occ("Home", 32, 9), occ("Gym", 20, 10)];
+    const src = progressionSource(hist, { implement: "dumbbell_pair", location: "Home", equip: TWO_RACKS });
+    assert.equal(src.exercise.sets[0].weightKg, 20);
+  });
+
+  it("in Gym itself nothing is skipped, and a back-calculated entry always counts", () => {
+    const hist = [occ("Home", 32, 9), occ("Gym", 22.5, 10)];
+    assert.equal(progressionSource(hist, { implement: "dumbbell_pair", location: "Gym", equip: TWO_RACKS })
+      .exercise.sets[0].weightKg, 22.5);
+    const conv = [occ("Home", 30, 9), occ("Gym", 32, 9, { substituted: true })];
+    assert.equal(progressionSource(conv, { implement: "dumbbell_pair", location: "Home", equip: TWO_RACKS })
+      .exercise.sets[0].weightKg, 32);
+  });
+
+  it("if every occurrence is pinned elsewhere, the latest is still better than nothing", () => {
+    const hist = [occ("Gym", 22.5, 8), occ("Gym", 22.5, 10)];
+    const src = progressionSource(hist, { implement: "dumbbell_pair", location: "Home", equip: TWO_RACKS });
+    assert.equal(src.exercise.sets[0].reps, 10);
+    assert.equal(progressionSource([], { implement: "dumbbell_pair", location: "Home", equip: TWO_RACKS }), null);
+  });
+
+  it("sessions from before location was recorded are taken as they are", () => {
+    const hist = [{ exercise: { sets: [{ weightKg: 22.5, reps: 10 }] } }];
+    assert.equal(progressionSource(hist, { implement: "dumbbell_pair", location: "Home", equip: TWO_RACKS }), hist[0]);
+  });
+});
+
+group("holds — a two-sided hold is timed on both sides", () => {
+  it("Pallof presses, side planks and bird dogs are per side; a plank and a dead hang are not", () => {
+    for (const id of ["cable_pallof", "bw_pallof", "side_plank", "bird_dog"]) assert.equal(holdsPerSide(id), true, id);
+    for (const id of ["plank", "dead_hang", "dead_bug", "core_circuit", "back_squat", "nope"]) assert.equal(holdsPerSide(id), false, id);
+  });
+  it("per-side is only ever set on a timed exercise", () => {
+    for (const e of EXERCISE_LIBRARY) if (e.tags.includes("per-side")) assert.ok(e.tags.includes("timed"), e.id);
+  });
+});
+
+group("DEXA — a reminder that is shown once", () => {
+  const log = [{ date: "2026-07-09", bodyFatPct: 18 }];
+
+  it("the retest is three calendar months after the last scan, clamped to the month's end", () => {
+    assert.equal(addMonthsISO("2026-10-09", 3), "2027-01-09");
+    assert.equal(addMonthsISO("2026-11-30", 3), "2027-02-28");
+    assert.equal(dexaSchedule({ log }, "2026-08-01").dueISO, "2026-10-09");
+  });
+
+  it("nothing before the three-week window", () => {
+    assert.equal(dexaSchedule({ log }, "2026-09-17").showReminder, false);
+    assert.equal(dexaSchedule({ log }, "2026-09-18").showReminder, true);   // 21 days before 9 Oct
+  });
+
+  it("once shown it stays for that day and never comes back, overdue or not", () => {
+    const seen = { due: "2026-10-09", on: "2026-09-18" };
+    assert.equal(dexaSchedule({ log, seen }, "2026-09-18").showReminder, true);
+    assert.equal(dexaSchedule({ log, seen }, "2026-09-19").showReminder, false);
+    assert.equal(dexaSchedule({ log, seen }, "2026-11-01").showReminder, false);
+  });
+
+  it("dismissing or booking acknowledges it without it ever showing", () => {
+    assert.equal(dexaSchedule({ log, seen: { due: "2026-10-09", on: null } }, "2026-09-25").showReminder, false);
+    const s = dexaSchedule({ log, booked: "2026-10-09", seen: { due: "2026-10-09", on: null } }, "2026-10-01");
+    assert.equal(s.booked, true);
+    assert.equal(s.showReminder, false);
+  });
+
+  it("a booked date moves the due date; once that scan is logged the next one is three months on", () => {
+    assert.equal(dexaSchedule({ log, booked: "2026-10-20" }, "2026-09-01").dueISO, "2026-10-20");
+    const after = [...log, { date: "2026-10-09", bodyFatPct: 17 }];
+    const s = dexaSchedule({ log: after, booked: "2026-10-09", seen: { due: "2026-10-09", on: null } }, "2026-12-18");
+    assert.equal(s.booked, false);
+    assert.equal(s.dueISO, "2027-01-09");
+    assert.equal(s.remindFromISO, "2026-12-19");
+    assert.equal(s.showReminder, false);
+    assert.equal(dexaSchedule({ log: after, seen: { due: "2026-10-09", on: null } }, "2026-12-19").showReminder, true);
+  });
+
+  it("no scans, no schedule", () => {
+    assert.equal(dexaSchedule({ log: [] }, "2026-09-17"), null);
   });
 });
 

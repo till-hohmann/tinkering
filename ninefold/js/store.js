@@ -17,7 +17,7 @@ import { DEFAULT_ZONE_BOUNDS, maxHRof } from "./cardio-intel.js";
 // reverted to picking by date — so someone deliberately running an older block
 // would come back from a wipe running a different one, with nothing to indicate
 // it had changed. The ids they reference are themselves in the backup.
-export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "stretchProg", "activeProgramId", "autoSelectProgram", "audioPrefs", "yogaLog", "yogaPrefs"];
+export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "dexaBooked", "dexaReminderSeen", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "stretchProg", "activeProgramId", "autoSelectProgram", "audioPrefs", "yogaLog", "yogaPrefs"];
 export async function syncedPrefs() {
   const out = {};
   for (const k of SYNCED_PREFS) { const v = await db.getPref(k); if (v !== undefined) out[k] = v; }
@@ -771,6 +771,26 @@ export async function addDexaScan(date, values) {
   pushCloud();
 }
 
+// The booked next scan (ISO date or null) and which due date the Today reminder
+// has already been shown for — see dexa.js for why it only shows once. Synced,
+// so a reminder seen on the phone does not reappear on the laptop.
+export async function getDexaBooked() {
+  const v = await db.getPref("dexaBooked");
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+}
+export async function setDexaBooked(iso) {
+  await db.setPref("dexaBooked", iso || null);
+  pushCloud();
+}
+export async function getDexaReminderSeen() {
+  const v = await db.getPref("dexaReminderSeen");
+  return v && typeof v.due === "string" ? v : null;
+}
+export async function setDexaReminderSeen(due, on) {
+  await db.setPref("dexaReminderSeen", { due, on: on || null });
+  pushCloud();
+}
+
 // --- Bodyweight log (dated weigh-ins) -------------------------------------
 // A standalone dated weight series (WHOOP-exported history + ongoing weigh-ins)
 // so the Body chart isn't limited to weights attached to logged sessions. One
@@ -942,7 +962,7 @@ export async function exerciseHistoryAcross(weekday, exerciseId, beforeDate) {
   for (const s of await getAllSessions()) {
     if (s.weekday !== weekday || (beforeDate && !(s.date < beforeDate))) continue;
     const ex = (s.strengthResult || []).find((e) => e.exerciseId === exerciseId);
-    if (ex && ex.sets && ex.sets.length) occ.push({ date: s.date, weekNumber: s.weekNumber, programId: s.programId, exercise: ex });
+    if (ex && ex.sets && ex.sets.length) occ.push({ date: s.date, weekNumber: s.weekNumber, programId: s.programId, location: s.location, exercise: ex });
   }
   return occ.sort((x, y) => (x.date < y.date ? -1 : 1));
 }
@@ -958,7 +978,7 @@ export async function exerciseHistory(programId, weekday, exerciseId, beforeDate
   for (const s of sessions) {
     if (beforeDate && !(s.date < beforeDate)) continue;
     const ex = (s.strengthResult || []).find((e) => e.exerciseId === exerciseId);
-    if (ex && ex.sets && ex.sets.length) occ.push({ date: s.date, weekNumber: s.weekNumber, exercise: ex });
+    if (ex && ex.sets && ex.sets.length) occ.push({ date: s.date, weekNumber: s.weekNumber, location: s.location, exercise: ex });
   }
   return occ; // getSessionsForKey already sorts ascending by date
 }

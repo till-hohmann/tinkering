@@ -13,6 +13,13 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 191, notes: [
+    "Training somewhere with lighter dumbbells no longer quietly shrinks the workout. A dumbbell lift planned above the heaviest dumbbell at the place you are standing now gets an honest alternative: the barbell version of the movement at a matching load, or the same dumbbells for enough extra reps to match the planned effort. Small gaps default to more reps, big gaps to the barbell, and you can switch before you start. Either way the result is converted back onto the planned lift.",
+    "Fixed: a session done at a lighter rack became the lift's history, so the next session back at the heavy rack progressed from the lighter weight. The app now progresses from the last session that was not held down by the dumbbells available.",
+    "Supersets actually run now. Since v186 the pairings were written into the plan but never reached the workout, so every paired day ran as straight sets.",
+    "Pallof presses, side planks and bird dogs are timed on both sides: first side, five seconds to switch, second side. The set records both and counts the weaker one.",
+    "The DEXA reminder shows once and then gets out of the way. You can dismiss it, or enter the date your scan is booked for, on the card or in Settings. The retest is now three months after your last scan instead of twelve weeks.",
+  ] },
   { v: 190, notes: [
     "The Today card now says which advice is the week's and which is the day's. The week focus reads as \"This week: …\", and a day with an interval finisher gets its own line with this week's round count — computed from the plan itself, so it can no longer disagree with what the workout actually runs. The counts that used to sit baked into the week text were right on one day of seven.",
   ] },

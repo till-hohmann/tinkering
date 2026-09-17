@@ -2,12 +2,13 @@
 // workout hero with a single dominant Start CTA. Secondary nav lives in the tab bar.
 
 import { getActiveProgram, getAllPrograms, resolveDay, getSessionOnDate, getSessionsForProgram,
-  getNutrition, getBodyweight, getProteinPerKg, getDeficitTarget, getDraft, getVO2maxLog, getDexaLog,
+  getNutrition, getBodyweight, getProteinPerKg, getDeficitTarget, getDraft, getVO2maxLog, getDexaLog, getDexaBooked, setDexaBooked, getDexaReminderSeen, setDexaReminderSeen,
   mobilityDoneOn, getMobilityLog, yogaOn } from "../store.js";
 import { isMobilityDay, sessionFor, MOBILITY_TITLE, MOBILITY_MINUTES, MOBILITY_DAYS } from "../mobility.js";
 import { intentById } from "../yoga/intents.js";
 import { LEVELS } from "../yoga/levels.js";
 import { runKindLabel } from "../cardio-intel.js";
+import { dexaSchedule, DEXA_RETEST_MONTHS } from "../dexa.js";
 import { todayISO, WEEKDAYS } from "../model.js";
 import * as M from "../model.js";
 import { el, mount, go, countUp, setChildren } from "../ui.js";
@@ -187,23 +188,48 @@ async function reprogramReminder(iso) {
   ]);
 }
 
-// DEXA retest nudge — fires when the 12-week retest is within ~3 weeks (or overdue),
-// mirroring the reprogram nudge. Closes the loop the DEXA card's countdown opens.
+// DEXA retest nudge. Shown ONCE per due date — see dexa.js for why a permanent
+// card was the bug. The card can take the booked date directly, because that is
+// the moment you have it in hand; booking it retires the reminder.
 async function dexaReminder(iso) {
-  let log; try { log = await getDexaLog(); } catch { return null; }
-  if (!log || !log.length) return null;
-  const last = log[log.length - 1];
-  const due = addDays(last.date, 84);          // 12 weeks
-  const days = daysBetween(iso, due);
-  if (days > 21) return null;                  // not due for a while yet
-  const overdue = days < 0;
-  return el("div.card", { style: "border-color:var(--cyan);background:rgba(56,189,248,.08)" }, [
-    el("div.row", {}, [el("span.badge", { style: "color:var(--cyan);border-color:rgba(56,189,248,.4)", text: "◎ DEXA" }), el("span.spacer")]),
+  let sched;
+  try {
+    sched = dexaSchedule({ log: await getDexaLog(), booked: await getDexaBooked(),
+      seen: await getDexaReminderSeen() }, iso);
+  } catch { return null; }
+  if (!sched || !sched.showReminder) return null;
+  try { await setDexaReminderSeen(sched.dueISO, iso); } catch (_) {}
+  const short = (d) => prettyDate(d).replace(/^\w+, /, "");
+  const overdue = sched.daysToDue < 0;
+  const card = el("div.card", { style: "border-color:var(--cyan);background:rgba(56,189,248,.08)" });
+  const booked = el("input", { type: "date", min: iso, value: sched.booked ? sched.dueISO : "",
+    "aria-label": "Date the scan is booked for",
+    style: "padding:8px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)" });
+  const dismiss = async () => { try { await setDexaReminderSeen(sched.dueISO, null); } catch (_) {} card.remove(); };
+  card.append(
+    el("div.row", {}, [
+      el("span.badge", { style: "color:var(--cyan);border-color:rgba(56,189,248,.4)", text: "◎ DEXA" }), el("span.spacer"),
+      el("button.btn.ghost", { style: "min-height:32px;padding:0 10px", "aria-label": "Dismiss the DEXA reminder", onclick: dismiss }, "✕"),
+    ]),
     el("h2", { style: "margin:8px 0 4px", text: overdue ? "DEXA retest overdue" : "DEXA retest coming up" }),
     el("p.dim", { style: "margin:0;font-size:.9rem;line-height:1.45",
-      text: `Your last scan was ${prettyDate(last.date).replace(/^\w+, /, "")}. ${overdue ? "The 12-week retest is past due" : `Book the 12-week retest (~${prettyDate(due).replace(/^\w+, /, "")})`} so you can see fat vs lean change — the real recomp signal.` }),
-    el("button.btn.block", { style: "margin-top:12px", onclick: () => go("#/body") }, "See your composition →"),
-  ]);
+      text: sched.booked
+        ? `Your scan is booked for ${short(sched.dueISO)}.`
+        : `Your last scan was ${short(sched.lastISO)}. ${overdue ? "The retest is past due" : `Book the ${DEXA_RETEST_MONTHS}-month retest (around ${short(sched.dueISO)})`} to see how fat and lean mass have changed.` }),
+    sched.booked ? null : el("div.row", { style: "margin-top:12px;gap:10px;align-items:center" }, [
+      el("span.dim", { style: "flex:1;font-size:.9rem", text: "Booked for" }), booked,
+      el("button.btn", { onclick: async () => {
+        if (!booked.value) return;
+        await setDexaBooked(booked.value);
+        // Booking is the acknowledgement: the new due date is marked seen without
+        // being shown, so it does not come back three weeks before the scan.
+        await setDexaReminderSeen(booked.value, null);
+        card.remove();
+      } }, "Save"),
+    ]),
+    el("p.faint", { style: "margin:10px 0 0;font-size:.78rem", text: "Shown once. The Body tab keeps the countdown." }),
+  );
+  return card;
 }
 
 function estimateMinutes(day) {

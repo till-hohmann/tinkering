@@ -17,8 +17,8 @@ import { Ticker } from "../components/timer.js";
 import { cueItemStart, cueItemEnd, cueTick } from "../components/sound.js";
 import { celebrate } from "../components/confetti.js";
 import { recommend, detectStall, roundLoad, isDeloadWeek, e1rm, warmupPlan, replanSets, loadCeiling, rackAt } from "../progression.js";
-import { availableAt } from "../exercise-library.js";
-import { alternativesFor, metaFor, seedSubLoad, SUB_EXERCISES, implementAvailable } from "../substitution.js";
+import { availableAt, holdsPerSide } from "../exercise-library.js";
+import { alternativesFor, metaFor, seedSubLoad, SUB_EXERCISES, implementAvailable, progressionSource } from "../substitution.js";
 import { MUSCLE_MAP } from "../volume.js";
 
 import { muscleBody } from "../anatomy.js";
@@ -247,7 +247,11 @@ export async function runStrength(container, program, day, weekday, iso, locatio
   }
   let prevs, recs, stalls;
   if (opts.recs) {
-    recs = opts.recs;
+    // Pre-built recommendations ride ON their entry (`_rec`) where the caller
+    // put them there, because the arrangement above reorders the list and
+    // expands composites: a positional array lined up with the list the caller
+    // passed, not with this one.
+    recs = exercises.map((e, i) => (e._rec !== undefined ? e._rec : opts.recs[i]));
     prevs = opts.prevs || exercises.map(() => null);
     stalls = opts.stalls || exercises.map(() => null);
   } else {
@@ -263,7 +267,11 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       h.length ? null : (await exerciseHistoryAcross(weekday, exercises[i].exerciseId, iso)).pop() || null));
     const progMap = seeded.some(Boolean)
       ? Object.fromEntries((await getAllPrograms()).map((p) => [p.id, p])) : null;
-    prevs = histories.map((h, i) => (h.length ? h[h.length - 1] : seeded[i]));
+    // Progress from the last occurrence that measured YOU rather than a lighter
+    // rack elsewhere (substitution.js progressionSource).
+    prevs = histories.map((h, i) => (h.length
+      ? progressionSource(h, { implement: metaFor(program, exercises[i].exerciseId).implement, location, equip })
+      : seeded[i]));
     const deload = isDeloadWeek((program.weeks || []).find((w) => w.weekNumber === M.weekNumberFor(program, iso)));
     recs = exercises.map((e, i) => {
       const prev = prevs[i];
@@ -752,7 +760,10 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     // weight / reps cell text for a set, using `src` for the displayed numbers
     // (the set itself when active/done, the previous set when pending = a ghost).
     function cells(src) {
-      const reps = state.timed ? (src.seconds ?? 0) + "s" : "× " + (src.reps ?? "");
+      const reps = state.timed
+        ? (Array.isArray(src.sides) && src.done ? src.sides.join("s · ") + "s"
+          : (src.seconds ?? 0) + "s" + (holdsPerSide(rx.exerciseId) ? " each side" : ""))
+        : "× " + (src.reps ?? "");
       let wt;
       if (state.timed) wt = null;
       else if (implement === "bodyweight" || ((Number(src.weightKg) || 0) === 0 && implement !== "cable")) wt = "BW";
@@ -882,26 +893,40 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     // routine engine, because it is the same act.
     let holdCtl = null;
     if (state.timed) {
+      // A PER-SIDE HOLD IS TWO HOLDS WITH A CHANGEOVER. The Pallof press and the
+      // side plank ran one countdown, so "3 × 60 s" was quietly one side of the
+      // exercise. Now: first side, SWITCH_SEC to turn round, second side, each
+      // against the same target. The set logs the WORSE side as its seconds —
+      // the rule holds.js already applies to a two-sided hold — and keeps both
+      // in `sides` so nothing measured is thrown away.
+      const perSide = holdsPerSide(rx.exerciseId);
+      const SWITCH_SEC = 5;
       const bigTime = el("div.holdclock", { text: `${curRep()}s` });
+      const sideLbl = el("div.dim", { style: "text-align:center;min-height:1.2em;font-weight:600",
+        text: perSide ? "Each side" : "" });
       const startBtn = el("button.btn.primary.big.block", {}, "▶ Start hold");
       const endBtn = el("button.btn.block.endhold", { style: "display:none" },
         "✋ End hold — log my time");
-      let ticker = null, target = 0, startedAt = 0;
+      let ticker = null, target = 0, startedAt = 0, phase = null, firstSide = null;
       const stop = () => { if (ticker) { ticker.stop(); ticker = null; } };
-      const finish = (heldSec) => {
+      const finish = (heldSec, sides) => {
         stop();
+        phase = null;
         setRep(Math.max(0, Math.round(heldSec)));
+        if (sides) state.sets[active].sides = sides.map((x) => Math.max(0, Math.round(x)));
         bigTime.textContent = `${curRep()}s`;
+        sideLbl.textContent = perSide ? "Each side" : "";
         startBtn.style.display = "";
         startBtn.textContent = "▶ Start hold";
         endBtn.style.display = "none";
         try { cueItemEnd(); } catch (_) {}
         logSet();
       };
-      startBtn.onclick = () => {
-        target = Math.max(1, curRep());
+      const runSide = (which) => {
+        phase = which;
         startedAt = performance.now();
-        startBtn.style.display = "none";
+        sideLbl.textContent = perSide ? (which === 1 ? "First side" : "Second side") : "";
+        endBtn.textContent = perSide && which === 1 ? "✋ End this side" : "✋ End hold — log my time";
         endBtn.style.display = "";
         try { cueItemStart(); } catch (_) {}
         ticker = new Ticker({
@@ -911,12 +936,39 @@ export async function runStrength(container, program, day, weekday, iso, locatio
             // them, so a hold sounds the same wherever you meet it.
             if (rem <= 3 && rem > 0) { try { cueTick(); } catch (_) {} }
           },
-          onDone: () => finish(target),
+          onDone: () => endSide(target),
         });
         ticker.start(target);
       };
-      endBtn.onclick = () => finish((performance.now() - startedAt) / 1000);
-      holdCtl = el("div.holdrun", {}, [bigTime, startBtn, endBtn]);
+      const endSide = (heldSec) => {
+        stop();
+        if (!perSide) return finish(heldSec);
+        if (phase === 1) {
+          firstSide = heldSec;
+          try { cueItemEnd(); } catch (_) {}
+          phase = "switch";
+          sideLbl.textContent = "Switch sides";
+          endBtn.style.display = "none";
+          ticker = new Ticker({
+            onTick: (rem) => {
+              bigTime.textContent = `${rem}s`;
+              if (rem <= 3 && rem > 0) { try { cueTick(); } catch (_) {} }
+            },
+            onDone: () => { stop(); runSide(2); },
+          });
+          ticker.start(SWITCH_SEC);
+          return;
+        }
+        finish(Math.min(firstSide, heldSec), [firstSide, heldSec]);
+      };
+      startBtn.onclick = () => {
+        target = Math.max(1, curRep());
+        firstSide = null;
+        startBtn.style.display = "none";
+        runSide(1);
+      };
+      endBtn.onclick = () => endSide((performance.now() - startedAt) / 1000);
+      holdCtl = el("div.holdrun", {}, [sideLbl, bigTime, startBtn, endBtn]);
       // Leaving the screen mid-hold must not leave a ticker running behind it.
       registerCleanup(stop);
     }
@@ -994,13 +1046,15 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       const doneSets = state.sets.filter((s) => s.done).map((s, i) => ({
         setNumber: i + 1, weightKg: s.weightKg,
         reps: state.timed ? null : s.reps, ...(state.timed ? { seconds: s.seconds } : {}),
+        ...(state.timed && Array.isArray(s.sides) ? { sides: s.sides } : {}),
         ...(s.rir != null ? { rir: s.rir } : {}),
       }));
       flags[exIndex].visited = true;
       if (doneSets.length) {
         flags[exIndex].logged = true;
         if (canEdit) for (let k = results.length - 1; k >= 0; k--) if (results[k].exerciseId === rx.exerciseId) results.splice(k, 1);
-        results.push({ exerciseId: rx.exerciseId, implement, sets: doneSets, _i: exIndex });
+        results.push({ exerciseId: rx.exerciseId, implement, sets: doneSets, _i: exIndex,
+          ...(rx._planIdx != null ? { _plan: rx._planIdx } : {}) });
       }
       if (opts.onProgress) opts.onProgress(results.slice(), Math.min(exIndex + 1, exercises.length));   // resumable draft
     }

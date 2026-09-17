@@ -2,7 +2,8 @@
 // all-time volume, weekly volume bars, per-lift top-set progression, bodyweight
 // and cardio pace trends, plus a recent-sessions feed.
 
-import { getActiveProgram, getAllSessions, getVO2maxLog, getNutritionLog, getBodyweight, getMeasurementsLog, getDexaLog, getWeightLog, equipmentForProgram } from "../store.js";
+import { dexaSchedule } from "../dexa.js";
+import { getActiveProgram, getAllSessions, getVO2maxLog, getNutritionLog, getBodyweight, getMeasurementsLog, getDexaLog, getDexaBooked, getWeightLog, equipmentForProgram } from "../store.js";
 import { strengthScore } from "../standards.js";
 import { getProfile } from "../profile.js";
 import { weightLabel, weightValue, lengthLabel, lengthValue, distanceLabel, distanceValue, paceLabel, paceValue } from "../units.js";
@@ -339,7 +340,6 @@ async function fillStandards(card) {
 // and bone (BMD, T/Z, centile). One scan = baseline; 2+ = tracked change (Δ fat
 // down, Δ lean held/up = the true recomp signal). Retest due 12 weeks after the
 // last. Hidden until a scan exists. `goodDir`: 'down' | 'up' | null per metric.
-const DEXA_RETEST_DAYS = 84;   // 12 weeks
 
 // Goal-progress baseline. These used to be module constants holding one
 // person's numbers; they now come from the profile, and every one of them is
@@ -370,11 +370,11 @@ async function fillDexa(card) {
       : (s.totalFatKg != null && s.totalMassKg ? (s.totalFatKg / s.totalMassKg) * 100 : null);
 
     // next-scan-due chip
-    const dueISO = addDaysISO(latest.date, DEXA_RETEST_DAYS);
-    const daysToDue = daysBetween(M.todayISO(), dueISO);
+    const sched = dexaSchedule({ log, booked: await getDexaBooked() }, M.todayISO());
+    const daysToDue = sched.daysToDue;
     const dueChip = daysToDue <= 0
-      ? el("span.volchip.over", { text: "retest due" })
-      : el("span.note", { text: `next in ${Math.max(1, Math.round(daysToDue / 7))} wk` });
+      ? el("span.volchip.over", { text: sched.booked ? "scan today" : "retest due" })
+      : el("span.note", { text: `${sched.booked ? "booked" : "next"} in ${daysToDue < 14 ? daysToDue + " d" : Math.round(daysToDue / 7) + " wk"}` });
 
     // one metric row, with a good/bad-coloured delta when a prior scan exists.
     // `conv` converts a stored metric value to the displayed unit — identity for
@@ -484,7 +484,7 @@ async function fillDexa(card) {
 
     inner.push(el("div.note", { style: "margin-top:16px", text: prev
       ? `Latest ${latest.date} vs ${prev.date}. Green = the healthy direction — fat & central fat down, lean, bone & metabolism up.`
-      : `Baseline ${latest.date}. Retest around ${dueISO} to track fat vs lean change — the real recomp signal.` }));
+      : `Baseline ${latest.date}. ${sched.booked ? "Next scan booked for" : "Retest around"} ${sched.dueISO} to track fat vs lean change — the real recomp signal.` }));
     inner.push(el("button.btn.block", { style: "margin-top:12px", onclick: () => go("#/settings") },
       prev ? "Log a new scan →" : "Add / edit scan →"));
 
@@ -518,18 +518,6 @@ function emptyState(title) {
     el("p.dim", { style: "margin:0", text: "No sessions logged yet. Finish a workout and your trends will start building here." }),
     el("button.btn.primary.block", { style: "margin-top:14px", onclick: () => go("#/") }, "Go to today"),
   ])]);
-}
-
-// Date helpers for the DEXA retest cadence.
-function addDaysISO(iso, days) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(y, m - 1, d + days);
-  const p = (n) => String(n).padStart(2, "0");
-  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
-}
-function daysBetween(aISO, bISO) {
-  const t = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).getTime(); };
-  return Math.round((t(bISO) - t(aISO)) / 86400000);
 }
 
 export async function renderProgress() {

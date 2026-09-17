@@ -13,9 +13,10 @@ import { el, mount, go, locationBadge, clear, backBtn, addActionBar, setChildren
 import { illustration, workoutFigure } from "../illustrations.js";
 import { unlockAudio } from "../components/sound.js";
 import { interruptSheet } from "../components/interrupt.js";
-import { recommend, roundLoad, isDeloadWeek } from "../progression.js";
+import { recommend, roundLoad, isDeloadWeek, loadCeiling, parseRange } from "../progression.js";
+import { canDoHere } from "../equipment.js";
 import { needsSub, primarySubstitute, candidatesFor, isApprox, metaFor, seedSubLoad,
-  backCalcOriginal, SUB_EXERCISES } from "../substitution.js";
+  backCalcOriginal, SUB_EXERCISES, ceilingPlan, progressionSource, implementAvailable } from "../substitution.js";
 import { runRoutine, isStretch } from "./routine.js";
 import { isStrengthHold } from "../holds.js";
 import { runStrength } from "./strength.js";
@@ -205,8 +206,14 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
   // What the session did differently from its plan, captured live by runStrength
   // and asked about after the notes screen. Held on the draft so an interruption
   // and resume doesn't quietly forget it.
+  // ⚠ SUPERSETS LIVE ON THE DAY TEMPLATE, NOT ON THE WEEK'S DAY. Both the shipped
+  // blocks and the builder write `supersets` onto dayTemplates[weekday]; a week's
+  // day entry carries only its exercises. This passed `day` alone, so from v186 to
+  // v190 runStrength never saw a pairing and every "paired up" day ran as straight
+  // sets. The pure arrangement was tested; the plumbing into it was not.
+  const dayWithPairs = { ...day, supersets: (day && day.supersets) || (template && template.supersets) || [] };
   const strengthPhase = (loc, rd) =>
-    new Promise((res, rej) => runStrength(stage, program, day, weekday, srcIso, loc || template.location, {
+    new Promise((res, rej) => runStrength(stage, program, dayWithPairs, weekday, srcIso, loc || template.location, {
       onComplete: (results, deviations) => { draft.deviations = deviations; res(results); },
       readiness: rd, adhocPlace,
       startIndex: resuming ? (draft._exIndex || 0) : 0,
@@ -261,11 +268,29 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
     draft.plannedLocation = plannedLoc;
     persist();
   }
-  // substitute only when actually elsewhere AND some lift's kit is missing there
-  // (a dumbbell day at another place just logs with the local weights).
+  // substitute only when actually elsewhere AND either some lift's kit is missing
+  // there, or some dumbbell lift's planned load is above the heaviest dumbbell
+  // there. The second half is the v191 fix: a dumbbell day at a lighter rack used
+  // to "just log with the local weights", which meant the planned load snapped
+  // down to the ceiling at unchanged reps, and that lighter set became the
+  // history the next session progressed from.
   const sessionEquip = withPlace(await equipmentForProgram(program), adhocPlace);
-  const substituting = day.type === "strength" && actualLoc !== plannedLoc &&
-    (day.exercises || []).some((e) => needsSub(program.exercises[e.exerciseId].implement, actualLoc, sessionEquip));
+  let substituting = false;
+  if (day.type === "strength" && actualLoc !== plannedLoc) {
+    const impl = (e) => program.exercises[e.exerciseId].implement;
+    substituting = (day.exercises || []).some((e) => needsSub(impl(e), actualLoc, sessionEquip));
+    const lighterHere = (e) => {
+      const here = loadCeiling(impl(e), actualLoc, sessionEquip);
+      if (here == null) return false;
+      const there = loadCeiling(impl(e), plannedLoc, sessionEquip);
+      return there == null || there > here;
+    };
+    if (!substituting && (day.exercises || []).some(lighterHere)) {
+      const recs = await plannedRecs(program, day, weekday, srcIso, plannedLoc, sessionEquip);
+      substituting = (day.exercises || []).some((e, i) => lighterHere(e) && recs[i].load != null
+        && recs[i].load > loadCeiling(impl(e), actualLoc, sessionEquip) + 1e-9);
+    }
+  }
 
   // readiness check (strength days) — eases loads / trims a set on a rough day.
   // On resume, rebuild the easing from the saved band instead of re-asking.
@@ -297,7 +322,7 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
     if (day.type === "strength") {
       if (substituting) {
         const { strengthResult, substitution } =
-          await substitutedStrength(stage, program, day, weekday, srcIso, plannedLoc, actualLoc, readiness, adhocPlace);
+          await substitutedStrength(stage, program, dayWithPairs, weekday, srcIso, plannedLoc, actualLoc, readiness, adhocPlace);
         draft.strengthResult = strengthResult;
         draft.substitution = substitution;
         persist();
@@ -697,6 +722,27 @@ function readinessCheck(stage) {
   });
 }
 
+// The engine's target for each PLANNED lift at the PLANNED place: what a
+// substitute has to match, and what decides whether a lift is capped elsewhere.
+async function plannedRecs(program, day, weekday, iso, plannedLoc, equip) {
+  const deload = isDeloadWeek((program.weeks || []).find((w) => w.weekNumber === M.weekNumberFor(program, iso)));
+  const out = [];
+  for (const e of day.exercises || []) {
+    const implement = program.exercises[e.exerciseId].implement;
+    const hist = await exerciseHistory(program.id, weekday, e.exerciseId, iso);
+    let prev = hist.length ? progressionSource(hist, { implement, location: plannedLoc, equip }) : null;
+    let srcProgram = program;
+    if (!prev) {   // new-block seed: carry loads across the block handover
+      prev = (await exerciseHistoryAcross(weekday, e.exerciseId, iso)).pop() || null;
+      if (prev && prev.programId) srcProgram = (await getAllPrograms()).find((p) => p.id === prev.programId) || program;
+    }
+    const prevRange = prev ? prescribedRangeAt(srcProgram, prev.weekNumber, weekday, e.exerciseId) : null;
+    out.push(recommend({ curRx: e, prevEx: prev ? prev.exercise : null, prevRange,
+      implement, location: plannedLoc, equip, exerciseId: e.exerciseId, deload }));
+  }
+  return out;
+}
+
 // --- Substituted strength session -----------------------------------------
 async function substitutedStrength(stage, program, day, weekday, iso, plannedLoc, actualLoc, readiness, adhocPlace) {
   // A one-off place is exactly the case this whole path exists for, so its kit
@@ -705,26 +751,27 @@ async function substitutedStrength(stage, program, day, weekday, iso, plannedLoc
   const planned = day.exercises;
 
   // 1) engine target for each PLANNED lift (what the substitute must match)
-  const deload = isDeloadWeek((program.weeks || []).find((w) => w.weekNumber === M.weekNumberFor(program, iso)));
-  const origRecs = [];
-  for (const e of planned) {
-    const hist = await exerciseHistory(program.id, weekday, e.exerciseId, iso);
-    let prev = hist.length ? hist[hist.length - 1] : null;
-    let srcProgram = program;
-    if (!prev) {   // new-block seed: carry loads across the block handover
-      prev = (await exerciseHistoryAcross(weekday, e.exerciseId, iso)).pop() || null;
-      if (prev && prev.programId) srcProgram = (await getAllPrograms()).find((p) => p.id === prev.programId) || program;
-    }
-    const prevRange = prev ? prescribedRangeAt(srcProgram, prev.weekNumber, weekday, e.exerciseId) : null;
-    origRecs.push(recommend({ curRx: e, prevEx: prev ? prev.exercise : null, prevRange,
-      implement: program.exercises[e.exerciseId].implement, location: plannedLoc, equip, exerciseId: e.exerciseId, deload }));
-  }
+  const origRecs = await plannedRecs(program, day, weekday, iso, plannedLoc, equip);
 
-  // 2) plan: swap only where the kit is missing here
+  // 2) plan: swap where the kit is missing here; for a dumbbell lift heavier than
+  //    this rack, either add reps at the ceiling or move to the barbell version.
+  const placeKit = (equip.locations && equip.locations[actualLoc]) || [];
+  const canUse = (id) => {
+    const m = metaFor(program, id);
+    return !!m && implementAvailable(m.implement, actualLoc, equip) && canDoHere(id, placeKit);
+  };
   const plan = planned.map((e, i) => {
     const impl = program.exercises[e.exerciseId].implement;
     const rec = origRecs[i];
-    if (!needsSub(impl, actualLoc, equip)) return { kept: true, baseRx: e, originalId: e.exerciseId, rec };
+    if (!needsSub(impl, actualLoc, equip)) {
+      const range = parseRange(e.repRange);
+      const cap = ceilingPlan({ originalId: e.exerciseId, implement: impl, plannedLoad: rec.load,
+        plannedReps: rec.reps || repLo(e.repRange), repHi: range && range.hi, location: actualLoc, equip, canUse });
+      if (!cap) return { kept: true, baseRx: e, originalId: e.exerciseId, rec };
+      return { kept: false, capped: cap, baseRx: e, originalId: e.exerciseId, originalImpl: impl, rec,
+        subId: cap.prefer === "swap" ? cap.swap.subId : e.exerciseId, approximate: false,
+        plannedLoad: rec.load, plannedReps: rec.reps || repLo(e.repRange) };
+    }
     return { kept: false, baseRx: e, originalId: e.exerciseId, originalImpl: impl, rec,
       subId: primarySubstitute(e.exerciseId) || e.exerciseId, approximate: isApprox(e.exerciseId),
       plannedLoad: rec.load != null ? rec.load : anchorLoad(program, e.exerciseId),  // fall back to the load anchor (first time)
@@ -734,51 +781,82 @@ async function substitutedStrength(stage, program, day, weekday, iso, plannedLoc
   // 3) preview + let the user swap any substitute
   await subPreview(stage, plan, program, actualLoc);
 
-  // 4) run the (mixed) workout through the logger with matched targets
+  // 4) run the (mixed) workout through the logger with matched targets.
+  //    Each entry carries its plan index and its recommendation, because the
+  //    logger reorders supersets and expands composites before it runs them —
+  //    positional arrays lined up with this list stop lining up with that one.
   const augProgram = { ...program, exercises: { ...program.exercises, ...SUB_EXERCISES } };
-  const subExercises = plan.map((p) => {
-    const id = p.kept ? p.originalId : p.subId;
-    return { exerciseId: id, role: p.baseRx.role, restSeconds: p.baseRx.restSeconds,
-      prescribedSets: p.baseRx.prescribedSets, repRange: p.baseRx.repRange };
-  });
-  const recsOverride = plan.map((p) => {
+  const runId = (p) => (p.kept ? p.originalId : p.subId);
+  const recFor = (p) => {
     if (p.kept) {  // re-round the recommendation to the equipment that's actually here
       const impl = program.exercises[p.originalId].implement;
       const load = p.rec.load != null ? roundLoad(p.rec.load, impl, actualLoc, equip) : p.rec.load;
       return { ...p.rec, load };
     }
-    const subImpl = metaFor(augProgram, p.subId).implement;
-    const seed = seedSubLoad(p.originalId, p.subId, p.plannedLoad, subImpl, actualLoc, equip);
-    p.subTargetLoad = seed;
     const origName = metaFor(program, p.originalId).name;
     const tgt = p.plannedLoad != null ? `${M.fmtWeight(p.plannedLoad)} × ${p.plannedReps}` : `${p.plannedReps} reps`;
+    if (p.capped && p.subId === p.originalId) {
+      const c = p.capped.reps;
+      p.subTargetLoad = c.load;
+      p.subTargetReps = c.reps;
+      const short = c.exactReps > c.reps ? ` Even ${c.reps} falls short of it, so take every set close to failure.` : "";
+      return { direction: "sub", load: c.load, reps: c.reps,
+        reason: `The dumbbells here stop at ${M.fmtWeight(c.load)}. ${c.reps} reps at that weight matches your planned ${tgt}.${short} We'll convert it back.` };
+    }
+    const subImpl = metaFor(augProgram, p.subId).implement;
+    const seed = p.capped && p.capped.swap && p.subId === p.capped.swap.subId
+      ? roundLoad(p.plannedLoad * p.capped.swap.ratio, subImpl, actualLoc, equip)
+      : seedSubLoad(p.originalId, p.subId, p.plannedLoad, subImpl, actualLoc, equip);
+    p.subTargetLoad = seed;
+    p.subTargetReps = null;
+    const why = p.capped ? ` The dumbbells here stop at ${M.fmtWeight(p.capped.ceiling)}.` : "";
     return { direction: "sub", load: seed || null, reps: p.plannedReps,
-      reason: `Stands in for ${origName} (target ${tgt}). Match that effort — we'll convert it back.` };
+      reason: `Stands in for ${origName} (target ${tgt}).${why} Match that effort — we'll convert it back.` };
+  };
+  const subExercises = plan.map((p, i) => {
+    const _rec = recFor(p);
+    return { exerciseId: runId(p), role: p.baseRx.role, restSeconds: p.baseRx.restSeconds,
+      prescribedSets: p.baseRx.prescribedSets,
+      repRange: p.subTargetReps ? String(p.subTargetReps) : p.baseRx.repRange,
+      ...(p.baseRx.timed ? { timed: true } : {}), _planIdx: i, _rec };
   });
+  // Keep the day's pairings, renamed to whatever each lift became today.
+  const supersets = (day.supersets || []).map((g) => g.map((id) => {
+    const p = plan.find((q) => q.originalId === id);
+    return p ? runId(p) : id;
+  }));
   const subResults = await new Promise((res) =>
-    runStrength(stage, augProgram, { exercises: subExercises }, weekday, iso, actualLoc,
-      { exercises: subExercises, recs: recsOverride, onComplete: res, readiness, adhocPlace }));
+    runStrength(stage, augProgram, { exercises: subExercises, supersets }, weekday, iso, actualLoc,
+      { exercises: subExercises, recs: subExercises.map((e) => e._rec), onComplete: res, readiness, adhocPlace }));
 
   // 5) back-calc swapped → planned lift; keep kept; assemble in planned order.
-  //    Map by index (not id) so a swap can't cross-wire with a kept lift's id.
-  const byIdx = {}; subResults.forEach((r) => { byIdx[r._i] = r; });
+  //    Map by plan index (not id, not logger position) so a swap can't cross-wire
+  //    with a kept lift's id, and a composite's members all land on their row.
+  const byIdx = {};
+  subResults.forEach((r) => {
+    const k = r._plan != null ? r._plan : r._i;
+    (byIdx[k] = byIdx[k] || []).push(r);
+  });
   const strengthResult = [], items = [];
   plan.forEach((p, idx) => {
-    const r = byIdx[idx];
-    if (!r || !r.sets.length) return;
-    if (p.kept) {
-      strengthResult.push({ exerciseId: r.exerciseId, implement: r.implement, sets: r.sets });
-    } else if (isTimedSets(r)) {
-      // timed/core substitute (e.g. bodyweight Pallof) → log straight to the
-      // planned lift; there's no load to back-calculate.
-      strengthResult.push({ exerciseId: p.originalId, implement: program.exercises[p.originalId].implement,
-        sets: r.sets, substituted: true, via: p.subId });
-      items.push({ originalId: p.originalId, subId: p.subId, approximate: p.approximate, sets: r.sets });
-    } else {
-      strengthResult.push(backCalcOriginal({ originalId: p.originalId, originalImplement: p.originalImpl,
-        plannedLocation: plannedLoc, plannedLoad: p.plannedLoad, plannedReps: p.plannedReps,
-        subId: p.subId, subTargetLoad: p.subTargetLoad, subSets: r.sets, equip, approximate: p.approximate }));
-      items.push({ originalId: p.originalId, subId: p.subId, approximate: p.approximate, sets: r.sets });
+    for (const r of byIdx[idx] || []) {
+      if (!r || !r.sets.length) continue;
+      if (p.kept) {
+        strengthResult.push({ exerciseId: r.exerciseId, implement: r.implement, sets: r.sets });
+      } else if (isTimedSets(r)) {
+        // timed/core substitute (e.g. bodyweight Pallof) → log straight to the
+        // planned lift; there's no load to back-calculate.
+        strengthResult.push({ exerciseId: p.originalId, implement: program.exercises[p.originalId].implement,
+          sets: r.sets, substituted: true, via: p.subId });
+        items.push({ originalId: p.originalId, subId: p.subId, approximate: p.approximate, sets: r.sets });
+      } else {
+        strengthResult.push(backCalcOriginal({ originalId: p.originalId, originalImplement: p.originalImpl,
+          plannedLocation: plannedLoc, plannedLoad: p.plannedLoad, plannedReps: p.plannedReps,
+          subId: p.subId, subTargetLoad: p.subTargetLoad, subTargetReps: p.subTargetReps, subSets: r.sets,
+          equip, approximate: p.approximate }));
+        items.push({ originalId: p.originalId, subId: p.subId, approximate: p.approximate, sets: r.sets,
+          ...(p.capped ? { ceiling: p.capped.ceiling } : {}) });
+      }
     }
   });
 
@@ -799,13 +877,20 @@ function subPreview(stage, plan, program, actualLoc) {
           el("span.badge", { text: "kept" }),
         ]);
       }
-      const cands = candidatesFor(p.originalId);
+      // A capped dumbbell lift offers the barbell version (if this place has one)
+      // and the same dumbbells for more reps; anything else offers its swaps.
+      const opts = p.capped
+        ? [...(p.capped.swap ? [[p.capped.swap.subId, metaFor(program, p.capped.swap.subId).name]] : []),
+           [p.originalId, `Same dumbbells at ${M.fmtWeight(p.capped.ceiling)}, ${p.capped.reps.reps} reps`]]
+        : candidatesFor(p.originalId).map((cid) => [cid, metaFor(program, cid).name]);
       const sel = el("select.subsel", { onchange: (ev) => { p.subId = ev.target.value; } },
-        cands.map((cid) => el("option", { value: cid, selected: cid === p.subId ? true : null }, metaFor(program, cid).name)));
+        opts.map(([cid, label]) => el("option", { value: cid, selected: cid === p.subId ? true : null }, label)));
       return el("div.item", { style: "align-items:flex-start;flex-direction:column;gap:8px" }, [
         el("div.meta", {}, [
           el("div.t", {}, [origName, p.approximate ? el("span.faint", { text: " · approx" }) : null]),
-          el("div.s", { text: "↳ substitute:" }),
+          el("div.s", { text: p.capped
+            ? `Planned ${M.fmtWeight(p.plannedLoad)} × ${p.plannedReps}, heavier than the dumbbells here. Do instead:`
+            : "↳ substitute:" }),
         ]),
         sel,
       ]);
@@ -814,7 +899,7 @@ function subPreview(stage, plan, program, actualLoc) {
       backBtn("Today", "#/"),
       el("div.label", { style: "margin-top:8px", text: "Substitute plan" }),
       el("h1", { style: "margin:4px 0 0", text: `Adjusted for ${actualLoc}` }),
-      el("p.dim", { text: "Each missing-kit lift is swapped for the closest match. Change any below." }),
+      el("p.dim", { text: "Lifts this place can't load are swapped for the closest match. Change any below." }),
       el("div.list", { style: "margin-top:14px" }, rows),
     ]));
     const bar = addActionBar(el("button.btn.primary.big.block", { onclick: () => { bar.remove(); res(); } }, "Start workout"));
@@ -845,7 +930,7 @@ function subReview(stage, strengthResult, program) {
         el("div.row", {}, [
           el("div", { style: "flex:1;min-width:0" }, [
             el("div", { style: "font-weight:700", text: name }),
-            el("div.note", {}, [`converted from ${metaFor(program, ex.via).name}`,
+            el("div.note", {}, [ex.via === ex.exerciseId ? "converted from the lighter dumbbells" : `converted from ${metaFor(program, ex.via).name}`,
               ex.approximate ? el("span", { style: "color:var(--amber)", text: " · approximate" }) : null]),
           ]),
         ]),

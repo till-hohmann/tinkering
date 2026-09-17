@@ -6,7 +6,7 @@ import { getActiveProgram, getAllPrograms, getAllSessions, importProgram, restor
   getZoneBounds, setZoneBounds, syncedPrefs, getVO2maxLog, addVO2max,
   getBodyweight, setBodyweight, getProteinPerKg, setProteinPerKg,
   getDeficitTarget, setDeficitTarget, getMeasurementsLog, addMeasurement,
-  getDexaLog, addDexaScan, deleteProgram, saveProgram } from "../store.js";
+  getDexaLog, addDexaScan, getDexaBooked, setDexaBooked, setDexaReminderSeen, deleteProgram, saveProgram } from "../store.js";
 import { toCSV, fromCSV, applyPlanCSV, diffPlans } from "../plan-csv.js";
 import { todayISO } from "../model.js";
 import * as M from "../model.js";
@@ -312,7 +312,18 @@ export async function renderSettings() {
   const dlog = await getDexaLog();
   const latestD = dlog.length ? dlog[dlog.length - 1] : null;
   const dStatus = el("p.note", { style: "margin-top:8px;min-height:1em",
-    text: latestD ? `Last scan ${latestD.date}. Retest ~12 weeks apart to track fat vs lean.` : "No scan yet — enter your DEXA results to start tracking." });
+    text: latestD ? `Last scan ${latestD.date}. Retest every 3 months to track fat vs lean.` : "No scan yet — enter your DEXA results to start tracking." });
+  // The next scan, once it is booked. Saving it marks that date's Today reminder
+  // as already seen (dexa.js), because a booked scan needs no nudge to book it.
+  const bookedNow = await getDexaBooked();
+  const dBooked = el("input", { type: "date", value: bookedNow && (!latestD || bookedNow > latestD.date) ? bookedNow : "",
+    "aria-label": "Date the next DEXA scan is booked for", style: numStyle + ";width:150px",
+    onchange: async (ev) => {
+      const v = ev.target.value || null;
+      await setDexaBooked(v);
+      if (v) await setDexaReminderSeen(v, null);
+      dStatus.textContent = v ? `Next scan booked for ${v}. The reminder for it is switched off.` : "Booked date cleared.";
+    } });
   const dDate = el("input", { type: "date", value: (latestD && latestD.date) || todayISO(), max: todayISO(),
     "aria-label": "Date of the DEXA scan",
     style: numStyle + ";width:150px" });
@@ -337,6 +348,8 @@ export async function renderSettings() {
   const dexaCard = el("div.card", {}, [
     el("div.label", { text: "DEXA scan" }),
     el("p.note", { style: "margin-top:4px", text: "Full body-composition scan (quarterly-ish). The Body tab trends fat vs lean between scans — the real recomp signal. Leave any field blank to skip it." }),
+    el("div.row", { style: "margin-top:12px;align-items:center" }, [el("div", { style: "flex:1" }, [el("div", { text: "Next scan booked for" }),
+      el("div.faint", { style: "font-size:.78rem", text: "optional · replaces the 3-month estimate" })]), el("span.spacer"), dBooked]),
     el("div.row", { style: "margin-top:12px;align-items:center" }, [el("div", { style: "flex:1" }, [el("div", { text: "Scan date" })]), el("span.spacer"), dDate]),
     dGroup("Composition"),
     dRow("totalMassKg", "Total mass", "kg"),

@@ -16,7 +16,7 @@
 // setup; dumbbell & bodyweight lifts work anywhere (the engine just rounds to
 // whatever is actually on the rack there).
 
-import { e1rm, roundLoad } from "./progression.js";
+import { e1rm, roundLoad, loadCeiling, topSet } from "./progression.js";
 import { byId as libraryById } from "./exercise-library.js";
 
 // Substitute-only exercises (not in any day template — referenced only as swaps).
@@ -64,6 +64,97 @@ const SEED_RATIO = {
   "triceps_pushdown>overhead_triceps_ext": 0.6,
   "barbell_hip_thrust>db_hip_thrust": 0.35, "barbell_hip_thrust>db_rdl": 0.35,
 };
+
+// --- when the dumbbells here are too light ------------------------------------
+//
+// ⚠ THE CASE THE REST OF THIS MODULE MISSED. Substitution only ever asked "is the
+// implement here?". A dumbbell lift planned for a place with 40 kg dumbbells,
+// taken at a place whose rack stops at 22.5, passed that test, so the session
+// just snapped the 32 kg target down to 22.5 kg AT THE SAME 8-10 REPS: a set
+// worth about 60% of the planned effort, prescribed as if it were the plan. And
+// it was logged as the lift's latest performance, so the next session back at
+// the heavy rack progressed from 22.5.
+//
+// Two honest answers, and which one is right depends on the size of the gap:
+//   - small gap: keep the dumbbells and add reps until the set matches the
+//     planned effort (effort-matched via the same Epley e1RM the engine uses);
+//   - big gap: the reps needed turn a set of 8-10 into a set of 25, which is a
+//     different exercise. Swap to the barbell version of the movement if this
+//     place has one, at a seeded load, and convert back afterwards.
+// Either way the log is back-calculated onto the planned lift, like any swap.
+
+// Heavier-loadable equivalents of dumbbell lifts, best first, each with the seed
+// ratio (substitute load ÷ planned per-hand load, or ÷ the single dumbbell).
+// Deliberately a little under the inverse of SEED_RATIO: a first attempt at an
+// unfamiliar bar should undershoot, and the logged effort corrects it.
+export const HEAVIER_EQUIVALENT = {
+  incline_db_press:         [["incline_barbell_press", 2.3]],
+  db_bench_press:           [["bench_press", 2.3]],
+  db_floor_press:           [["bench_press", 2.2]],
+  seated_db_shoulder_press: [["ohp_barbell", 2.0]],
+  arnold_press:             [["ohp_barbell", 1.9]],
+  db_bent_row:              [["bent_over_row", 2.0]],
+  chest_supported_row:      [["bent_over_row", 1.9]],
+  one_arm_db_row:           [["bent_over_row", 1.8]],
+  db_rdl:                   [["rdl_barbell", 2.0]],
+  db_hip_thrust:            [["barbell_hip_thrust", 2.6]],
+  db_goblet_squat:          [["back_squat", 1.8]],
+  bulgarian_split_squat_db: [["back_squat", 2.8]],
+  db_curl:                  [["ez_curl", 1.8]],
+  db_hammer_curl:           [["ez_curl", 1.7]],
+  db_shrug:                 [["barbell_shrug", 2.0]],
+};
+
+// Keep the dumbbells while the effort-matched reps stay within this many of the
+// top of the planned range; beyond it, prefer a heavier implement if there is one.
+export const KEEP_WITHIN_REPS = 5;
+// Never prescribe more than this at the ceiling. Past ~20 the Epley estimate is
+// unreliable and the set is conditioning, not the planned stimulus.
+export const MATCH_REPS_MAX = 20;
+
+/**
+ * What to do with a dumbbell lift whose planned load is above this place's
+ * heaviest dumbbell. Null when it is not capped here.
+ *   canUse(id) — whether an exercise can be done at this place.
+ * Returns { ceiling, reps: {load, reps, exactReps}, swap: {subId, ratio} | null,
+ *           prefer: "reps" | "swap" }.
+ */
+export function ceilingPlan({ originalId, implement, plannedLoad, plannedReps, repHi, location, equip, canUse = () => false }) {
+  const ceiling = loadCeiling(implement, location, equip);
+  if (ceiling == null || !(plannedLoad > 0) || !(plannedReps > 0) || plannedLoad <= ceiling + 1e-9) return null;
+  const target = e1rm(plannedLoad, plannedReps);
+  const exactReps = Math.max(plannedReps + 1, Math.ceil(30 * (target / ceiling - 1) - 1e-9));
+  const hit = (HEAVIER_EQUIVALENT[originalId] || []).find(([id]) => canUse(id));
+  const swap = hit ? { subId: hit[0], ratio: hit[1] } : null;
+  const hi = repHi || plannedReps;
+  const prefer = !swap || exactReps <= hi + KEEP_WITHIN_REPS ? "reps" : "swap";
+  return { ceiling, reps: { load: ceiling, reps: Math.min(exactReps, MATCH_REPS_MAX), exactReps }, swap, prefer };
+}
+
+/**
+ * The occurrence to progress from, skipping sets that only reflect a lighter rack.
+ *
+ * An occurrence logged somewhere whose dumbbells top out BELOW the rack you are
+ * standing at now, with its top set pinned at that lower ceiling, measured the
+ * rack rather than you. Walk back past those to the last one that did not.
+ * If every occurrence is like that, the latest one is still better than nothing.
+ * Substituted entries are already back-calculated and always count.
+ *   occurrences: ascending [{ location, exercise }]
+ */
+export function progressionSource(occurrences, { implement, location, equip }) {
+  const occ = occurrences || [];
+  if (!occ.length) return null;
+  const here = loadCeiling(implement, location, equip);
+  const cappedAway = (o) => {
+    if (!o.location || o.location === location || !o.exercise || o.exercise.substituted) return false;
+    const there = loadCeiling(implement, o.location, equip);
+    if (there == null || (here != null && here <= there)) return false;
+    const ts = topSet(o.exercise);
+    return !!ts && ts.weightKg >= there - 1e-9;
+  };
+  for (let i = occ.length - 1; i >= 0; i--) if (!cappedAway(occ[i])) return occ[i];
+  return occ[occ.length - 1];
+}
 
 // Implement available in a location? (bodyweight always; rest from equipmentProfile.locations)
 export function implementAvailable(implement, location, equip) {
@@ -155,9 +246,11 @@ export function seedSubLoad(originalId, subId, plannedLoad, subImplement, locati
 // cancel); planned load scales by perf, reps stay at the planned target, RIR
 // carries through so the progression engine reads effort next week.
 export function backCalcOriginal({ originalId, originalImplement, plannedLocation, plannedLoad, plannedReps,
-                                   subId, subTargetLoad, subSets, equip, approximate }) {
+                                   subId, subTargetLoad, subTargetReps, subSets, equip, approximate }) {
   const R0 = plannedReps || 6;
-  const denom = e1rm(subTargetLoad || 1, R0) || 1;       // substitute's intended difficulty
+  // subTargetReps differs from R0 only for the same lift at a lighter ceiling,
+  // where the reps ARE the adjustment (see ceilingPlan).
+  const denom = e1rm(subTargetLoad || 1, subTargetReps || R0) || 1;   // substitute's intended difficulty
   // Note: the substitute's RIR reflects the SUBSTITUTE movement, not the planned
   // lift (an easy capped goblet ≠ an easy barbell squat), so we deliberately do
   // NOT carry it onto the planned lift — next week's engine infers effort from the

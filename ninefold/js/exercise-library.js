@@ -152,9 +152,9 @@ export const EXERCISE_LIBRARY = [
 
   // ---- core ----
   E("cable_pallof", "Cable Pallof Press", "cable", "core", "core",
-    { cue: "Resist the rotation — press straight out", tags: ["anti-rotation", "timed"] }),
+    { cue: "Resist the rotation — press straight out", tags: ["anti-rotation", "timed", "per-side"] }),
   E("bw_pallof", "Anti-rotation Hold", "bodyweight", "core", "core",
-    { cue: "Brace hard and refuse to twist", tags: ["anti-rotation", "timed"] }),
+    { cue: "Brace hard and refuse to twist", tags: ["anti-rotation", "timed", "per-side"] }),
   E("dead_bug", "Dead Bug", "bodyweight", "core", "core",
     { cue: "Low back flat, slow opposite arm and leg", tags: ["anti-extension", "timed"] }),
   E("side_plank", "Side Plank", "bodyweight", "core", "core",
@@ -294,6 +294,17 @@ export const EXERCISE_LIBRARY = [
 ];
 
 export const byId = (id) => EXERCISE_LIBRARY.find((e) => e.id === id) || null;
+
+// A TIMED HOLD THAT IS DONE ONCE PER SIDE. A side plank is two side planks and a
+// Pallof press is a press against the cable from the left and then the right;
+// one 60 s countdown for either is half the exercise. Unilateral timed work
+// counts, and `per-side` covers the anti-rotation holds, which are not
+// unilateral for loading purposes (a Pallof press is not half the stack) but are
+// still performed facing each way.
+export function holdsPerSide(id) {
+  const e = byId(id);
+  return !!e && e.tags.includes("timed") && (e.unilateral || e.tags.includes("per-side"));
+}
 export const idsInLibrary = () => EXERCISE_LIBRARY.map((e) => e.id);
 
 // Everything trainable with the implements available at a place. `bodyweight` is
