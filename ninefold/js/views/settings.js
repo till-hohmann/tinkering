@@ -1,7 +1,7 @@
 // settings.js — the Profile tab: program summary, backup/vault export, import/
 // restore, and the sound toggle.
 
-import { getActiveProgram, getAllPrograms, getAllSessions, importProgram, restoreBackup,
+import { getActiveProgram, getAllPrograms, getAllSessions, importProgram, restoreBackup, getProgram,
   setLastExport, getLastExport, getSelectionMode, setActiveProgramManual, setAutoProgram,
   getZoneBounds, setZoneBounds, syncedPrefs, getVO2maxLog, addVO2max,
   getBodyweight, setBodyweight, getProteinPerKg, setProteinPerKg,
@@ -670,8 +670,20 @@ export async function renderSettings() {
       } else {
         const program = data.program || data;
         if (!program.id || !program.weeks) throw new Error("Not a valid program file");
-        await importProgram(program, true);
-        status.textContent = `Imported program "${program.name}".`;
+        // A block this device already has is a REVISION, not a new selection.
+        // Importing used to make it active and switch off automatic block
+        // selection, so sending yourself a corrected Block 3 quietly stopped
+        // Block 4 from taking over when its dates arrived. It now updates in
+        // place and keeps the device's own status, like "Update this block"
+        // does for a spreadsheet.
+        const existing = await getProgram(program.id);
+        if (existing) {
+          await saveProgram({ ...program, status: existing.status || program.status });
+          status.textContent = `Updated "${program.name}" in place.`;
+        } else {
+          await importProgram(program, true);
+          status.textContent = `Imported program "${program.name}".`;
+        }
       }
       setTimeout(() => go("#/"), 600);
     } catch (e) { status.textContent = "Import failed: " + e.message; }

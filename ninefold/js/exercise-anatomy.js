@@ -425,6 +425,25 @@ export const EXERCISE_ANATOMY = {
     m("Hamstrings", "primary", "Hamstrings"),
     m("Gastrocnemius", "synergist", "Calves"),
   ],
+  pike_push_up: [
+    m("Anterior deltoid", "primary", "Shoulders"),
+    m("Triceps brachii", "synergist", "Triceps"),
+    m("Lateral deltoid", "synergist", "Shoulders"),
+    m("Serratus anterior", "stabilizer", "Chest"),
+    m("Rectus abdominis", "stabilizer", "Core"),
+  ],
+  nordic_curl: [
+    m("Hamstrings (eccentric)", "primary", "Hamstrings"),
+    m("Gastrocnemius", "synergist", "Calves"),
+    m("Gluteus maximus", "stabilizer", "Glutes"),
+    m("Rectus abdominis", "stabilizer", "Core"),
+  ],
+  slider_leg_curl: [
+    m("Hamstrings", "primary", "Hamstrings"),
+    m("Gluteus maximus", "synergist", "Glutes"),
+    m("Gastrocnemius", "synergist", "Calves"),
+    m("Rectus abdominis", "stabilizer", "Core"),
+  ],
   goblet_curtsy_lunge: [
     m("Gluteus medius", "primary", "Glutes"),
     m("Quadriceps femoris", "synergist", "Quads"),

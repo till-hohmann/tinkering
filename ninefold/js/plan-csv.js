@@ -186,11 +186,16 @@ export function fromCSV(text) {
  * needs an id; "update" keeps the block's identity so its logged sessions, which
  * reference it by id, stay attached to it.
  */
+// A row naming an exercise the block has never had used to register it as a
+// dumbbell lift with no cue, whatever it was. A Nordic curl then asked for a
+// load. The library knows what the movement is, so ask it first.
+import { byId as libraryExercise } from "./exercise-library.js";
+
 export function applyPlanCSV(base, parsed, { mode = "update", id, startDate } = {}) {
   const src = base || {};
   const exercises = { ...(src.exercises || {}) };
   for (const [exId, name] of parsed.exerciseNames || [])
-    exercises[exId] = { ...(exercises[exId] || {}), name, ...(exercises[exId] ? {} : { cue: "", implement: "dumbbell_pair" }) };
+    exercises[exId] = { ...(exercises[exId] || {}), name, ...(exercises[exId] ? {} : newExerciseMeta(exId)) };
 
   const dayTemplates = { ...(src.dayTemplates || {}) };
   // Keep each template's routines and label, but track the exercises the CSV
@@ -220,6 +225,11 @@ export function applyPlanCSV(base, parsed, { mode = "update", id, startDate } = 
       startDate: start ? addDaysISO(start, i * 7) : undefined,
     })),
   };
+}
+
+function newExerciseMeta(exId) {
+  const lib = libraryExercise(exId);
+  return lib ? { cue: lib.cue || "", implement: lib.implement } : { cue: "", implement: "dumbbell_pair" };
 }
 
 function addDaysISO(iso, days) {

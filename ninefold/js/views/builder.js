@@ -31,6 +31,7 @@ import { ADAPTATIONS, byId as adaptationById, analysePriorities, compatibility,
   BLOCK_SHAPES, isCardio, isStrength } from "../builder/adaptations.js";
 import { generateProgram } from "../builder/generate.js";
 import { auditBlock } from "../builder/quality.js";
+import { labelOf } from "../volume.js";
 import { getProfile, patchProfile } from "../profile.js";
 import { defaultEquipmentFor, weightValue, weightToKg, weightLabel, distanceValue, distanceLabel } from "../units.js";
 import { FULL_GYM } from "../equipment.js";
@@ -630,7 +631,7 @@ function stepReview(body) {
     body.append(el("div.card", { style: "margin-top:12px;border-color:var(--amber)" }, [
       el("div.label", { style: "color:var(--amber)", text: "Across your blocks" }),
       el("p.note", { style: "margin-top:8px", text:
-        `${r.history.neglected.join(", ")} ${r.history.neglected.length === 1 ? "has" : "have"} been getting very little across your last ${r.history.blocks} block${r.history.blocks === 1 ? "" : "s"}. `
+        `${r.history.neglected.map(labelOf).join(", ")} ${r.history.neglected.length === 1 ? "has" : "have"} been getting very little across your last ${r.history.blocks} block${r.history.blocks === 1 ? "" : "s"}. `
         + "One block can't cover everything, but a year of them should." }),
     ]));
   }

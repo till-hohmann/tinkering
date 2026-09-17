@@ -34,8 +34,12 @@ const SPLITS = {
   ],
   3: [
     { label: "Full body A", patterns: ["squat", "push_h", "pull_h", "calf", "core"] },
-    { label: "Full body B", patterns: ["hinge", "push_v", "pull_v", "core"] },
-    { label: "Full body C", patterns: ["lunge", "push_h", "pull_h", "arm", "core"] },
+    // B carries a hamstring curl and C a delt slot (v192): a three-day week
+    // otherwise never trained knee flexion, and its side delts sat at a third
+    // of their floor. C gives up its core slot for it; two core slots a week
+    // still clear the core floor.
+    { label: "Full body B", patterns: ["hinge", "push_v", "pull_v", "ham_iso", "core"] },
+    { label: "Full body C", patterns: ["lunge", "push_h", "pull_h", "arm", "delt"] },
   ],
   4: [
     { label: "Lower A", patterns: ["squat", "hinge", "lunge", "knee_iso", "calf", "core"] },
@@ -52,7 +56,9 @@ const SPLITS = {
   // and costs the chest nothing it isn't already getting from two presses.
   5: [
     { label: "Lower A", patterns: ["squat", "hinge", "lunge", "knee_iso", "calf"] },
-    { label: "Upper A", patterns: ["push_h", "pull_h", "push_v", "arm"] },
+    // Upper A gained a delt slot in v192: with one delt slot a week the picker
+    // took rear delts and the side delts got only what pressing gives them.
+    { label: "Upper A", patterns: ["push_h", "pull_h", "push_v", "arm", "delt"] },
     { label: "Lower B", patterns: ["hinge", "lunge", "ham_iso", "calf", "core"] },
     { label: "Upper B", patterns: ["pull_v", "push_h", "pull_h", "delt", "arm"] },
     { label: "Full body", patterns: ["squat", "push_v", "pull_h", "trap", "core"] },

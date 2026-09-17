@@ -194,6 +194,7 @@ const MAP = {
   // New dedicated poses.
   deadlift: "deadlift", front_squat: "frontsquat", dip: "dip",
   leg_press: "legpress", leg_extension: "legext", leg_curl: "legcurl",
+  nordic_curl: "nordic", slider_leg_curl: "bridge", pike_push_up: "pike",   // a slider curl IS a bridge with the heels travelling
   seated_cable_row: "seatedrow", db_shrug: "shrug", barbell_shrug: "shrug",
   farmers_carry: "carry", db_chest_fly: "chestfly", cable_fly: "chestfly",
   preacher_curl: "preacher", skullcrusher: "skullcrusher",
@@ -254,9 +255,9 @@ const THEMES = {
 const KEY_THEME = {
   run: "cardio", bike: "cardio", walk: "cardio",
   squat_bar: "legs", squat_bw: "legs", goblet: "legs", lunge: "legs", split_squat: "legs", calf: "legs",
-  hinge_bar: "posterior", hipthrust: "posterior",
+  hinge_bar: "posterior", hipthrust: "posterior", nordic: "posterior", legcurl: "posterior",
   bench: "chest", incline: "chest",
-  overhead: "shoulders", lateral: "shoulders", rearfly: "shoulders", facepull: "shoulders",
+  overhead: "shoulders", pike: "shoulders", lateral: "shoulders", rearfly: "shoulders", facepull: "shoulders",
   overhead_ext: "arms", pushdown: "arms", curl: "arms",
   row_bent: "back", row_onearm: "back", pulldown: "back",
   pallof: "core", plank: "core",

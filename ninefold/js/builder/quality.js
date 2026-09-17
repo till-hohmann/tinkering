@@ -18,7 +18,7 @@
 // strength block with one cardio day) must stay a warning, not get "fixed" out
 // from under them. Nothing here silently overrules an explicit choice.
 
-import { MUSCLE_MAP, LANDMARKS } from "../volume.js";
+import { MUSCLE_MAP, LANDMARKS, labelOf, movementGaps } from "../volume.js";
 import { byId as exerciseById, PATTERNS } from "../exercise-library.js";
 import { byId as adaptationById, WEEKLY_FLOOR } from "./adaptations.js";
 
@@ -109,12 +109,14 @@ export function auditBlock(program, { adaptation = "hypertrophy" } = {}) {
   const muscles = setsByMuscle(peak);
   const over = [], badlyOver = [], under = [], missing = [];
   for (const m of Object.keys(LANDMARKS)) {
-    const v = round1(muscles[m] || 0), L = LANDMARKS[m];
-    if (v === 0) missing.push(m);
+    const v = round1(muscles[m] || 0), L = LANDMARKS[m], name = labelOf(m);
+    // A group with no floor (front delts: pressing covers them) is never
+    // "untrained" — at zero direct sets it is exactly where it should be.
+    if (v === 0) { if (L.mev > 0) missing.push(name); }
     else if (v > L.mav) {
-      over.push(`${m} ${v} (max ${L.mav})`);
-      if (v > L.mav * (1 + MAV_TOLERANCE)) badlyOver.push(`${m} ${v} (max ${L.mav})`);
-    } else if (v < L.mev) under.push(`${m} ${v} (min ${L.mev})`);
+      over.push(`${name} ${v} (max ${L.mav})`);
+      if (v > L.mav * (1 + MAV_TOLERANCE)) badlyOver.push(`${name} ${v} (max ${L.mav})`);
+    } else if (v < L.mev) under.push(`${name} ${v} (min ${L.mev})`);
   }
   add("volume.over_mav", "error", badlyOver.length === 0,
     badlyOver.length ? `Well above the productive ceiling in peak week: ${badlyOver.join(", ")}` : "No muscle is meaningfully over its ceiling.",
@@ -150,6 +152,8 @@ export function auditBlock(program, { adaptation = "hypertrophy" } = {}) {
   const badAccessory = [];
   for (const w of weeks) for (const d of Object.values(w.days || {})) for (const e of d.exercises || []) {
     if (e.role === "compound" || e.role === "core") continue;
+    // Eccentric work (a Nordic curl) is low-rep by nature, not by mistake.
+    if (((exerciseById(e.exerciseId) || {}).tags || []).includes("eccentric")) continue;
     const r = parseReps(e.repRange);
     if (r && r.hi < ACCESSORY_MIN_TOP) badAccessory.push(`${e.exerciseId} ${e.repRange}`);
   }
@@ -183,8 +187,19 @@ export function auditBlock(program, { adaptation = "hypertrophy" } = {}) {
   // are rows and pulldowns that credit the back at 1.0 and the 14 are spread
   // across chest and shoulders. The claim worth checking is the physiological
   // one (is the back keeping up with the front), so check that.
-  const front = (muscles.Chest || 0) + (muscles.Shoulders || 0) * 0.5;
-  const back = muscles.Back || 0;
+  // Since v192 this reads front delts only. It used to take half of a single
+  // Shoulders bucket, which counted face pulls and reverse flys as PUSHING.
+  // Pulling is each exercise's larger back credit (lats or upper back), so a row
+  // still counts once, not once per group it touches.
+  const front = (muscles.Chest || 0) + (muscles.FrontDelts || 0) * 0.5;
+  let back = 0;
+  for (const d of Object.values((peak && peak.days) || {})) {
+    if (!d || d.type !== "strength") continue;
+    for (const e of d.exercises || []) {
+      const map = MUSCLE_MAP[e.exerciseId] || {};
+      back += (e.prescribedSets || 0) * Math.max(map.Lats || 0, map.UpperBack || 0);
+    }
+  }
   const ratio = back ? front / back : Infinity;
   const patSets = setsByPattern(peak);
   add("balance.push_pull", "warn", back > 0 && ratio <= PUSH_PULL_MAX,
@@ -207,6 +222,22 @@ export function auditBlock(program, { adaptation = "hypertrophy" } = {}) {
     (Math.max(direct.Biceps, direct.Triceps) <= ARM_RATIO_MAX * Math.max(1, Math.min(direct.Biceps, direct.Triceps)));
   add("balance.arms", "warn", armOk,
     `Direct arm work: biceps ${direct.Biceps} sets, triceps ${direct.Triceps}.`, direct);
+
+  // --- 5b. movements a muscle needs, not just sets ---------------------------
+  // Hamstring volume made entirely of hinges reads as a well-dosed muscle and
+  // never trains knee flexion; triceps volume made of pushdowns never loads the
+  // long head overhead. A warning, because a block can have a reason.
+  const peakEntries = [];
+  for (const d of Object.values((peak && peak.days) || {})) {
+    if (!d || d.type !== "strength") continue;
+    for (const e of d.exercises || []) peakEntries.push({ exerciseId: e.exerciseId, sets: e.prescribedSets || 0 });
+  }
+  const moveGaps = movementGaps(peakEntries, muscles);
+  add("coverage.movements", "warn", moveGaps.length === 0,
+    moveGaps.length
+      ? `Missing movements: ${moveGaps.map((g) => `${labelOf(g.muscle)} ${g.label} ${g.sets} sets (want ${g.min}+, ${g.hint})`).join("; ")}`
+      : "Hamstrings get curls and hinges; triceps get overhead work.",
+    { gaps: moveGaps });
 
   // --- 6. variety within a pattern -----------------------------------------
   // Two core slots that are both anti-rotation train one quality twice and

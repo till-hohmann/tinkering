@@ -148,7 +148,7 @@ export const EXERCISE_LIBRARY = [
   E("triceps_pushdown", "Triceps Pushdown", "cable", "arm", "accessory",
     { tags: ["triceps"], cue: "Elbows at the ribs, full lockout" }),
   E("overhead_triceps_ext", "Overhead Triceps Extension", "dumbbell_single", "arm", "accessory",
-    { tags: ["triceps"], cue: "Deep stretch behind the head, elbows narrow" }),
+    { tags: ["triceps", "overhead"], cue: "Deep stretch behind the head, elbows narrow" }),
 
   // ---- core ----
   E("cable_pallof", "Cable Pallof Press", "cable", "core", "core",
@@ -194,7 +194,16 @@ export const EXERCISE_LIBRARY = [
   E("leg_extension", "Leg Extension", "machine", "knee_iso", "accessory",
     { cue: "Squeeze hard at the top, control the way down" }),
   E("leg_curl", "Leg Curl", "machine", "ham_iso", "accessory",
-    { cue: "Heel to glute, no hip lift" }),
+    { cue: "Heel to glute, no hip lift", tags: ["knee-flexion"] }),
+  // Knee flexion without a machine. Before these, a place with no leg curl could
+  // not program a single knee-flexion set, so every hamstring set came from
+  // hinges and the builder had nothing to put in the slot.
+  E("slider_leg_curl", "Slider Leg Curl", "bodyweight", "ham_iso", "accessory",
+    { cue: "Heels on sliders or a towel, hips up, curl in and slide out slowly", tags: ["knee-flexion"] }),
+  // Eccentric by nature: most people manage a handful of controlled lowerings,
+  // so it is exempt from the "isolation work belongs at 8+ reps" rule.
+  E("nordic_curl", "Nordic Curl", "bodyweight", "ham_iso", "accessory",
+    { cue: "Heels anchored, hips locked straight, lower as slowly as you can, catch and push back", tags: ["knee-flexion", "eccentric"] }),
   E("goblet_curtsy_lunge", "Curtsy Lunge", "dumbbell_single", "lunge", "accessory",
     { uni: true, cue: "Step behind and across - glute med does the work" }),
   E("front_rack_lunge", "Front-rack Lunge", "barbell", "lunge", "accessory",
@@ -226,6 +235,10 @@ export const EXERCISE_LIBRARY = [
   // ---- upper: vertical push ----
   E("machine_shoulder_press", "Machine Shoulder Press", "machine", "push_v", "compound",
     { cue: "Ribs down, press without arching" }),
+  // The only vertical press that needs nothing. Without it a bodyweight plan had
+  // no way to reach the side delts at all.
+  E("pike_push_up", "Pike Push-up", "bodyweight", "push_v", "accessory",
+    { cue: "Hips high, lower the head between the hands, elbows at 45 degrees" }),
   E("arnold_press", "Arnold Press", "dumbbell_pair", "push_v", "accessory",
     { cue: "Rotate from palms-in to palms-out as you press" }),
   E("push_press", "Push Press", "barbell", "push_v", "compound",
@@ -277,7 +290,7 @@ export const EXERCISE_LIBRARY = [
   E("db_skullcrusher", "Dumbbell Skullcrusher", "dumbbell_pair", "arm", "accessory",
     { tags: ["triceps"], cue: "Neutral grip, easier on the elbows" }),
   E("cable_overhead_ext", "Cable Overhead Extension", "cable", "arm", "accessory",
-    { tags: ["triceps"], cue: "Deep stretch behind the head" }),
+    { tags: ["triceps", "overhead"], cue: "Deep stretch behind the head" }),
   // ---- core ----
   E("hanging_knee_raise", "Hanging Knee Raise", "bodyweight", "core", "core",
     { tags: ["anti-extension"], cue: "Curl the pelvis up - no swinging" }),
@@ -349,6 +362,13 @@ export function pickForPattern(pattern, pool, { preferUnilateral = false, exclud
     // anti-rotation holds. The penalty has to outweigh every other term, or a
     // barbell curl still beats a triceps pushdown.
     - (qualityOf(e) && quals.has(qualityOf(e)) ? 3 : 0)
+    // Triceps work with the arm overhead trains the long head at length, which
+    // pushdowns do not; without this nudge the first cable in the list won every
+    // triceps slot and no generated block had a single overhead set.
+    + ((e.tags || []).includes("overhead") ? 0.6 : 0)
+    // A lone delt slot goes to the side delts: every row already credits the
+    // rear delts, and nothing but a raise really loads the side.
+    + (qualityOf(e) === "lateral-delt" && !quals.has("lateral-delt") ? 0.3 : 0)
     // Lifts the previous block already used, so consecutive blocks vary.
     // Deliberately small: variety is worth less than picking the right movement,
     // and it must never override the quality rule above.

@@ -13,6 +13,15 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 192, notes: [
+    "Shoulders and back are split. Progress now shows front, side and rear delts, and lats and upper back, each against its own range. The single shoulder number used to read high mostly from pressing while the side delts got very little; now you can see it. Front delts have no minimum, because pressing already covers them.",
+    "Hamstrings and triceps are checked for the right movements, not just the number of sets. A week with only hinges gets a note that knee flexion is missing, and a week without overhead triceps work gets one too.",
+    "New exercises: Nordic curl and slider leg curl, for hamstrings without a machine, and pike push-up, a shoulder press that needs nothing.",
+    "New blocks cover these by default. Three-day plans get a hamstring curl and a delt slot, five-day plans a second delt slot, a single delt slot goes to the side delts, and triceps work prefers an overhead extension.",
+    "Fixed: the push/pull balance check counted face pulls and reverse flys as pushing.",
+    "Importing a block file you already have now updates that block in place. It used to make it the active block and switch off automatic block selection, which would have stopped the next block from starting on its dates.",
+    "Fixed: an exercise added by spreadsheet import was always treated as a dumbbell lift. It now takes its equipment and cue from the exercise library.",
+  ] },
   { v: 191, notes: [
     "Training somewhere with lighter dumbbells no longer quietly shrinks the workout. A dumbbell lift planned above the heaviest dumbbell at the place you are standing now gets an honest alternative: the barbell version of the movement at a matching load, or the same dumbbells for enough extra reps to match the planned effort. Small gaps default to more reps, big gaps to the barbell, and you can switch before you start. Either way the result is converted back onto the planned lift.",
     "Fixed: a session done at a lighter rack became the lift's history, so the next session back at the heavy rack progressed from the lighter weight. The app now progresses from the last session that was not held down by the dumbbells available.",

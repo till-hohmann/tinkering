@@ -12,7 +12,8 @@ import { el, mount, go, countUp, locationBadge } from "../ui.js";
 import { illustration } from "../illustrations.js";
 import { barChart, sparkline, dualAreaChart } from "../components/charts.js";
 import { e1rm, detectStall, loadCeiling } from "../progression.js";
-import { MUSCLES, LANDMARKS, setsFromResults, plannedSetsByMuscle, landmarkStatus } from "../volume.js";
+import { MUSCLES, LANDMARKS, setsFromResults, plannedSetsByMuscle, landmarkStatus, labelOf, partsOf,
+  plannedMovementEntries, movementGaps } from "../volume.js";
 import { muscleBody } from "../anatomy.js";
 import { isRunModality, CARDIO_MODALITIES } from "../cardio-intel.js";
 import { burnByDate, loadSeries, provider, has, CAP } from "../health/index.js";
@@ -547,7 +548,11 @@ export async function renderProgress() {
     const curWeek = M.weekNumberFor(program, M.todayISO());
     const planned = plannedSetsByMuscle(program, curWeek);
     const loggedSets = setsFromResults(strength.filter((s) => s.programId === program.id && s.weekNumber === curWeek).flatMap((s) => s.strengthResult || []));
-    const rows = MUSCLES.filter((m) => (planned[m] || 0) > 0 || (loggedSets[m] || 0) > 0).map((m) => volRow(m, loggedSets[m] || 0, planned[m] || 0));
+    // Movement gaps are judged on the PLAN, like the chips: a hamstring week of
+    // hinges only reads "productive" on volume and still misses knee flexion.
+    const gaps = movementGaps(plannedMovementEntries(program, curWeek), planned);
+    const rows = MUSCLES.filter((m) => (planned[m] || 0) > 0 || (loggedSets[m] || 0) > 0)
+      .map((m) => volRow(m, loggedSets[m] || 0, planned[m] || 0, gaps.filter((g) => g.muscle === m)));
     if (rows.length) {
       children.push(anchor("sec-volume", "Volume"));
       // 1. weekly sets / muscle
@@ -574,7 +579,14 @@ export async function renderProgress() {
       // 2. muscle map — lit by the sets you've LOGGED this week (the bars card above
       //    covers the planned dose; the map answers "what have I actually trained").
       const VC = { under: "#5fa8ff", in: "#2fe6a6", over: "#fb7185" };
-      const colorOf = (m) => { const lv = loggedSets[m] || 0; if (!lv && !(planned[m] > 0)) return null; return VC[landmarkStatus(m, lv)] || null; };
+      // A region is lit from the groups inside it on that view: blue if any of
+      // them is below its floor, red if any is over its ceiling, green otherwise.
+      const colorOf = (region, side) => {
+        const parts = partsOf(region, side).filter((m) => (loggedSets[m] || 0) > 0 || (planned[m] || 0) > 0);
+        if (!parts.length) return null;
+        const st = parts.map((m) => landmarkStatus(m, loggedSets[m] || 0));
+        return VC[st.includes("under") ? "under" : st.includes("over") ? "over" : "in"] || null;
+      };
       const leg = (c, lbl) => el("span", { style: "display:inline-flex;align-items:center;gap:6px;font-size:.72rem;color:var(--text-dim)" }, [
         el("span", { style: `width:11px;height:11px;border-radius:3px;background:${c}` }), el("span", { text: lbl })]);
       children.push(el("div.card-head", { style: "margin-top:6px" }, [
@@ -909,7 +921,7 @@ async function yogaGapNote(program, curWeek, loggedSets) {
   if (substituting.length) {
     lines.push(el("p.note", { text: "Counted for adherence. It contributes no hard sets, so the bars above are the real dose — a vigorous flow is a session, not an equivalent one." }));
     if (short.length) {
-      lines.push(el("p.note.bad", { text: `Below the growth floor this week: ${short.join(", ")}.` }));
+      lines.push(el("p.note.bad", { text: `Below the growth floor this week: ${short.map(labelOf).join(", ")}.` }));
     }
   } else {
     lines.push(el("p.note", { text: "None of them stood in for a lifting day, so the week's hard sets are unaffected." }));
@@ -924,46 +936,7 @@ function addDaysLocal(iso, n) {
   return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
 }
 
-// Front + back body silhouette, each muscle region tinted by its weekly-volume
-// status (Fitbod-style — the body is its own legend). statusOf(muscle) →
-// 'under' | 'in' | 'over' | 'none'. Reuses the volume.js landmark judgment.
-function bodyHeatmap(statusOf) {
-  const C = { under: "#2b6f86", in: "var(--accent)", over: "var(--amber)", none: "#2b313b" };
-  const f = (m) => C[statusOf(m)] || C.none;
-  const svg = `<svg viewBox="0 0 240 222" width="100%" style="max-width:330px;margin:0 auto;display:block" xmlns="http://www.w3.org/2000/svg">
-    <g stroke="#0a0b0e" stroke-width="1.2">
-      <circle cx="60" cy="20" r="11" fill="#2b313b"/>
-      <ellipse cx="40" cy="44" rx="11" ry="8" fill="${f("Shoulders")}"/><ellipse cx="80" cy="44" rx="11" ry="8" fill="${f("Shoulders")}"/>
-      <rect x="46" y="48" width="13" height="16" rx="5" fill="${f("Chest")}"/><rect x="61" y="48" width="13" height="16" rx="5" fill="${f("Chest")}"/>
-      <ellipse cx="31" cy="62" rx="6" ry="13" fill="${f("Biceps")}"/><ellipse cx="89" cy="62" rx="6" ry="13" fill="${f("Biceps")}"/>
-      <rect x="50" y="66" width="20" height="24" rx="5" fill="${f("Core")}"/>
-      <ellipse cx="52" cy="118" rx="9" ry="24" fill="${f("Quads")}"/><ellipse cx="68" cy="118" rx="9" ry="24" fill="${f("Quads")}"/>
-      <ellipse cx="52" cy="166" rx="7" ry="18" fill="${f("Calves")}"/><ellipse cx="68" cy="166" rx="7" ry="18" fill="${f("Calves")}"/>
-    </g>
-    <text x="60" y="214" fill="#8b93a1" font-size="9" text-anchor="middle" font-weight="700">FRONT</text>
-    <g stroke="#0a0b0e" stroke-width="1.2">
-      <circle cx="180" cy="20" r="11" fill="#2b313b"/>
-      <ellipse cx="160" cy="44" rx="11" ry="8" fill="${f("Shoulders")}"/><ellipse cx="200" cy="44" rx="11" ry="8" fill="${f("Shoulders")}"/>
-      <path d="M168 48 h24 a6 6 0 0 1 6 6 l-3 28 a30 30 0 0 1 -30 0 l-3 -28 a6 6 0 0 1 6 -6 z" fill="${f("Back")}"/>
-      <ellipse cx="151" cy="62" rx="6" ry="13" fill="${f("Triceps")}"/><ellipse cx="209" cy="62" rx="6" ry="13" fill="${f("Triceps")}"/>
-      <ellipse cx="172" cy="92" rx="9" ry="9" fill="${f("Glutes")}"/><ellipse cx="188" cy="92" rx="9" ry="9" fill="${f("Glutes")}"/>
-      <ellipse cx="172" cy="124" rx="9" ry="22" fill="${f("Hamstrings")}"/><ellipse cx="188" cy="124" rx="9" ry="22" fill="${f("Hamstrings")}"/>
-      <ellipse cx="172" cy="168" rx="7" ry="18" fill="${f("Calves")}"/><ellipse cx="188" cy="168" rx="7" ry="18" fill="${f("Calves")}"/>
-    </g>
-    <text x="180" y="214" fill="#8b93a1" font-size="9" text-anchor="middle" font-weight="700">BACK</text>
-  </svg>`;
-  const leg = (c, label) => el("span", { style: "display:inline-flex;align-items:center;gap:6px;font-size:.72rem;color:var(--text-dim)" }, [
-    el("span", { style: `width:11px;height:11px;border-radius:3px;background:${c}` }), el("span", { text: label }),
-  ]);
-  return el("div", { style: "display:flex;flex-direction:column;gap:10px" }, [
-    el("div", { html: svg }),
-    el("div.row", { style: "gap:16px;justify-content:center;flex-wrap:wrap" }, [
-      leg("#2b6f86", "Under MEV"), leg("var(--accent)", "Productive"), leg("var(--amber)", "Over MAV"),
-    ]),
-  ]);
-}
-
-function volRow(muscle, logged, planned) {
+function volRow(muscle, logged, planned, gaps = []) {
   const L = LANDMARKS[muscle] || { mev: 0, mav: 0 };
   const max = Math.max(L.mav * 1.35, planned * 1.1, logged * 1.1, 1);
   const pct = (v) => Math.max(0, Math.min(100, (v / max) * 100));
@@ -975,7 +948,7 @@ function volRow(muscle, logged, planned) {
   const chipText = st === "under" ? "light" : st === "over" ? "high" : "productive";
   return el("div.volrow", {}, [
     el("div.volhead", {}, [
-      el("span.volname", { text: muscle }), el("span.spacer"),
+      el("span.volname", { text: labelOf(muscle) }), el("span.spacer"),
       el("span.volnum", { text: `${fmt(logged)} / ${fmt(planned)}` }),
       el("span.volchip." + st, { text: chipText }),
     ]),
@@ -984,5 +957,7 @@ function volRow(muscle, logged, planned) {
       el("div.volfill", { style: `width:${pct(logged)}%` }),
       el("div.voltick", { style: `left:${pct(planned)}%` }),
     ]),
+    ...gaps.map((g) => el("div.note", { style: "margin-top:4px;color:var(--amber)",
+      text: g.sets ? `${g.sets} sets of ${g.label} planned this week, below ${g.min}.` : `No ${g.label} planned. Add ${g.hint}.` })),
   ]);
 }

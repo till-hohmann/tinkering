@@ -25,7 +25,9 @@ import { toCSV, fromCSV, applyPlanCSV, diffPlans } from "../js/plan-csv.js";
 import { BUILD_CONFIG, hasBackup, hasWhoop } from "../js/config.js";
 import { EXERCISE_LIBRARY, checkLibrary, availableAt, pickForPattern, qualityOf } from "../js/exercise-library.js";
 import { FULL_GYM, EXERCISE_NEEDS, stationsKnown, canDoHere, SURVEYED, IMPLEMENTS, STATIONS, PRESETS } from "../js/equipment.js";
-import { MUSCLE_MAP } from "../js/volume.js";
+import { MUSCLE_MAP, MUSCLES, LANDMARKS, MUSCLE_LABEL, REGION_PARTS, partsOf, movementGaps,
+  MOVEMENT_COVERAGE } from "../js/volume.js";
+import { MUSCLE_GROUPS as BODY_REGIONS } from "../js/anatomy.js";
 import { EXERCISE_ANATOMY } from "../js/exercise-anatomy.js";
 import { hasIllustration } from "../js/illustrations.js";
 import { compatibility, interference, analysePriorities, blockShape, isStrength } from "../js/builder/adaptations.js";
@@ -1291,7 +1293,10 @@ group("generator — produces a runnable program", () => {
   it("warns rather than silently producing a hollow plan", () => {
     const r = generateProgram({ ...base, priorities: ["hypertrophy"], daysPerWeek: 3, places: [{ name: "Hotel", implements: [] }] });
     assert.ok(r.warnings.length, "bodyweight-only should warn about missing patterns");
-    assert.ok(r.warnings.some((w) => /push/i.test(w)));
+    // Was /push/ until v192 added the pike push-up, the first vertical press a
+    // bodyweight place can do. Arm isolation is still impossible with nothing.
+    assert.ok(r.warnings.some((w) => /arm isolation/i.test(w)), r.warnings.join(" | "));
+    assert.ok(!r.warnings.some((w) => /vertical push/i.test(w)), "a pike push-up is a vertical press");
   });
   it("flags conflicting priorities", () => {
     const r = generateProgram({ ...base, priorities: ["speed", "long_endurance"], daysPerWeek: 4 });
@@ -3186,6 +3191,127 @@ group("DEXA — a reminder that is shown once", () => {
 
   it("no scans, no schedule", () => {
     assert.equal(dexaSchedule({ log: [] }, "2026-09-17"), null);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// v192 — delt heads, lats vs upper back, and the movements a muscle needs
+// ---------------------------------------------------------------------------
+group("volume — the shoulder is three muscles and the back is two", () => {
+  it("no exercise still credits the old single Shoulders or Back group", () => {
+    const stale = Object.entries(MUSCLE_MAP).filter(([, m]) => m.Shoulders != null || m.Back != null).map(([id]) => id);
+    assert.deepEqual(stale, []);
+  });
+  it("every credited group is a real group with landmarks and a label", () => {
+    for (const [id, map] of Object.entries(MUSCLE_MAP)) for (const g of Object.keys(map)) {
+      assert.ok(MUSCLES.includes(g), `${id} credits unknown group ${g}`);
+    }
+    for (const g of MUSCLES) { assert.ok(LANDMARKS[g], `${g} has landmarks`); assert.ok(MUSCLE_LABEL[g], `${g} has a label`); }
+  });
+  it("every group lights some region of the body map", () => {
+    const lit = new Set();
+    for (const r of BODY_REGIONS) for (const side of ["front", "back"]) for (const g of partsOf(r, side)) lit.add(g);
+    for (const g of MUSCLES) assert.ok(lit.has(g), `${g} is on no body-map region`);
+    for (const r of Object.keys(REGION_PARTS)) assert.ok(BODY_REGIONS.includes(r), `${r} is a body-map region`);
+  });
+  it("a lateral raise is side delts, a face pull is rear delts, an overhead press is mostly front", () => {
+    assert.equal(MUSCLE_MAP.db_lateral_raise.SideDelts, 1);
+    assert.equal(MUSCLE_MAP.face_pull.RearDelts, 1);
+    assert.ok(MUSCLE_MAP.ohp_barbell.FrontDelts > MUSCLE_MAP.ohp_barbell.SideDelts);
+    assert.ok(MUSCLE_MAP.lat_pulldown.Lats > (MUSCLE_MAP.lat_pulldown.UpperBack || 0));
+    assert.ok(MUSCLE_MAP.bent_over_row.UpperBack > (MUSCLE_MAP.bent_over_row.Lats || 0));
+  });
+  it("front delts have no floor, so a plan without direct front-delt work is not a gap", () => {
+    assert.equal(LANDMARKS.FrontDelts.mev, 0);
+    assert.ok(LANDMARKS.SideDelts.mev > 0 && LANDMARKS.RearDelts.mev > 0);
+  });
+});
+
+group("volume — hamstrings need a curl, triceps need overhead work", () => {
+  const trained = { Hamstrings: 9, Triceps: 6 };
+  it("hinges alone leave knee flexion uncovered", () => {
+    const gaps = movementGaps([{ exerciseId: "rdl_barbell", sets: 5 }, { exerciseId: "db_rdl", sets: 4 }], trained);
+    assert.ok(gaps.some((g) => g.muscle === "Hamstrings" && g.id === "knee_flexion"), JSON.stringify(gaps));
+    assert.ok(!gaps.some((g) => g.id === "hip_extension"));
+  });
+  it("three sets of Nordic curls close it", () => {
+    const gaps = movementGaps([{ exerciseId: "rdl_barbell", sets: 5 }, { exerciseId: "nordic_curl", sets: 3 }], trained);
+    assert.ok(!gaps.some((g) => g.muscle === "Hamstrings"), JSON.stringify(gaps));
+  });
+  it("pushdowns alone leave the long head uncovered; an overhead extension closes it", () => {
+    assert.ok(movementGaps([{ exerciseId: "triceps_pushdown", sets: 6 }], trained).some((g) => g.id === "overhead"));
+    assert.ok(!movementGaps([{ exerciseId: "overhead_triceps_ext", sets: 3 }], trained).some((g) => g.id === "overhead"));
+  });
+  it("a muscle nobody trains is the landmark check's problem, not this one's", () => {
+    assert.deepEqual(movementGaps([], {}), []);
+  });
+  it("every listed exercise exists and actually credits the muscle", () => {
+    for (const [muscle, moves] of Object.entries(MOVEMENT_COVERAGE)) for (const mv of moves) for (const id of mv.exercises) {
+      assert.ok(libById(id), `${id} is in the library`);
+      assert.ok((MUSCLE_MAP[id] || {})[muscle] >= 0.5, `${id} credits ${muscle}`);
+    }
+  });
+});
+
+group("builder — knee flexion, overhead triceps and the delt heads", () => {
+  const kit = (kitList) => ({ name: "Gym", implements: kitList, barWeightKg: 20, ezBarWeightKg: 7.5,
+    barbellPlatesKg: [25, 20, 15, 10, 5, 2.5, 1.25], ezBarPlatesKg: [10, 5, 2.5, 1.25],
+    cable: { minKg: 2.5, maxKg: 120, stepKg: 2.5 }, dumbbells: { minKg: 2.5, maxKg: 50, stepKg: 2.5 } });
+  const gen = (kitList, days) => {
+    const r = generateProgram({ name: "T", startDate: "2026-08-10", lengthWeeks: 6, priorities: ["hypertrophy"],
+      mandatoryDays: days + 1, optionalDays: 0, cardioPerWeek: 1, places: [kit(kitList)] });
+    return r.program || r;
+  };
+  const ids = (p) => new Set(Object.keys(p.exercises));
+
+  it("three to six lifting days in a gym cover every needed movement", () => {
+    for (const days of [3, 4, 5, 6]) {
+      const res = auditBlock(gen([...FULL_GYM, SURVEYED], days), { adaptation: "hypertrophy" });
+      const c = res.checks.find((x) => x.id === "coverage.movements");
+      assert.ok(c.ok, `${days} days: ${c.message}`);
+    }
+  });
+  it("with no leg-curl machine the builder reaches for a curl that needs none", () => {
+    const p = gen(["bodyweight", "dumbbell_pair", "dumbbell_single", "barbell", "bench", "rack", SURVEYED], 4);
+    const s = ids(p);
+    assert.ok(s.has("slider_leg_curl") || s.has("nordic_curl"), [...s].join(", "));
+    assert.ok(!s.has("leg_curl"));
+  });
+  it("a lone delt slot goes to the side delts", () => {
+    const p = gen([...FULL_GYM, SURVEYED], 3);
+    const delts = Object.keys(p.exercises).filter((id) => (libById(id) || {}).pattern === "delt");
+    assert.ok(delts.some((id) => (MUSCLE_MAP[id] || {}).SideDelts >= 1), delts.join(", "));
+  });
+  it("a Nordic curl at four to six reps is not an isolation-rep error", () => {
+    const p = gen([...FULL_GYM, SURVEYED], 4);
+    for (const w of p.weeks) for (const d of Object.values(w.days)) for (const e of d.exercises || [])
+      if (e.exerciseId === "leg_curl") { e.exerciseId = "nordic_curl"; e.repRange = "4-6"; }
+    const c = auditBlock(p, { adaptation: "hypertrophy" }).checks.find((x) => x.id === "reps.accessory_too_heavy");
+    assert.ok(c.ok, c.message);
+  });
+  it("face pulls and reverse flys are pulling, not pushing", () => {
+    const week = (exs) => ({ program: { dayTemplates: { Mon: { type: "strength" } }, weeks: [{ weekNumber: 1, phaseName: "Build",
+      days: { Mon: { type: "strength", exercises: exs.map(([exerciseId, prescribedSets]) => ({ exerciseId, prescribedSets, repRange: "10-12", role: "accessory" })) } } }] } });
+    const ratio = (exs) => auditBlock(week(exs).program).checks.find((x) => x.id === "balance.push_pull").detail.ratio;
+    assert.ok(ratio([["bench_press", 6], ["bent_over_row", 6], ["face_pull", 6]]) < ratio([["bench_press", 6], ["bent_over_row", 6]]),
+      "adding face pulls must move the balance toward pulling");
+  });
+});
+
+
+group("plan CSV — a new exercise is the exercise the library knows", () => {
+  it("a Nordic curl added by spreadsheet is bodyweight, not a dumbbell lift", () => {
+    const base = { id: "b", name: "B", startDate: "2026-09-14", exercises: { rdl_barbell: { name: "RDL", cue: "", implement: "barbell" } },
+      dayTemplates: { Tue: { weekday: "Tue", type: "strength", exercises: [{ exerciseId: "rdl_barbell", role: "compound", restSeconds: 120 }] } },
+      weeks: [{ weekNumber: 1, days: { Tue: { weekday: "Tue", type: "strength", exercises: [
+        { exerciseId: "rdl_barbell", role: "compound", prescribedSets: 4, repRange: "6", restSeconds: 120 }] } } }] };
+    const revised = JSON.parse(JSON.stringify(base));
+    revised.exercises.nordic_curl = { name: "Nordic Curl", cue: "x", implement: "bodyweight" };
+    revised.weeks[0].days.Tue.exercises.push({ exerciseId: "nordic_curl", role: "accessory", prescribedSets: 3, repRange: "4-6", restSeconds: 90 });
+    const next = applyPlanCSV(base, fromCSV(toCSV(revised)), { mode: "update" });
+    assert.equal(next.exercises.nordic_curl.implement, "bodyweight");
+    assert.ok(next.exercises.nordic_curl.cue.length > 0);
   });
 });
 

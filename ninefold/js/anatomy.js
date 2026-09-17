@@ -128,7 +128,9 @@ function viewSvg(side, colorOf, glow, corners) {
   let p = "";
   for (const pts of base) p += poly(pts, BASE_DIM, "");
   for (const m in groups) {
-    const col = colorOf(m);
+    // The view is passed so a caller can light the shoulder from front + side
+    // delts on the front body and rear + side delts on the back (volume.js partsOf).
+    const col = colorOf(m, side);
     const fill = col || BASE_FILL;
     const extra = col && glow ? ` filter="url(#${fid})"` : "";
     for (const pts of groups[m]) p += poly(pts, fill, extra);
@@ -144,7 +146,8 @@ function viewSvg(side, colorOf, glow, corners) {
     `</defs>${p}${label}</svg>`;
 }
 
-// colorOf(appMuscle) -> css colour string (lit) or null/undefined (dim base).
+// colorOf(region, side) -> css colour string (lit) or null/undefined (dim base).
+// `region` is a body-map region (Shoulders, Back, …), `side` "front" | "back".
 // `corners` swaps the bottom FRONT/BACK caption for big F/B corner letters (for
 // small renders where the caption is too tiny to read).
 export function muscleBody(colorOf, { glow = true, corners = false } = {}) {

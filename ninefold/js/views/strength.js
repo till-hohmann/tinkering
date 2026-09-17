@@ -19,7 +19,7 @@ import { celebrate } from "../components/confetti.js";
 import { recommend, detectStall, roundLoad, isDeloadWeek, e1rm, warmupPlan, replanSets, loadCeiling, rackAt } from "../progression.js";
 import { availableAt, holdsPerSide } from "../exercise-library.js";
 import { alternativesFor, metaFor, seedSubLoad, SUB_EXERCISES, implementAvailable, progressionSource } from "../substitution.js";
-import { MUSCLE_MAP } from "../volume.js";
+import { MUSCLE_MAP, partsOf } from "../volume.js";
 
 import { muscleBody } from "../anatomy.js";
 import * as M from "../model.js";
@@ -56,7 +56,11 @@ function showDemo(url, name) {
 function muscleTargets(exId, compact = false) {
   const map = MUSCLE_MAP[exId] || {};
   if (!Object.keys(map).length) return null;
-  const colorOf = (m) => { const w = map[m]; return w ? (w >= 1 ? "#fb7185" : "#fbbf24") : null; };
+  // A region is as hot as the hardest-working group inside it on that view.
+  const colorOf = (m, side) => {
+    const w = Math.max(0, ...partsOf(m, side).map((k) => map[k] || 0));
+    return w ? (w >= 1 ? "#fb7185" : "#fbbf24") : null;
+  };
   if (compact) return el("div.ex-targets.compact", {}, [
     el("div.label", { style: "text-align:center;margin-bottom:5px", text: "Muscles" }),
     muscleBody(colorOf, { corners: true }),

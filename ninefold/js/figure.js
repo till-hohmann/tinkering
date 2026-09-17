@@ -453,6 +453,34 @@ export const POSES = {
       `<path d="M140 104 L152 110" stroke="${C.cap}" stroke-width="8" stroke-linecap="round"/>`],
   },
 
+  // Pike push-up: hips high in an inverted V, head lowering between the hands.
+  pike: {
+    ground: G, shadowX: 100, shadowR: 62,
+    head: { x: 142, y: 150, r: 10.5 },
+    torso: { sh: pt(132, 130), hip: pt(100, 84) },
+    legs: [leg(pt(100, 84), pt(78, 128), pt(56, 168), pt(46, 176), pt(64, 176))],
+    farLegs: [leg(pt(96, 86), pt(74, 130), pt(52, 170), pt(42, 178))],
+    arms: [{ sh: pt(132, 128), elbow: pt(150, 150), hand: pt(152, 174) }],
+    farArms: [{ sh: pt(128, 130), elbow: pt(144, 152), hand: pt(146, 176) }],
+    m: { delts: "p", triceps: "s", core: "c" },
+  },
+
+  // Nordic curl: kneeling on a pad, heels anchored under a bar, knee-to-shoulder
+  // one straight line lowering forward; hands ready to catch.
+  nordic: {
+    ground: G, shadowX: 96, shadowR: 62,
+    head: { x: 150, y: 92, r: 10.5 },
+    torso: { sh: pt(138, 106), hip: pt(100, 140) },
+    legs: [leg(pt(100, 140), pt(72, 168), pt(34, 170), pt(24, 176), pt(40, 176))],
+    farLegs: [leg(pt(96, 142), pt(68, 170), pt(30, 172), pt(20, 178))],
+    arms: [{ sh: pt(138, 106), elbow: pt(150, 128), hand: pt(164, 146) }],
+    m: { hams: "p", glutes: "s", calves: "s", core: "c" },
+    gearBack: [benchPad(pt(56, 174), pt(88, 174)),
+      `<circle cx="30" cy="160" r="6" fill="${C.gearHub}"/>`,
+      `<path d="M12 160 L48 160" stroke="${C.gearLine}" stroke-width="4" stroke-linecap="round"/>`],
+    gearFront: [`<path d="M150 70 q12 10 14 26 m-6 -5 l6 5 l5 -6" stroke="#b89dff" stroke-width="2.4" fill="none" stroke-dasharray="3 3" opacity=".7"/>`],
+  },
+
   // Seated cable row: upright torso, elbows driven back to the ribs.
   seatedrow: {
     ground: G, shadowX: 100, shadowR: 50,
