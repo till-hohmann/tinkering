@@ -321,6 +321,41 @@ export function arrangeWithSupersets(exercises, daySupersets, { allow = true } =
 }
 
 /**
+ * WHO STARTS THE NEXT ROUND of a superset, and whether there is one.
+ *
+ * ⚠ WITHOUT THIS THE CYCLE ONLY RAN HALFWAY. `nextInGroup` answers "who still
+ * owes THIS round", so the last member of a pair got -1 and the session simply
+ * carried on where it stood: squat set 1, hip thrust set 1, then hip thrust set
+ * 2 — the alternation collapsed after one hand-over and the rest came in the
+ * wrong place. A round that is complete has to hand back to the FIRST member
+ * still owing the next one.
+ *
+ * Returns that member's index, or -1 when the group has no round left (every
+ * member has done all its prescribed sets).
+ */
+export function leadForRound(exercises, supersetId, round, setsDone) {
+  if (supersetId == null) return -1;
+  const members = exercises
+    .map((e, i) => ({ e, i }))
+    .filter((m) => m.e.supersetId === supersetId)
+    .sort((a, b) => (a.e.supersetIndex || 0) - (b.e.supersetIndex || 0));
+  for (const m of members) {
+    if ((m.e.prescribedSets || 0) >= round && setsDone(m.i) < round) return m.i;
+  }
+  return -1;
+}
+
+/**
+ * The rest a whole superset earns: the longest of its members'. The pair is one
+ * unit of work, and the heavy half is what decides how long recovery takes.
+ */
+export function groupRest(exercises, supersetId, fallback = 0) {
+  if (supersetId == null) return fallback;
+  const rests = exercises.filter((e) => e.supersetId === supersetId).map((e) => e.restSeconds || 0);
+  return rests.length ? Math.max(...rests) : fallback;
+}
+
+/**
  * WHO IS NEXT, mid-superset.
  *
  * After finishing set `round` of the exercise at `exIndex`, this returns the

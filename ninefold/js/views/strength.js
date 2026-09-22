@@ -5,7 +5,7 @@
 
 import { el, clear, haptic, go, registerCleanup } from "../ui.js";
 import { arrangeWithSupersets, supersetsAllowed,
-  groupLabel, nextInGroup } from "../supersets.js";
+  groupLabel, nextInGroup, leadForRound, groupRest } from "../supersets.js";
 import { interruptSheet } from "../components/interrupt.js";
 import { illustration } from "../illustrations.js";
 import { photoURL, loadPhotoManifest } from "../exercise-photo.js";
@@ -314,6 +314,13 @@ export async function runStrength(container, program, day, weekday, iso, locatio
   const flags = exercises.map(() => ({ logged: false, visited: false }));
   exercises.forEach((e, i) => { if (results.some((r) => r.exerciseId === e.exerciseId)) flags[i] = { logged: true, visited: true }; });
   let commitCurrent = () => {};   // set by renderExercise — flushes the current lift's done sets
+  // Sets already committed for a slot. Counted from `results` rather than from
+  // any screen: a superset partner's screen does not exist while you stand in
+  // this one. Keyed by slot, because the same lift can appear twice in a day.
+  const setsLoggedAt = (j) => {
+    const r = results.find((x) => (x._i != null ? x._i === j : x.exerciseId === exercises[j].exerciseId));
+    return r ? r.sets.length : 0;
+  };
 
   // WHAT YOU DID DIFFERENTLY TODAY, recorded as it happens rather than diffed
   // afterwards. A diff against the template can see that a session has four sets
@@ -568,6 +575,10 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     }
     return { timed, sets };
   }
+
+  // Rest earned by a superset round, started on the NEXT member's screen —
+  // renderExercise clears the timer as it opens, so it cannot be started before.
+  let pendingRest = 0;
 
   function renderExercise() {
     clearRest();
@@ -864,12 +875,26 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       // That ordering IS the superset. Resting between the two halves would make
       // it two exercises done in a row, which is what the app did for every
       // superset any block ever declared.
-      const partner = supersetPartnerFor(state.sets.filter((x) => x.done).length);
+      const doneNow = state.sets.filter((x) => x.done).length;
+      const partner = supersetPartnerFor(doneNow);
       if (partner >= 0) {
         commit();
         exIndex = partner;
+        toast(`${metaFor(program, exercises[partner].exerciseId).name} now — rest after the pair.`);
         renderExercise();
         return;
+      }
+      // Round complete: rest, then hand BACK to the member that starts the next
+      // one. Staying put is what broke the alternation after the first pair.
+      if (rx.supersetId != null) {
+        commit();
+        const lead = leadForRound(exercises, rx.supersetId, doneNow + 1, setsLoggedAt);
+        if (lead >= 0 && lead !== exIndex) {
+          pendingRest = groupRest(exercises, rx.supersetId, exercises[exIndex].restSeconds);
+          exIndex = lead;
+          renderExercise();
+          return;
+        }
       }
       const next = state.sets.findIndex((x) => !x.done);
       if (next >= 0) {
@@ -1043,6 +1068,9 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     drawSets();
     updateLogBtn();
     syncRir();
+    // A superset's rest belongs to the pair, so it runs on the screen you land
+    // on rather than the one you just left.
+    if (pendingRest) { startRest(pendingRest); pendingRest = 0; }
 
     // flush the current lift's DONE sets into results (idempotent per lift in the
     // editable flow, so jumping back and re-logging replaces rather than duplicates).
@@ -1056,7 +1084,13 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       flags[exIndex].visited = true;
       if (doneSets.length) {
         flags[exIndex].logged = true;
-        if (canEdit) for (let k = results.length - 1; k >= 0; k--) if (results[k].exerciseId === rx.exerciseId) results.splice(k, 1);
+        // Replace this SLOT's previous entry. Keyed by slot, not by id: a
+        // superset now commits on every hand-over, and keying by exercise id
+        // alone would have duplicated a lift that appears twice in a day.
+        for (let k = results.length - 1; k >= 0; k--) {
+          const r = results[k];
+          if (r._i === exIndex || (canEdit && r._i == null && r.exerciseId === rx.exerciseId)) results.splice(k, 1);
+        }
         results.push({ exerciseId: rx.exerciseId, implement, sets: doneSets, _i: exIndex,
           ...(rx._planIdx != null ? { _plan: rx._planIdx } : {}) });
       }
@@ -1072,10 +1106,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
      * partner's screen does not exist while you are standing in this one — its
      * sets live in the committed results and nowhere else.
      */
-    const supersetPartnerFor = (round) => nextInGroup(exercises, exIndex, round, (j) => {
-      const r = results.find((x) => x.exerciseId === exercises[j].exerciseId);
-      return r ? r.sets.length : 0;
-    });
+    const supersetPartnerFor = (round) => nextInGroup(exercises, exIndex, round, setsLoggedAt);
 
     function finishExercise() {
       clearRest();

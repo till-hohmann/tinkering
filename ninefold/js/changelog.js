@@ -13,6 +13,10 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 193, notes: [
+    "Fixed: a superset stopped alternating after the first hand-over. You logged a set, the app moved to the partner with no rest — correct so far — and then stayed there for its second set instead of resting and handing back. From the first pair on, the order was wrong and the rest came in the wrong place. A pair now runs properly: one set each, then one rest, then back to the first lift. The rest is the longer of the pair's two.",
+    "The hand-over says what it is: moving to the partner now names it and reminds you the rest comes after the pair.",
+  ] },
   { v: 192, notes: [
     "Shoulders and back are split. Progress now shows front, side and rear delts, and lats and upper back, each against its own range. The single shoulder number used to read high mostly from pressing while the side delts got very little; now you can see it. Front delts have no minimum, because pressing already covers them.",
     "Hamstrings and triceps are checked for the right movements, not just the number of sets. A week with only hinges gets a note that knee flexion is missing, and a week without overhead triceps work gets one too.",

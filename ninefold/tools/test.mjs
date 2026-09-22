@@ -65,7 +65,7 @@ import { isStrengthHold, applyHoldResults, repairHoldRatchet, HOLD_CAP } from ".
 import { shouldAdoptProgram } from "../js/store.js";
 import { pairScore, buildSupersets, usableSupersets, orderWithSupersets, occupiesEquipment,
   supersetsAllowed, expandComposites, exerciseById as ssExercise, MIN_PAIR_SCORE,
-  nextInGroup, arrangeWithSupersets } from "../js/supersets.js";
+  nextInGroup, arrangeWithSupersets, leadForRound, groupRest } from "../js/supersets.js";
 import { transitionFault, transitionScore, faultsIn, positionChanges, positionReturns,
   LINKS as TRANSITION_LINKS } from "../js/yoga/transitions.js";
 import { POSITION_OF, POSITION_TIERS, tierOf } from "../js/yoga/positions.js";
@@ -3312,6 +3312,62 @@ group("plan CSV — a new exercise is the exercise the library knows", () => {
     const next = applyPlanCSV(base, fromCSV(toCSV(revised)), { mode: "update" });
     assert.equal(next.exercises.nordic_curl.implement, "bodyweight");
     assert.ok(next.exercises.nordic_curl.cue.length > 0);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// v193 — a superset alternates all the way through, and rests between rounds
+// ---------------------------------------------------------------------------
+group("supersets — the round cycles back to the first lift", () => {
+  // The session's whole loop, modelled on the two pure functions it uses:
+  // log a set, hand to whoever still owes this round, else rest and hand back
+  // to whoever starts the next one.
+  function run(exercises) {
+    const done = exercises.map(() => 0);
+    const order = [];
+    let i = 0;
+    for (let guard = 0; guard < 60; guard++) {
+      if (done[i] >= (exercises[i].prescribedSets || 0)) break;
+      done[i]++;
+      order.push(`${exercises[i].exerciseId}${done[i]}`);
+      const partner = nextInGroup(exercises, i, done[i], (j) => done[j]);
+      if (partner >= 0) { i = partner; continue; }
+      const lead = leadForRound(exercises, exercises[i].supersetId, done[i] + 1, (j) => done[j]);
+      if (lead >= 0) { order.push(`rest${groupRest(exercises, exercises[i].supersetId)}`); i = lead; continue; }
+      break;
+    }
+    return order;
+  }
+  const pair = (sets = [3, 3], rests = [120, 90]) => [
+    { exerciseId: "squat", supersetId: 0, supersetIndex: 0, supersetSize: 2, prescribedSets: sets[0], restSeconds: rests[0] },
+    { exerciseId: "thrust", supersetId: 0, supersetIndex: 1, supersetSize: 2, prescribedSets: sets[1], restSeconds: rests[1] },
+  ];
+
+  it("alternates every round instead of stalling on the partner after the first", () => {
+    assert.deepEqual(run(pair()), [
+      "squat1", "thrust1", "rest120", "squat2", "thrust2", "rest120", "squat3", "thrust3"]);
+  });
+  it("the pair rests once, for the longer of its two rests", () => {
+    assert.equal(groupRest(pair([3, 3], [120, 90]), 0), 120);
+    assert.equal(groupRest([], null, 75), 75);
+  });
+  it("an uneven pair keeps going on the lift that still owes sets", () => {
+    assert.deepEqual(run(pair([4, 2])), [
+      "squat1", "thrust1", "rest120", "squat2", "thrust2", "rest120", "squat3", "rest120", "squat4"]);
+  });
+  it("a three-element circuit goes 1-2-3 and back to 1", () => {
+    const circuit = ["plank", "raise", "sideplank"].map((id, k) => ({ exerciseId: id, supersetId: 1,
+      supersetIndex: k, supersetSize: 3, prescribedSets: 2, restSeconds: 60 }));
+    assert.deepEqual(run(circuit), ["plank1", "raise1", "sideplank1", "rest60", "plank2", "raise2", "sideplank2"]);
+  });
+  it("no group, no cycling", () => {
+    assert.equal(leadForRound([{ exerciseId: "a", prescribedSets: 3 }], null, 1, () => 0), -1);
+    assert.deepEqual(run([{ exerciseId: "solo", supersetId: null, prescribedSets: 3, restSeconds: 90 }]), ["solo1"]);
+  });
+  it("the group is finished when every member has all its sets", () => {
+    const p = pair([2, 2]);
+    assert.equal(leadForRound(p, 0, 3, () => 2), -1);
   });
 });
 
