@@ -136,6 +136,18 @@ function placeTint(name) {
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   return "." + PLACE_TINTS[h % PLACE_TINTS.length];
 }
+/**
+ * The wrapper the overviews draw a superset in: a labelled rail around the
+ * exercises that alternate, so a paired day is visible before it starts rather
+ * than at the moment the session hands you a different lift.
+ */
+export function supersetGroup(label, rows, { note = "Alternate · rest after the round" } = {}) {
+  return el("div.ssgroup", {}, [
+    el("div.sshead", {}, [el("span.ssname", { text: label }), el("span.spacer"), el("span.ssnote", { text: note })]),
+    ...rows,
+  ]);
+}
+
 export const locationBadge = (loc) => el("span.badge" + placeTint(loc), { text: loc || "—" });
 
 // --- Persistent bottom tab bar -------------------------------------------

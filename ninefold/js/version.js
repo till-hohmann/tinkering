@@ -13,4 +13,4 @@
 // unhashed asset.
 //
 // BUMP THIS with CACHE in sw.js on every deploy.
-export const APP_VERSION = "v193";
+export const APP_VERSION = "v194";

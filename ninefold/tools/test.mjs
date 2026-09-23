@@ -65,7 +65,8 @@ import { isStrengthHold, applyHoldResults, repairHoldRatchet, HOLD_CAP } from ".
 import { shouldAdoptProgram } from "../js/store.js";
 import { pairScore, buildSupersets, usableSupersets, orderWithSupersets, occupiesEquipment,
   supersetsAllowed, expandComposites, exerciseById as ssExercise, MIN_PAIR_SCORE,
-  nextInGroup, arrangeWithSupersets, leadForRound, groupRest } from "../js/supersets.js";
+  nextInGroup, arrangeWithSupersets, leadForRound, groupRest, isMainWork,
+  MAIN_WORK_REST, MAIN_WORK_TOP_REPS, planSections } from "../js/supersets.js";
 import { transitionFault, transitionScore, faultsIn, positionChanges, positionReturns,
   LINKS as TRANSITION_LINKS } from "../js/yoga/transitions.js";
 import { POSITION_OF, POSITION_TIERS, tierOf } from "../js/yoga/positions.js";
@@ -3368,6 +3369,124 @@ group("supersets — the round cycles back to the first lift", () => {
   it("the group is finished when every member has all its sets", () => {
     const p = pair([2, 2]);
     assert.equal(leadForRound(p, 0, 3, () => 2), -1);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// v194 — the day's main work is never paired
+// ---------------------------------------------------------------------------
+group("supersets — a heavy compound runs on its own", () => {
+  const e = (exerciseId, role, repRange, restSeconds) => ({ exerciseId, role, repRange, restSeconds });
+
+  it("reads the prescription, not just the exercise", () => {
+    // The same bar, two different jobs.
+    assert.equal(isMainWork(e("bench_press", "compound", "5", 120)), true);
+    assert.equal(isMainWork(e("bench_press", "accessory", "12-15", 60)), false);
+    assert.equal(isMainWork(e("back_squat", "compound", "4-5", 150)), true);
+  });
+  it("heavy is either the reps or the rest the plan already allows", () => {
+    assert.equal(isMainWork(e("ohp_barbell", "compound", "10-12", MAIN_WORK_REST)), true, "rest alone is enough");
+    assert.equal(isMainWork(e("ohp_barbell", "compound", String(MAIN_WORK_TOP_REPS), 60)), true, "reps alone are enough");
+    assert.equal(isMainWork(e("ohp_barbell", "compound", "10-12", 90)), false);
+  });
+  it("accessories and timed core work are never main work", () => {
+    assert.equal(isMainWork(e("ez_curl", "accessory", "10-12", 60)), false);
+    assert.equal(isMainWork(e("cable_pallof", "core", "60s", 60)), false);
+    assert.equal(isMainWork(e("db_lateral_raise", "accessory", "12-15", 60)), false);
+    // A timed hold's "60s" must never read as a rep target of 60 — or as one of 6.
+    assert.equal(isMainWork(e("dead_hang", "compound", "45s", 60)), false);
+  });
+  it("the plan's role beats the library's", () => {
+    // The library calls an incline dumbbell press an accessory, because in a
+    // barbell gym it is one. Till's dumbbell day prescribes it as the compound.
+    assert.equal(isMainWork(e("incline_db_press", "compound", "6-8", 120)), true);
+    assert.equal(isMainWork(e("incline_db_press", "accessory", "12-15", 60)), false);
+  });
+
+  it("a declared pair containing main work does not run, and the rest still do", () => {
+    const day = [
+      e("bench_press", "compound", "5", 120), e("bent_over_row", "compound", "5", 120),
+      e("lat_pulldown", "accessory", "10-12", 90), e("face_pull", "accessory", "10-12", 60),
+      e("ez_curl", "accessory", "10-12", 60), e("triceps_pushdown", "accessory", "10-12", 60),
+    ];
+    const declared = [["bench_press", "bent_over_row"], ["lat_pulldown", "face_pull"], ["ez_curl", "triceps_pushdown"]];
+    const arranged = arrangeWithSupersets(day.map((x) => ({ ...x })), declared, { allow: true });
+    const paired = {};
+    for (const x of arranged) if (x.supersetId != null) (paired[x.supersetId] = paired[x.supersetId] || []).push(x.exerciseId);
+    const running = Object.values(paired).map((g) => g.join("+")).sort();
+    assert.deepEqual(running, ["ez_curl+triceps_pushdown", "lat_pulldown+face_pull"].sort());
+    // and the bench keeps its own place in the day, unpaired
+    const bench = arranged.find((x) => x.exerciseId === "bench_press");
+    assert.equal(bench.supersetId, undefined);
+    assert.equal(arranged.length, day.length, "nothing was dropped from the workout itself");
+  });
+
+  it("the generator no longer writes such a pair in the first place", () => {
+    const heavyDay = [e("back_squat", "compound", "5", 150),
+      e("ez_curl", "accessory", "10-12", 60), e("triceps_pushdown", "accessory", "10-12", 60)];
+    const built = buildSupersets(heavyDay, { allow: true });
+    assert.ok(!built.some((g) => g.includes("back_squat")), JSON.stringify(built));
+    assert.ok(built.some((g) => g.includes("ez_curl") && g.includes("triceps_pushdown")), JSON.stringify(built));
+  });
+
+  it("a generated block never pairs its main lifts", () => {
+    const place = { name: "Gym", implements: [...FULL_GYM, SURVEYED], barWeightKg: 20, ezBarWeightKg: 7.5,
+      barbellPlatesKg: [25, 20, 15, 10, 5, 2.5, 1.25], ezBarPlatesKg: [10, 5, 2.5, 1.25],
+      cable: { minKg: 2.5, maxKg: 120, stepKg: 2.5 }, dumbbells: { minKg: 2.5, maxKg: 50, stepKg: 2.5 } };
+    for (const priorities of [["strength"], ["hypertrophy"]]) {
+      const r = generateProgram({ name: "T", startDate: "2026-08-10", lengthWeeks: 6, priorities,
+        mandatoryDays: 5, optionalDays: 0, cardioPerWeek: 1, places: [place], supersets: true });
+      const p = r.program || r;
+      for (const w of p.weeks) for (const [wd, day] of Object.entries(w.days)) {
+        if (day.type !== "strength") continue;
+        const arranged = arrangeWithSupersets((day.exercises || []).map((x) => ({ ...x })),
+          (p.dayTemplates[wd] || {}).supersets, { allow: true });
+        for (const x of arranged) {
+          if (x.supersetId == null) continue;
+          assert.ok(!isMainWork(x), `${priorities} ${wd} wk${w.weekNumber}: ${x.exerciseId} ${x.repRange} @${x.restSeconds}s is paired`);
+        }
+      }
+    }
+  });
+});
+
+
+group("supersets — the overviews show the day as it will run", () => {
+  const e = (exerciseId, role, repRange, restSeconds) => ({ exerciseId, role, repRange, restSeconds, prescribedSets: 3 });
+  const day = [
+    e("bench_press", "compound", "5", 120), e("bent_over_row", "compound", "5", 120),
+    e("lat_pulldown", "accessory", "10-12", 90), e("face_pull", "accessory", "10-12", 60),
+    e("ez_curl", "accessory", "10-12", 60), e("triceps_pushdown", "accessory", "10-12", 60),
+  ];
+  const declared = [["bench_press", "bent_over_row"], ["lat_pulldown", "face_pull"], ["ez_curl", "triceps_pushdown"]];
+
+  it("pairs come back as groups and everything else as itself", () => {
+    const secs = planSections(day, declared, { allow: true });
+    assert.deepEqual(secs.map((s) => (s.kind === "single" ? s.entry.exerciseId : s.entries.map((x) => x.exerciseId).join("+"))),
+      ["bench_press", "bent_over_row", "lat_pulldown+face_pull", "ez_curl+triceps_pushdown"]);
+    assert.equal(secs.find((s) => s.kind === "group").label, "Superset");
+  });
+  it("every exercise appears exactly once, whatever the grouping", () => {
+    for (const allow of [true, false]) {
+      const ids = planSections(day, declared, { allow })
+        .flatMap((s) => (s.kind === "single" ? [s.entry.exerciseId] : s.entries.map((x) => x.exerciseId)));
+      assert.deepEqual(ids.slice().sort(), day.map((x) => x.exerciseId).sort(), `allow=${allow}`);
+    }
+  });
+  it("a place that switched pairing off sees a flat list", () => {
+    const secs = planSections(day, declared, { allow: false });
+    assert.ok(secs.every((s) => s.kind === "single"));
+  });
+  it("three or more is called a circuit", () => {
+    const core = ["plank", "hanging_knee_raise", "side_plank"].map((id) => e(id, "core", "45s", 45));
+    const secs = planSections(core, [["plank", "hanging_knee_raise", "side_plank"]], { allow: true });
+    assert.equal(secs.length, 1);
+    assert.equal(secs[0].label, "Circuit");
+  });
+  it("a day with no pairs is all singles", () => {
+    assert.ok(planSections(day, [], { allow: true }).every((s) => s.kind === "single"));
+    assert.deepEqual(planSections([], [], { allow: true }), []);
   });
 });
 

@@ -131,6 +131,40 @@ export function pairScore(a, b) {
 }
 
 /**
+ * ⚠ THE DAY'S MAIN WORK IS NEVER PAIRED, WHATEVER THE PAIR SCORES.
+ *
+ * `pairScore` reads the library — pattern, role, implement — and the library
+ * cannot tell a 5×5 back squat from a set of twelve: the PRESCRIPTION decides
+ * whether a lift is the point of the session or an accessory to it. So the
+ * generator paired bench 5×5 at two minutes' rest with barbell rows, and the
+ * session then handed out a row between bench sets. Every rep of the main lift
+ * is worse for it, which is the opposite of what a strength block is for.
+ *
+ * Heavy is either stated by the reps (a top set of 8 or fewer) or by the rest
+ * the plan already allows for it (two minutes or more is not accessory rest).
+ * Reps are unknown at build time — the week's scheme is applied later — so rest
+ * alone has to carry it there, which is why both are checked.
+ *
+ * Accessories still pair. Curls with pushdowns is the case this whole feature
+ * was built for, and nothing here touches it.
+ */
+export const MAIN_WORK_REST = 120;   // seconds
+export const MAIN_WORK_TOP_REPS = 8;
+export function isMainWork(entry, lib) {
+  const ex = lib || exerciseById(entry && entry.exerciseId);
+  // The PLAN's role wins over the library's: Till's dumbbell day prescribes an
+  // incline press as that day's compound, and the library files it as an
+  // accessory because in a barbell gym it is one.
+  const role = (entry && entry.role) || (ex && ex.role);
+  if (role !== "compound") return false;
+  if ((entry && entry.restSeconds) >= MAIN_WORK_REST) return true;
+  const n = String((entry && entry.repRange) || "").match(/\d+/g);
+  if (!n) return false;
+  if (/s$/i.test(String(entry.repRange))) return false;      // a timed hold is not a rep target
+  return Number(n[n.length - 1]) <= MAIN_WORK_TOP_REPS;
+}
+
+/**
  * ⚠ A WEAK PAIR IS WORSE THAN NO PAIR, so pairing has a floor rather than just a
  * ban list. A back squat with a leg-curl machine scores 1: legal by every rule
  * above and still two stations, two walks and two queues for a combination
@@ -154,7 +188,9 @@ export function buildSupersets(entries, { allow = true } = {}) {
     // expands at run time into three more exercises — a two-element superset
     // that turns into a four-element one the moment it is opened, and a squat
     // rack held for the duration of a floor circuit.
-    .filter((x) => x.ex && !COMPOSITE[x.entry.exerciseId]);
+    .filter((x) => x.ex && !COMPOSITE[x.entry.exerciseId])
+    // The day's main work runs on its own — see isMainWork.
+    .filter((x) => !isMainWork(x.entry, x.ex));
   const groups = [];
   const taken = new Set();
 
@@ -192,12 +228,18 @@ export function buildSupersets(entries, { allow = true } = {}) {
  * predate any of this — so they are honoured, but not blindly: a hand-written
  * trio of machine exercises is still three stations held by one person.
  */
-export function usableSupersets(groups, { allow = true } = {}) {
+export function usableSupersets(groups, { allow = true, entries = [] } = {}) {
   if (!allow) return [];
+  const byId = new Map((entries || []).map((e) => [e.exerciseId, e]));
   const out = [];
   for (const g of groups || []) {
     const ids = (g || []).filter((id) => exerciseById(id));
     if (ids.length < 2) continue;
+    // A group is dropped whole when any member is the day's main work. Running
+    // the other half on its own is right: it was an accessory to a lift that
+    // now takes its rest properly. This also retires the pairings the generator
+    // wrote into blocks before the rule existed, without editing anyone's plan.
+    if (ids.some((id) => isMainWork(byId.get(id) || { exerciseId: id }, exerciseById(id)))) continue;
     const limit = chainLimit(ids.map(exerciseById));
     out.push(limit === Infinity ? ids : ids.slice(0, limit));
   }
@@ -315,8 +357,8 @@ export function supersetsAllowed(program, place) {
  */
 export function arrangeWithSupersets(exercises, daySupersets, { allow = true } = {}) {
   const { entries, groups: circuits } = expandComposites(exercises);
-  const groups = [...usableSupersets(circuits, { allow: true }),
-                  ...usableSupersets(daySupersets || [], { allow })];
+  const groups = [...usableSupersets(circuits, { allow: true, entries }),
+                  ...usableSupersets(daySupersets || [], { allow, entries })];
   return groups.length ? orderWithSupersets(entries, groups) : entries;
 }
 
@@ -353,6 +395,36 @@ export function groupRest(exercises, supersetId, fallback = 0) {
   if (supersetId == null) return fallback;
   const rests = exercises.filter((e) => e.supersetId === supersetId).map((e) => e.restSeconds || 0);
   return rests.length ? Math.max(...rests) : fallback;
+}
+
+/**
+ * A DAY AS IT WILL ACTUALLY RUN, for the screens that only describe it.
+ *
+ * The overviews listed a day as a flat list, so a paired day looked exactly like
+ * a straight-sets day until the session handed you a different exercise after
+ * your first set. Sections come back in running order: either one exercise on
+ * its own, or a group to alternate, already filtered by the same rules the
+ * session applies (main work never pairs; a place may switch pairing off).
+ */
+export function planSections(exercises, daySupersets, { allow = true } = {}) {
+  const arranged = arrangeWithSupersets((exercises || []).map((e) => ({ ...e })), daySupersets, { allow });
+  const out = [];
+  for (const e of arranged) {
+    const last = out[out.length - 1];
+    if (e.supersetId != null && last && last.kind === "group" && last.supersetId === e.supersetId) {
+      last.entries.push(e);
+      continue;
+    }
+    if (e.supersetId != null) {
+      out.push({ kind: "group", supersetId: e.supersetId, entries: [e],
+        get label() { return groupLabel(this.entries); } });
+      continue;
+    }
+    out.push({ kind: "single", entry: e });
+  }
+  // A "group" of one cannot happen from arrangeWithSupersets, but a plan edited
+  // by hand can leave one behind; it is a single exercise and reads as one.
+  return out.map((s) => (s.kind === "group" && s.entries.length < 2 ? { kind: "single", entry: s.entries[0] } : s));
 }
 
 /**

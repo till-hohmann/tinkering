@@ -9,7 +9,8 @@ import { getProfile, patchProfile, placeNames, withPlace } from "../profile.js";
 import { applyStretchTargets, applyStretchResults } from "../stretch.js";
 import { todayISO } from "../model.js";
 import * as M from "../model.js";
-import { el, mount, go, locationBadge, clear, backBtn, addActionBar, setChildren } from "../ui.js";
+import { el, mount, go, locationBadge, clear, backBtn, addActionBar, setChildren, supersetGroup } from "../ui.js";
+import { planSections, supersetsAllowed } from "../supersets.js";
 import { illustration, workoutFigure } from "../illustrations.js";
 import { unlockAudio } from "../components/sound.js";
 import { interruptSheet } from "../components/interrupt.js";
@@ -311,7 +312,15 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
   }
 
   // intro (skipped on resume — the resume prompt already oriented you)
-  if (!resuming) await intro(stage, { program, template, week, day, weekNumber, actualLoc, substituting, readiness });
+  if (!resuming) {
+    // Grouped for the place you are ACTUALLY in, and for the plan as the logger
+    // will arrange it (dayWithPairs), so the list matches the workout exactly.
+    const introPlace = (profile.places || []).find((p) => p.name === actualLoc) || adhocPlace || null;
+    const sections = day.type === "strength"
+      ? planSections(day.exercises || [], dayWithPairs.supersets, { allow: supersetsAllowed(program, introPlace) })
+      : null;
+    await intro(stage, { program, template, week, day, weekNumber, actualLoc, substituting, readiness, sections });
+  }
 
   // pre-routine (equipment-agnostic warm-up) — skipped on resume (already warm)
   if (template.preRoutine && !resuming) { draft.preRoutineDone = await routinePhase(template.preRoutine, "Warm-up"); persist(); }
@@ -404,9 +413,12 @@ function resumePrompt(stage, saved, day) {
   });
 }
 
-function intro(stage, { program, template, week, day, weekNumber, actualLoc, substituting, readiness }) {
+function intro(stage, { program, template, week, day, weekNumber, actualLoc, substituting, readiness, sections }) {
   return new Promise((res) => {
     clear(stage);
+    // The day as it will actually run — pairs grouped and labelled, so being
+    // handed a different lift after your first set is never a surprise.
+    const introSections = sections || (day.exercises || []).map((e) => ({ kind: "single", entry: e }));
     const hasWarm = !!template.preRoutine;
     const exName = (e) => (program.exercises[e.exerciseId] || {}).name || e.exerciseId;
     const tileCls = day.type === "cardio" ? ".cardio" : ".strength";
@@ -426,11 +438,15 @@ function intro(stage, { program, template, week, day, weekNumber, actualLoc, sub
         el("span.badge.accent", { text: `Week ${weekNumber} · ${week.phaseName}` }),
       ]),
       day.type === "strength"
-        ? el("div.list", { style: "margin-top:16px" }, day.exercises.map((e) =>
-            el("div.item", {}, [
+        ? el("div.list", { style: "margin-top:16px" }, introSections.map((s) => {
+            const row = (e, i, size) => el("div.item", {}, [
               el("div.ico", {}, [illustration(e.exerciseId)]),
               el("div.meta", {}, [el("div.t", { text: exName(e) }), el("div.s", { text: `${e.prescribedSets} × ${e.repRange}` })]),
-            ])))
+              size > 1 ? el("span.badge.accent", { text: `${i + 1}/${size}` }) : null,
+            ]);
+            return s.kind === "single" ? row(s.entry, 0, 1)
+              : supersetGroup(s.label, s.entries.map((e, i) => row(e, i, s.entries.length)));
+          }))
         : el("div.card", { style: "margin-top:16px" }, [el("p", { style: "margin:0", text: day.prescription })]),
     ]));
 

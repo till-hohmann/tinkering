@@ -13,6 +13,11 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 194, notes: [
+    "Your heavy lifts are no longer paired with anything. A 5×5 bench had been handing you a barbell row between sets, because the pairings were written by the block generator, which could see the exercise but not the prescription — and pairing the day's main work is exactly what a strength week should not do. A compound with two minutes' rest, or a top set of eight or fewer, now always runs on its own with its full rest. Accessories still pair, which is what supersets were added for.",
+    "Paired work is visible before you start. The day view and the pre-workout list group a superset behind one label, numbered 1/2 and 2/2, and say that you alternate and rest after the round. A paired day used to read exactly like any other until the session handed you a different exercise.",
+    "Blocks already written are fixed without touching them: the rule is applied when the day runs, so an old plan that paired your main lifts simply stops doing it.",
+  ] },
   { v: 193, notes: [
     "Fixed: a superset stopped alternating after the first hand-over. You logged a set, the app moved to the partner with no rest — correct so far — and then stayed there for its second set instead of resting and handing back. From the first pair on, the order was wrong and the rest came in the wrong place. A pair now runs properly: one set each, then one rest, then back to the first lift. The rest is the longer of the pair's two.",
     "The hand-over says what it is: moving to the partner now names it and reminds you the rest comes after the pair.",

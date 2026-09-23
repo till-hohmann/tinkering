@@ -4,7 +4,9 @@
 
 import { getActiveProgram, getProgram, resolveDay, getSessionsForProgram } from "../store.js";
 import { todayISO, WEEKDAYS, finisherRoundsFor, isReducedPhase } from "../model.js";
-import { el, mount, go, locationBadge, backBtn, addActionBar } from "../ui.js";
+import { el, mount, go, locationBadge, backBtn, addActionBar, supersetGroup } from "../ui.js";
+import { planSections, supersetsAllowed } from "../supersets.js";
+import { getProfile } from "../profile.js";
 import { illustration, workoutFigure } from "../illustrations.js";
 import { icon } from "../icons.js";
 import { runKindLabel } from "../cardio-intel.js";
@@ -35,6 +37,7 @@ export async function renderDay(pid, n, wd) {
   const dayIso = addDays(week.startDate, i);
   const today = todayISO();
   const sessions = await getSessionsForProgram(program.id);
+  let profile = null; try { profile = await getProfile(); } catch (_) {}
   const done = sessions.find((s) => s.date === dayIso && s.weekday === wd && hasContent(s));
   const type = day ? day.type : "rest";
   const exName = (id) => (program.exercises[id] || {}).name || id;
@@ -70,7 +73,9 @@ export async function renderDay(pid, n, wd) {
 
   if (type === "strength") {
     children.push(el("h2", { text: "Exercises" }));
-    children.push(el("div.list", {}, (day.exercises || []).map((e) =>
+    // Grouped exactly as the session will run it (supersets.js planSections),
+    // so what this screen promises and what the workout does cannot diverge.
+    const exRow = (e, idx, size) =>
       el("div.item.tappable", {
         style: "align-items:flex-start",
         role: "button",
@@ -83,9 +88,18 @@ export async function renderDay(pid, n, wd) {
           el("div.s", { text: `${e.prescribedSets} × ${e.repRange}${e.restSeconds ? ` · rest ${e.restSeconds}s` : ""}` }),
           (program.exercises[e.exerciseId] || {}).cue ? el("div.faint", { style: "font-size:.8rem;margin-top:2px", text: program.exercises[e.exerciseId].cue }) : null,
         ]),
-        e.role === "compound" ? el("span.badge.accent", { text: "compound" })
+        size > 1 ? el("span.badge.accent", { text: `${idx + 1}/${size}` })
+          : e.role === "compound" ? el("span.badge.accent", { text: "compound" })
           : e.role === "core" ? el("span.badge", { text: "core" }) : null,
-      ]))));
+      ]);
+    // A place can switch pairing off (Profile → Places), and this screen has to
+    // say what THAT place will do, not what the block would like.
+    const place = ((profile || {}).places || []).find((p) => p.name === (template || {}).location) || null;
+    const sections = planSections(day.exercises || [], (template || {}).supersets,
+      { allow: supersetsAllowed(program, place) });
+    children.push(el("div.list", {}, sections.map((s) => (s.kind === "single"
+      ? exRow(s.entry, 0, 1)
+      : supersetGroup(s.label, s.entries.map((e, i) => exRow(e, i, s.entries.length)))))));
     if (template && template.finisher) {
       children.push(el("div.card.tight", { style: "margin-top:10px;border-left:3px solid var(--cyan)" }, [
         el("div.row", { style: "gap:10px" }, [

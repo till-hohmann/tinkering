@@ -330,6 +330,24 @@ button.item:active { transform: scale(0.985); }
 .item .meta .t { font-weight: 700; }
 .item .meta .s { font-size: 0.85rem; color: var(--text-dim); margin-top: 1px; }
 
+/* --- Superset / circuit grouping in the plan overviews ---------------------
+   A paired day used to read exactly like a straight-sets day, and the first
+   sign of a pairing was the session handing you a different lift. The rail and
+   the label say it up front. */
+.ssgroup {
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--accent-ghost);
+  border: 1px solid rgba(47,230,166,.22); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm); padding: 9px 9px 10px;
+}
+.ssgroup .sshead { display: flex; align-items: baseline; gap: 8px; padding: 1px 3px 0; }
+.ssgroup .ssname {
+  font-size: 0.68rem; font-weight: 800; letter-spacing: 0.11em;
+  text-transform: uppercase; color: var(--accent);
+}
+.ssgroup .ssnote { font-size: 0.72rem; color: var(--text-dim); }
+.ssgroup .item { background: var(--bg-elev2); }
+
 /* --- Misc --- */
 .backbtn {
   display: inline-flex; align-items: center; gap: 2px;
