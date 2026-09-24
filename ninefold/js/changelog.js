@@ -13,6 +13,10 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 197, notes: [
+    "Your backup refuses two more ways of losing things. It already turned away a push with no sessions or no profile; it now also turns away one with no training blocks, or with no settings at all. Both are what a half-finished restore leaves behind, and either would have replaced the only copy of blocks written by hand over months.",
+    "Restoring from a backup file now goes through the same code as every other restore, so a restored block carries a timestamp and can reach your other devices. It used to be a second implementation that skipped that.",
+  ] },
   { v: 196, notes: [
     "Your mobility holds stop walking themselves down. A side plank, wall sit, Copenhagen, bird dog or side-lying leg raise is held to failure, so falling short IS the exercise — but the mobility routine still lowered the target after any short session, the same mistake that was fixed for workouts in v186. It now takes three short sessions in a row, and the target then moves to the best of those three. Stretches still re-base on the day, which is right for a stretch. Targets recompute from your logged sessions, so anything that was walked down comes back.",
     "A session away from home survives an interruption. The substituted workout kept everything in memory until the last set, so a call or a reload lost all of it and the resume prompt never appeared. It now saves after every exercise, can be left with the X button, and picks up where you stopped with the same swaps.",

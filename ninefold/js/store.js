@@ -103,6 +103,14 @@ export async function mergeRestore(data, { overwrite = false } = {}) {
   if (!data) return 0;
   for (const p of data.programs || []) {
     const stored = await db.get("programs", p.id);
+    // An explicit restore means "this device is now that backup", so the file's
+    // copy wins outright — no age test, no status carry-over. It is stamped if
+    // it carries no timestamp, because an unstamped block cannot travel to the
+    // other devices afterwards (shouldAdoptProgram reads it as unknown age).
+    if (overwrite) {
+      await db.put("programs", p.updatedAt ? p : { ...p, updatedAt: new Date().toISOString() });
+      continue;
+    }
     if (!stored) { await db.put("programs", p); continue; }
     // ⚠ AN EDIT TO A BLOCK HAS NEVER SYNCED. This loop only ever added programs
     // the device was missing, so correcting Wednesday on one device and opening
@@ -120,8 +128,17 @@ export async function mergeRestore(data, { overwrite = false } = {}) {
   }
   let added = 0;
   if (data.sessions && data.sessions.length) {
-    const have = new Set((await db.getAll("sessions")).map((s) => s.id));
-    for (const s of data.sessions) if (s && s.id && !have.has(s.id)) { await db.put("sessions", s); added++; }
+    if (overwrite) {
+      // Replace outright, including rows this device already has: the file is
+      // the truth being restored. (A non-overwrite merge still only ADDS, which
+      // is why an edit made on another device does not travel yet — see the
+      // handover note; that needs per-session timestamps.)
+      await db.putAll("sessions", data.sessions);
+      added = data.sessions.length;
+    } else {
+      const have = new Set((await db.getAll("sessions")).map((s) => s.id));
+      for (const s of data.sessions) if (s && s.id && !have.has(s.id)) { await db.put("sessions", s); added++; }
+    }
   }
   await restorePrefs(data.prefs, { overwrite });
   // An EXPLICIT restore means "this device is now that install", so it takes on
@@ -352,21 +369,27 @@ export async function importProgram(program, makeActive = true) {
   pushCloud();
 }
 
-// Restore a backup file (programs + sessions) into the DB (requirements §10).
+/**
+ * Restore a backup file (requirements §10) — ONE PATH, not a second one.
+ *
+ * ⚠ THIS USED TO BE ITS OWN IMPLEMENTATION and it quietly skipped every rule its
+ * sibling applies: no `updatedAt` stamp (so a restored block could never travel
+ * to another device), no status handling, no shared prefs logic. It is now
+ * mergeRestore with `overwrite`, which is exactly what an explicit restore
+ * means: the file wins, the device adopts the backup's identity, and anything
+ * the rest of the app learns about merging is learnt here too.
+ */
 export async function restoreBackup(data) {
-  if (data.programs) for (const p of data.programs) await db.put("programs", p);
-  if (data.sessions && data.sessions.length) await db.putAll("sessions", data.sessions);
+  // The active-program guess goes FIRST, deliberately: both keys are synced, so
+  // a backup that carries them overwrites the guess inside mergeRestore — the
+  // saved choice beats an inference. Older backups predate the keys, and for
+  // those this stands.
   if (data.programs && data.programs.length) {
     const active = data.programs.find((p) => p.status === "active") || data.programs[0];
     await db.setPref("activeProgramId", active.id);
     await db.setPref("autoSelectProgram", false);   // restored state pins the active program
   }
-  // AFTER the two lines above, deliberately. Both keys are synced now, so a
-  // backup that carries them overwrites the guess just made from the program
-  // list — the saved choice beats an inference. Older backups predate the keys,
-  // and for those the guess above stands.
-  await restorePrefs(data.prefs, { overwrite: true });   // explicit restore adopts saved settings
-  await adoptInstallId(data.installId);                  // ...and the backup's identity
+  await mergeRestore(data, { overwrite: true });
   pushCloud();
 }
 

@@ -101,7 +101,12 @@ export default {
       // able to tell this store to forget too. Both are cases where the incoming
       // snapshot is strictly poorer than the stored one in a way no user action
       // produces, so the write is far more likely to be an accident than intent.
-      const prevRaw = (parsed.sessions.length === 0 || !hasProfile(parsed) || parsed.installId)
+      // Read the stored copy whenever the incoming snapshot is poorer in ANY of
+      // the ways a guard cares about, so the fetch stays one decision.
+      const programCount = Array.isArray(parsed.programs) ? parsed.programs.length : 0;
+      const prefCount = parsed.prefs && typeof parsed.prefs === "object" ? Object.keys(parsed.prefs).length : 0;
+      const prevRaw = (parsed.sessions.length === 0 || !hasProfile(parsed) || parsed.installId
+                       || programCount === 0 || prefCount === 0)
         ? await env.STRONG_BACKUP.get(STATE_KEY) : null;
       if (prevRaw) {
         let prev = null;
@@ -131,6 +136,26 @@ export default {
             return new Response(JSON.stringify({ error: "refused_foreign_install",
               detail: "This backup belongs to a different install. If this device should own it, "
                 + "restore from the backup first — that adopts its identity — rather than pushing over it." }),
+              { status: 409, headers: jsonHeaders });
+          }
+          // 4. NO PROGRAMS OVER A STORED SET. Same idea as the empty-session
+          //    guard and reachable the same way: the boot restore swallows its
+          //    own errors, so a device can end up holding its sessions with no
+          //    blocks at all, then push that over the only copy of blocks
+          //    written by hand over months.
+          if (programCount === 0 && (prev.programs || []).length > 0) {
+            return new Response(JSON.stringify({ error: "refused_program_regression",
+              detail: "Stored backup has programs; refusing to replace them with none. "
+                + "If this device should start fresh, clear the stored backup first." }),
+              { status: 409, headers: jsonHeaders });
+          }
+          // 5. NO SETTINGS AT ALL over a stored set. The profile guard below
+          //    catches the common shape; this catches a snapshot whose whole
+          //    prefs blob is missing or empty — which is every synced setting,
+          //    including the logs that live in prefs rather than in sessions.
+          if (prefCount === 0 && prev.prefs && Object.keys(prev.prefs).length > 0) {
+            return new Response(JSON.stringify({ error: "refused_settings_regression",
+              detail: "Stored backup has settings; refusing to replace them with none." }),
               { status: 409, headers: jsonHeaders });
           }
           if (!hasProfile(parsed) && hasProfile(prev)) {

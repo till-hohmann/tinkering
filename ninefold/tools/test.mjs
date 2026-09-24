@@ -2526,6 +2526,15 @@ async function workerTests() {
   const blank  = { sessions: [{ id: "a" }, { id: "b" }], programs: [], prefs: { profile: { onboardedAt: null } } };
   const noPref = { sessions: [{ id: "a" }], programs: [] };
   const empty  = { sessions: [], programs: [], prefs: { profile: { onboardedAt: "2026-01-15" } } };
+  // A device holding its sessions but nothing else: the shape a half-completed
+  // boot restore leaves behind (app.js swallows its own errors).
+  const withBlocks = { installId: "inst-mine", sessions: [{ id: "a" }, { id: "b" }],
+                       programs: [{ id: "blk1" }, { id: "blk2" }],
+                       prefs: { profile: { onboardedAt: "2026-01-15" }, zoneBounds: [120, 140] } };
+  const noPrograms = { installId: "inst-mine", sessions: [{ id: "a" }, { id: "b" }], programs: [],
+                       prefs: { profile: { onboardedAt: "2026-01-15" }, zoneBounds: [120, 140] } };
+  const noSettings = { installId: "inst-mine", sessions: [{ id: "a" }, { id: "b" }],
+                       programs: [{ id: "blk1" }, { id: "blk2" }], prefs: {} };
 
   kv.clear();
   const freshBlank = (await put(blank)).status;      // nothing stored yet
@@ -2540,6 +2549,14 @@ async function workerTests() {
   // stored blob, so asserting after it would test the wrong snapshot.
   const stored = JSON.parse(kv.values().next().value);
   const overNoId = (await put(noId)).status;          // an older client, pre-installId
+  kv.clear();
+  const firstBlocks   = (await put(withBlocks)).status;
+  const overNoPrograms = (await put(noPrograms)).status;
+  const overNoSettings = (await put(noSettings)).status;
+  const storedBlocks  = JSON.parse(kv.values().next().value);
+  const againBlocks   = (await put(withBlocks)).status;
+  kv.clear();
+  const freshNoPrograms = (await put(noPrograms)).status;   // nothing stored yet
 
   group("backup Worker — a wiped device cannot erase the backup", () => {
     it("accepts a set-up install", () => assert.equal(first, 200));
@@ -2565,6 +2582,26 @@ async function workerTests() {
     it("does NOT block a genuinely fresh backup", () => {
       // Guarding must not stop a new install from ever writing its first snapshot.
       assert.equal(freshBlank, 200);
+    });
+    it("refuses a snapshot with no programs over a stored set of blocks", () => {
+      // Blocks are hand-written over months and live nowhere else. This is the
+      // half-restored device: it has its sessions, so the empty-session guard
+      // passes, and it would have taken the blocks with it.
+      assert.equal(firstBlocks, 200);
+      assert.equal(overNoPrograms, 409);
+      assert.deepEqual(storedBlocks.programs.map((x) => x.id), ["blk1", "blk2"]);
+    });
+    it("refuses a snapshot whose settings blob is empty", () => {
+      assert.equal(overNoSettings, 409);
+      assert.deepEqual(storedBlocks.prefs.zoneBounds, [120, 140]);
+    });
+    it("and keeps accepting the healthy install through both", () => {
+      assert.equal(againBlocks, 200);
+    });
+    it("a first-ever push with no programs is still allowed", () => {
+      // Someone who has logged a session before building a block is not a
+      // regression — there is nothing stored to protect.
+      assert.equal(freshNoPrograms, 200);
     });
   });
 }
