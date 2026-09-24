@@ -1,0 +1,209 @@
+// changelog.js — what to tell someone who has been away since version N.
+//
+// ONLY USER-VISIBLE CHANGES BELONG HERE. A release that fixed a race, tightened a
+// guard or renamed a variable gets no entry, and that is the point: a notice that
+// appears every time anything ships stops being read within a fortnight. Several
+// versions below are deliberately absent for exactly that reason.
+//
+// Newest first. Each `v` is the numeric part of APP_VERSION, so the app can show
+// only what happened since the last version this device actually saw.
+//
+// Write the lines for the person using the app, not the person who fixed it:
+// "stretches now adjust to what you held", never "wired stretchProg through the
+// routine player".
+
+export const CHANGELOG = [
+  { v: 196, notes: [
+    "Your mobility holds stop walking themselves down. A side plank, wall sit, Copenhagen, bird dog or side-lying leg raise is held to failure, so falling short IS the exercise — but the mobility routine still lowered the target after any short session, the same mistake that was fixed for workouts in v186. It now takes three short sessions in a row, and the target then moves to the best of those three. Stretches still re-base on the day, which is right for a stretch. Targets recompute from your logged sessions, so anything that was walked down comes back.",
+    "A session away from home survives an interruption. The substituted workout kept everything in memory until the last set, so a call or a reload lost all of it and the resume prompt never appeared. It now saves after every exercise, can be left with the X button, and picks up where you stopped with the same swaps.",
+    "A lift you swap in or add mid-session is eased on a rough day like every other lift, and its target is rounded to the rack you are actually at.",
+    "The weight steppers offer the rack in front of you. At any place other than your first one, the cable + and − buttons stepped in the first gym's increments, so you could log a weight that stack cannot make.",
+    "A squat that misses its range mid-session backs off by 5 kg, like the weekly engine, instead of 2.5.",
+    "Fixed: replaying an earlier week's day fired the personal-best celebration on ordinary sets, because the baseline left out everything logged since that day.",
+    "Progress reads straight: the weekly trend no longer adds one block's week 3 to another's, a dumbbell top set is written 2×27kg rather than 27kg, lifts from earlier blocks show their names instead of ids, a reduced week says it is one, and this week's bars count what you logged by date.",
+    "The locked screen speaks the cue for planks and other holds, which it only did for stretches.",
+    "Backups: a device restored from the cloud keeps its identity, so its backups keep working. It used to look like a stranger to its own Worker and every push after a restore was refused. An exported backup file now carries that identity too.",
+    "Importing a plan spreadsheet keeps each week's scheme, intensity and focus text, and no longer shifts every week's start date back by a day.",
+  ] },
+  { v: 195, notes: [
+    "Fixed: the first time a new block meets a lift, it could take its target from a session done somewhere with lighter dumbbells. A block starts with no history of its own and falls back to the last time the app saw that lift anywhere — and that fallback ignored the rule, added in v191, that a set pinned at a lighter rack's ceiling does not measure you. An incline press was prescribed at 27 kg off a 22.5 kg session, when the last session at the heavier rack had been 32. It now reads both histories under the same rule, and a capped session in this block loses to a real one in the last.",
+  ] },
+  { v: 194, notes: [
+    "Your heavy lifts are no longer paired with anything. A 5×5 bench had been handing you a barbell row between sets, because the pairings were written by the block generator, which could see the exercise but not the prescription — and pairing the day's main work is exactly what a strength week should not do. A compound with two minutes' rest, or a top set of eight or fewer, now always runs on its own with its full rest. Accessories still pair, which is what supersets were added for.",
+    "Paired work is visible before you start. The day view and the pre-workout list group a superset behind one label, numbered 1/2 and 2/2, and say that you alternate and rest after the round. A paired day used to read exactly like any other until the session handed you a different exercise.",
+    "Blocks already written are fixed without touching them: the rule is applied when the day runs, so an old plan that paired your main lifts simply stops doing it.",
+  ] },
+  { v: 193, notes: [
+    "Fixed: a superset stopped alternating after the first hand-over. You logged a set, the app moved to the partner with no rest — correct so far — and then stayed there for its second set instead of resting and handing back. From the first pair on, the order was wrong and the rest came in the wrong place. A pair now runs properly: one set each, then one rest, then back to the first lift. The rest is the longer of the pair's two.",
+    "The hand-over says what it is: moving to the partner now names it and reminds you the rest comes after the pair.",
+  ] },
+  { v: 192, notes: [
+    "Shoulders and back are split. Progress now shows front, side and rear delts, and lats and upper back, each against its own range. The single shoulder number used to read high mostly from pressing while the side delts got very little; now you can see it. Front delts have no minimum, because pressing already covers them.",
+    "Hamstrings and triceps are checked for the right movements, not just the number of sets. A week with only hinges gets a note that knee flexion is missing, and a week without overhead triceps work gets one too.",
+    "New exercises: Nordic curl and slider leg curl, for hamstrings without a machine, and pike push-up, a shoulder press that needs nothing.",
+    "New blocks cover these by default. Three-day plans get a hamstring curl and a delt slot, five-day plans a second delt slot, a single delt slot goes to the side delts, and triceps work prefers an overhead extension.",
+    "Fixed: the push/pull balance check counted face pulls and reverse flys as pushing.",
+    "Importing a block file you already have now updates that block in place. It used to make it the active block and switch off automatic block selection, which would have stopped the next block from starting on its dates.",
+    "Fixed: an exercise added by spreadsheet import was always treated as a dumbbell lift. It now takes its equipment and cue from the exercise library.",
+  ] },
+  { v: 191, notes: [
+    "Training somewhere with lighter dumbbells no longer quietly shrinks the workout. A dumbbell lift planned above the heaviest dumbbell at the place you are standing now gets an honest alternative: the barbell version of the movement at a matching load, or the same dumbbells for enough extra reps to match the planned effort. Small gaps default to more reps, big gaps to the barbell, and you can switch before you start. Either way the result is converted back onto the planned lift.",
+    "Fixed: a session done at a lighter rack became the lift's history, so the next session back at the heavy rack progressed from the lighter weight. The app now progresses from the last session that was not held down by the dumbbells available.",
+    "Supersets actually run now. Since v186 the pairings were written into the plan but never reached the workout, so every paired day ran as straight sets.",
+    "Pallof presses, side planks and bird dogs are timed on both sides: first side, five seconds to switch, second side. The set records both and counts the weaker one.",
+    "The DEXA reminder shows once and then gets out of the way. You can dismiss it, or enter the date your scan is booked for, on the card or in Settings. The retest is now three months after your last scan instead of twelve weeks.",
+  ] },
+  { v: 190, notes: [
+    "The Today card now says which advice is the week's and which is the day's. The week focus reads as \"This week: …\", and a day with an interval finisher gets its own line with this week's round count — computed from the plan itself, so it can no longer disagree with what the workout actually runs. The counts that used to sit baked into the week text were right on one day of seven.",
+  ] },
+  { v: 189, notes: [
+    "Fixed: strength sessions froze after the warm-up. Since v186 the warm-up's \"Complete\" screen was as far as any lifting day could get — the workout behind it crashed before it could draw. If a session of yours went unlogged because of this, it can be added from the day's screen; nothing already logged was touched.",
+  ] },
+  { v: 188, notes: [
+    "Edits to a block now travel between your devices. Correcting a set count or importing a revised plan on one device used to stay on that device for ever — the backup would add a block it had never seen, but never update one it already had.",
+  ] },
+  { v: 187, notes: [
+    "Block 3 is paired up. Every lifting day now runs as supersets: squat with hip thrust, RDL with the Pallof press, bench with rows, overhead press with pullovers, pulldowns with face pulls, and the curls and pushdowns you had already written down. The Saturday core circuit runs as its three holds. Nothing was added, removed or reordered in the plan itself.",
+    "Fixed: archiving a block did not stick. A block you had archived came back as active the next time the shipped plans were updated, because the update replaced the whole block including the bit you had changed.",
+  ] },
+  { v: 186, notes: [
+    "Fixed: your dead hang had been getting SHORTER. It was progressing under the rule written for stretches, which lowers the target whenever you fall short — and a dead hang ends when your grip goes, so falling short is the point of it. Every honest session pushed the number down; it had reached 20 seconds from a planned 40 while every stretch beside it in the same cool-down had climbed. Strength holds now progress from your best instead: two full holds add five seconds, coming up short costs nothing, and only three bad sessions in a row move the target down — to the best of those three. Your dead hang is back at the 40 seconds the plan asks for. Planks, side planks, wall sits and hollow holds were all quietly doing the same thing and are all fixed.",
+    "The core circuit is a circuit now. Plank, leg raise and side plank each get their own countdown, their own \"end hold\" button and their own progression, instead of one line asking you to type a number of seconds from memory afterwards. Every timed exercise in a workout works this way now — same clock, same controls as the identical hold in a warm-up.",
+    "Supersets work. The plan format has carried a supersets field since the very first block, two of your blocks declare one, and nothing in the app has ever read it — so your curls and pushdowns have been running as ordinary straight sets all along. They now alternate properly, with the rest taken after the pair rather than between the two halves.",
+    "New blocks can be built with supersets. The builder asks; the default is no. Anything needing equipment is paired at most two deep and matched on the same kit wherever it can be, so a pairing costs the room one station rather than two. Bodyweight core work can run as a longer circuit. Two heavy lower-body lifts are never paired.",
+    "A training place can overrule it. Profile → Places → Supersets here: follow the block, always, or never. Useful when the same programme is fine at home and impossible in a busy gym.",
+  ] },
+  { v: 185, notes: [
+    "Every yoga pose now has a photograph — all 110 of them, in the practice player, the sequence list and your logged practices. The drawn figures were only ever a stand-in.",
+    "Photographs for the rest of the library too: deadlifts, pull-ups, push-ups, front squat and a dozen others were borrowing a picture of a near-enough lift and now have their own. Eight machine movements still show a drawing.",
+  ] },
+  { v: 184, notes: [
+    "Yoga practices are put together the way a class is taught. The standing work now runs as a short sequence down your right side and then your left, rather than every pose on its own; the practice comes down to the floor once and stays there instead of getting up and down; and each pose is chosen for what it leads into rather than for being different from the last one.",
+    "Fixed: a wind-down or bedtime practice could ask you to hold upward plank for nearly four minutes, or sit in a deep squat for four. Long holds are now only ever asked of shapes that can be held.",
+    "Fixed: a few pose pairs asked you to rebuild the pose underneath you — half moon straight into warrior III turns the standing hip over while you balance on a straight leg. Those no longer come up.",
+  ] },
+  { v: 183, notes: [
+    "Your stretch targets are back on the plan's numbers. The Skip bug had flattened them to the 15-second minimum and there is no record of what you had earned, so they start from the plan again and build back up from there. A target you genuinely hold at 15 seconds was left alone.",
+  ] },
+  { v: 182, notes: [
+    "Fixed: tapping Skip on a stretch logged it as a hold you'd managed for about a second, and the progression engine read that as failing it — so one pass of Skip through a cool-down dropped every stretch back to the 15-second minimum. Skip is navigation now; only finishing a hold, or the 'end hold — log my time' button, moves the target.",
+  ] },
+  { v: 181, notes: [
+    "Fixed: on most poses the teacher was still telling you how to get in when the hold began, and the alignment cues started underneath — two voices at once, which sounded like the instructions repeating. She now finishes the sentence before moving on.",
+  ] },
+  { v: 180, notes: [
+    "Fixed: list rows drawn as buttons — the day rows in your week plan, the Settings toggles, the yoga practice list — were printing their titles in near-black on a dark card. Barely readable, and it had been that way a while.",
+    "All text in the app now meets the WCAG AA contrast standard, in every theme. Quiet text is lighter than it was; that is what full AA costs on a near-black background.",
+    "The Yoga tab icon is a proper ॐ now — the previous one had a small hook where the character has a large closed loop.",
+  ] },
+  { v: 179, notes: [
+    "The yoga section has its own look now. Warm light for choosing a practice and browsing what you've done; deep indigo for the practice itself, because two of the nine intents are Wind down and Before bed and a white screen at 22:00 helps nobody.",
+    "The Yoga tab icon is ॐ.",
+    "Fixed: on a smaller phone the practice screen ran off the bottom on any two-sided pose, so you had to scroll to reach Pause mid-pose. The side is now part of the pose name rather than a row of its own.",
+    "Fixed: an Ashtanga practice showed its length as \"115:21\". It now says 1:55:21.",
+    "Quiet text across the app is a little lighter — the faintest tier was under the threshold where text is reliably readable.",
+  ] },
+  // v178 has no entry ON PURPOSE. It lets a yoga pose carry its own photograph
+  // instead of borrowing a related pose's — but no yoga photographs exist yet,
+  // so nothing about it is visible. It gets a note when the pictures land.
+  { v: 177, notes: [
+    "Tap any logged practice — on Today, in the week plan, or in the new list on the Yoga tab — to see what you did, pose by pose. You can correct how long it ran, change what it stood in for, or delete it.",
+    "Breath-paced holds now show an orb that swells as you breathe in and settles as you breathe out, instead of a ring counting down. The breath count stays in the middle.",
+    "The breath itself is slower: six seconds rather than five, which is ten a minute instead of twelve. Five was the rate you breathe at anyway. You can pick your own pace on the Yoga tab, from Brisk to Very slow.",
+    "Pausing and resuming picks the teacher up mid-passage rather than starting the pose again from its name.",
+  ] },
+  { v: 176, notes: [
+    "Fixed: a yoga practice could open by saying \"stretch\" instead of naming the first pose, and then stay silent for the whole session. If the app had ever been opened before the voice was published, it kept believing there was no voice.",
+    "Pausing a practice now stops the teacher mid-sentence. Resuming picks the pose back up rather than talking over where you already are.",
+  ] },
+  { v: 175, notes: [
+    "In yoga, the teacher now tells you how to get into a pose WHILE you're moving into it, during the get-into-position countdown, and saves the alignment cues for once you're there.",
+    "All spoken cues and countdowns are louder — about 7 dB up — and where your phone supports it the music dips for the length of each cue instead of the cue competing with it. The run countdown was getting lost under music.",
+    "Cue volume is now a setting, from Soft to Over the beat. Profile → Audio.",
+  ] },
+  { v: 174, notes: [
+    "If the spoken guidance hasn't been built on an install, the Yoga tab now says so instead of just running silent.",
+  ] },
+  { v: 173, notes: [
+    "Yoga now has a voice. A real teacher talks you through every pose — names it, tells you how to get in, what matters, how long you're staying, and calls one more breath before you move on.",
+    "Three experience levels. A beginner gets plain language, two cues and the way in; an expert gets the Sanskrit, the harder variation and far less talking. It changes which poses you're given, how long you hold them, and how much is explained.",
+    "Sun salutations run as rounds now, the way a class does, instead of six five-second poses in a row.",
+    "The breathing sound is actual breath rather than a tone.",
+    "You can say what a practice stands in for. Do yin instead of your mobility session and Today shows that session as replaced, with the practice logged as its own summary.",
+  ] },
+  { v: 172, notes: [
+    "Fixed: the button that starts a yoga practice was missing until you tapped something, and then sat underneath the tab bar where you couldn't reach it.",
+    "The sequence now opens as its shape — how long each part takes and what the peak is — with the full pose list one tap away. A 45-minute flow was five screens of scrolling before you could start it.",
+    "Once you've said what you're protecting, that question folds away to a single line instead of asking again every time.",
+    "The practice screen fits on one screen again, including on a smaller phone.",
+  ] },
+  { v: 171, notes: [
+    "There is a Yoga tab. You say what you want from a practice and how long you have, and it composes one — warm-up, build, a peak pose it has actually prepared you for, its counter-pose, and a savasana in proportion to the session.",
+    "Holds are counted in breaths rather than seconds, with a soft tone marking the inhale and the exhale.",
+    "You can tell it what you're protecting — knees, low back, SI joint, wrists, neck, shoulders — and it builds around that rather than filtering afterwards. It names the poses it left out and what it put in their place.",
+    "The Ashtanga Primary Series is there in full, in its own fixed order, because that is what it is.",
+    "A practice counts towards your week but never as hard sets. If one stood in for a lifting day, Progress says which muscles came up short.",
+  ] },
+  { v: 170, notes: [
+    "The block builder now shows which of your picks actually shapes the lifting — with the reps, rest and effort it means — and says so when a second choice won't change anything.",
+    "Generated blocks are checked before you start them: weekly sets per muscle, rep ranges suited to their job, rest matched to the loads, and nothing left untrained. Anything it can't fix, it names.",
+    "A new block now varies its exercises from your last two, and tells you if something has been getting skipped across blocks.",
+  ] },
+  { v: 167, notes: [
+    "During a workout you can now swap an exercise for one that trains the same thing, add any exercise from the full list, and add or drop a set.",
+    "If a session didn't match the plan, the app asks once at the end whether to keep the change, ignore it, or just bear it in mind next time.",
+    "A gym set up with pound plates can now be switched back to metric.",
+    "A block can be exported as a spreadsheet, edited, and imported back — useful for checking a plan over before you start it.",
+  ] },
+  { v: 166, notes: [
+    "This card. When the app updates it will tell you what changed, once, and only when there is something worth saying.",
+  ] },
+  { v: 165, notes: [
+    "Stretches in warm-ups and cool-downs now adapt. Stop one early and the next one asks for what you actually held; hold it fully twice and it grows.",
+  ] },
+  { v: 162, notes: [
+    "Apple Health setup is much harder to get wrong — the exact fields are shown, and the app now says so when data arrives under names it can't read.",
+  ] },
+  { v: 161, notes: [
+    "Bodyweight has its own place in Profile, and the strength benchmark now says what it needs instead of quietly staying empty.",
+    "A gym can be set to pound plates independently of your units, so travelling no longer produces weights the bar can't make.",
+  ] },
+  { v: 157, notes: [
+    "If your backup stops working you'll be told, rather than finding out when you need it.",
+  ] },
+  { v: 156, notes: [
+    "A reinstalled app can restore everything from the first screen — tap \"I already have a backup\" before setting up.",
+  ] },
+  { v: 153, notes: [
+    "Somewhere new? Describe it once for that session with \"Just for today\" and nothing is saved.",
+    "Each gym keeps its own plates, dumbbells and cable stack, so the weights asked for are ones that gym can actually load.",
+  ] },
+];
+
+/** The numeric part of a version string: "v165" -> 165. */
+export const versionNumber = (v) => {
+  const m = String(v || "").match(/(\d+)/);
+  return m ? Number(m[1]) : 0;
+};
+
+/** The most recent release that actually had something to say. */
+export const latestNotes = (max = 6) => (CHANGELOG[0] ? CHANGELOG[0].notes.slice(0, max) : []);
+
+/**
+ * Entries newer than `sinceVersion`, capped so someone returning after months
+ * gets the highlights rather than a wall. Returns [] when there is nothing to
+ * say, which is the case the caller should treat as "show nothing at all".
+ */
+export function notesSince(sinceVersion, currentVersion, max = 6) {
+  const from = versionNumber(sinceVersion);
+  const to = versionNumber(currentVersion);
+  if (!to || to <= from) return [];
+  const out = [];
+  for (const entry of CHANGELOG) {
+    if (entry.v <= from || entry.v > to) continue;
+    for (const n of entry.notes) {
+      if (out.length < max) out.push(n);
+    }
+  }
+  return out;
+}
