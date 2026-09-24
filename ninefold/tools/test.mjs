@@ -68,7 +68,9 @@ import { checkScript, entryScript, exitScript, salutationScript, allHoldPhrases 
 import { ASANAS } from "../js/yoga/asanas.js";
 import { flowSeconds as flowSecondsOf, elapsedAt as flowElapsedAt } from "../js/yoga/compose.js";
 import { isStrengthHold, applyHoldResults, repairHoldRatchet, HOLD_CAP } from "../js/holds.js";
-import { shouldAdoptProgram } from "../js/store.js";
+import { shouldAdoptProgram, SYNCED_PREFS } from "../js/store.js";
+import { shouldAdoptRow, rowDecision, mergeLogEntries, mergeTombstones, pruneTombstones,
+  addTombstone, mergeTombstoneSets, LOG_PREFS } from "../js/sync.js";
 import { pairScore, buildSupersets, usableSupersets, orderWithSupersets, occupiesEquipment,
   supersetsAllowed, expandComposites, exerciseById as ssExercise, MIN_PAIR_SCORE,
   nextInGroup, arrangeWithSupersets, leadForRound, groupRest, isMainWork,
@@ -3725,6 +3727,119 @@ group("backup and plan import — what the sibling path used to drop", () => {
         days: { Tue: { weekday: "Tue", type: "strength", exercises: [] } } })) };
     const next = applyPlanCSV(base, fromCSV(toCSV(base)), { mode: "update" });
     assert.deepEqual(next.weeks.map((w) => w.startDate), ["2026-09-14", "2026-09-21", "2026-09-28"]);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// v198 — sync v2: one rule per row, and a deletion is a row
+// ---------------------------------------------------------------------------
+group("sync — the newer copy of a row wins", () => {
+  const at = (iso, extra = {}) => ({ id: "r", updatedAt: iso, ...extra });
+
+  it("strictly newer replaces; equal and older do not", () => {
+    assert.equal(shouldAdoptRow(at("2026-09-24T10:00:00.000Z"), at("2026-09-23T10:00:00.000Z")), true);
+    assert.equal(shouldAdoptRow(at("2026-09-23T10:00:00.000Z"), at("2026-09-24T10:00:00.000Z")), false);
+    assert.equal(shouldAdoptRow(at("2026-09-24T10:00:00.000Z"), at("2026-09-24T10:00:00.000Z")), false);
+  });
+  it("a row that has never been stamped is older than any stamped one, and never wins", () => {
+    // Everything logged before this existed is unstamped. "Unknown age" has to
+    // lose, or a device that has been offline for a month overwrites today.
+    assert.equal(shouldAdoptRow({ id: "r" }, at("2026-09-24T10:00:00.000Z")), false);
+    assert.equal(shouldAdoptRow(at("2026-09-24T10:00:00.000Z"), { id: "r" }), true);
+    assert.equal(shouldAdoptRow({ id: "r" }, { id: "r" }), false, "two unstamped copies: keep what is here");
+  });
+  it("a row this device has never seen is taken", () => {
+    assert.equal(shouldAdoptRow(at("2026-09-24T10:00:00.000Z"), null), true);
+    assert.equal(shouldAdoptRow(null, at("2026-09-24T10:00:00.000Z")), false);
+  });
+});
+
+group("sync — a deletion travels", () => {
+  const OLD = "2026-09-20T10:00:00.000Z", NEW = "2026-09-24T10:00:00.000Z";
+
+  it("a deletion newer than the copy on offer wins", () => {
+    assert.equal(rowDecision({ id: "s", updatedAt: OLD }, { id: "s", updatedAt: OLD }, NEW), "drop");
+    assert.equal(rowDecision({ id: "s", updatedAt: OLD }, null, NEW), "keep", "nothing here to delete");
+  });
+  it("but an EDIT made after the deletion brings the row back", () => {
+    // Deleting on the laptop and then editing the same session on the phone is
+    // the phone saying "no, keep it" — the later action wins, as with any row.
+    assert.equal(rowDecision({ id: "s", updatedAt: NEW }, null, OLD), "adopt");
+    assert.equal(rowDecision({ id: "s", updatedAt: NEW }, { id: "s", updatedAt: OLD }, OLD), "adopt");
+  });
+  it("tombstones merge keeping the later moment, and prune after 90 days", () => {
+    const merged = mergeTombstones({ a: OLD, b: NEW }, { a: NEW, c: OLD });
+    assert.deepEqual(merged, { a: NEW, b: NEW, c: OLD });
+    const pruned = pruneTombstones({ recent: "2026-09-20T00:00:00.000Z", ancient: "2026-01-01T00:00:00.000Z" },
+      "2026-09-24T00:00:00.000Z");
+    assert.deepEqual(Object.keys(pruned), ["recent"]);
+  });
+  it("tombstones are merged PER KIND, or one side is silently dropped", () => {
+    // Sessions and programs keep separate id spaces, so the map is two levels
+    // deep. Merging it with the flat merger compared objects with Date.parse —
+    // NaN — and every incoming kind lost to the local one, which is how a
+    // deletion made on the other device failed to arrive.
+    const merged = mergeTombstoneSets({ sessions: { s2: OLD } }, { sessions: { s3: NEW }, programs: { p1: NEW } });
+    assert.deepEqual(merged, { sessions: { s2: OLD, s3: NEW }, programs: { p1: NEW } });
+    assert.deepEqual(mergeTombstoneSets(null, null), {});
+  });
+  it("adding one is immutable and keyed by id", () => {
+    const a = addTombstone({}, "s1", OLD);
+    const b = addTombstone(a, "s2", NEW);
+    assert.deepEqual(a, { s1: OLD });
+    assert.deepEqual(b, { s1: OLD, s2: NEW });
+    assert.deepEqual(addTombstone({}, null, NEW), {}, "no id, no tombstone");
+  });
+});
+
+group("sync — logs merge entry by entry, not blob by blob", () => {
+  const e = (date, value, updatedAt) => ({ date, value, ...(updatedAt ? { updatedAt } : {}) });
+
+  it("entries only the other device has are kept, which is the whole bug", () => {
+    // Phone logged Monday, laptop logged Tuesday. The old rule kept whichever
+    // whole log arrived first and the other day was gone.
+    const merged = mergeLogEntries([e("2026-09-21", 80)], [e("2026-09-22", 81)], { key: "date" });
+    assert.deepEqual(merged.map((x) => x.date), ["2026-09-21", "2026-09-22"]);
+  });
+  it("the same day edited on both keeps the newer edit", () => {
+    const mine = [e("2026-09-21", 80, "2026-09-21T08:00:00.000Z")];
+    const theirs = [e("2026-09-21", 79.5, "2026-09-21T20:00:00.000Z")];
+    assert.equal(mergeLogEntries(mine, theirs, { key: "date" })[0].value, 79.5);
+    assert.equal(mergeLogEntries(theirs, mine, { key: "date" })[0].value, 79.5);
+  });
+  it("an unstamped entry never overwrites the copy here", () => {
+    const mine = [e("2026-09-21", 80, "2026-09-21T08:00:00.000Z")];
+    assert.equal(mergeLogEntries(mine, [e("2026-09-21", 99)], { key: "date" })[0].value, 80);
+  });
+  it("entries come back in date order whatever order they arrived in", () => {
+    const merged = mergeLogEntries([e("2026-09-22", 2)], [e("2026-09-20", 1), e("2026-09-24", 3)], { key: "date" });
+    assert.deepEqual(merged.map((x) => x.date), ["2026-09-20", "2026-09-22", "2026-09-24"]);
+  });
+  it("the nutrition log is a map keyed by date, and merges the same way", () => {
+    const mine = { "2026-09-21": { kcal: 2400, updatedAt: "2026-09-21T20:00:00.000Z" } };
+    const theirs = { "2026-09-21": { kcal: 2000, updatedAt: "2026-09-21T09:00:00.000Z" }, "2026-09-22": { kcal: 2500 } };
+    const merged = mergeLogEntries(mine, theirs, { key: "date" });
+    assert.equal(merged["2026-09-21"].kcal, 2400, "the later edit stands");
+    assert.equal(merged["2026-09-22"].kcal, 2500, "the other device's day is kept");
+  });
+  it("yoga is keyed by the practice's timestamp, since several a day are allowed", () => {
+    const a = { date: "2026-09-21", at: "2026-09-21T07:00:00.000Z", intent: "wake" };
+    const b = { date: "2026-09-21", at: "2026-09-21T21:00:00.000Z", intent: "bed" };
+    assert.equal(mergeLogEntries([a], [b], LOG_PREFS.yogaLog).length, 2);
+    assert.equal(mergeLogEntries([a], [a], LOG_PREFS.yogaLog).length, 1);
+  });
+  it("every log this app syncs has a rule, and it names a real identifier", () => {
+    for (const [pref, spec] of Object.entries(LOG_PREFS)) {
+      assert.ok(SYNCED_PREFS.includes(pref), `${pref} is synced`);
+      assert.ok(spec.key, `${pref} names its key`);
+    }
+    // Tombstones ride along with the prefs, so they have to be synced too.
+    assert.ok(SYNCED_PREFS.includes("deletedRows"));
+  });
+  it("missing sides are handled without inventing an empty log", () => {
+    assert.deepEqual(mergeLogEntries(null, [{ date: "2026-09-21" }], { key: "date" }), [{ date: "2026-09-21" }]);
+    assert.deepEqual(mergeLogEntries([{ date: "2026-09-21" }], null, { key: "date" }), [{ date: "2026-09-21" }]);
   });
 });
 

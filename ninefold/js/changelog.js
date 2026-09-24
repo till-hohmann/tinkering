@@ -13,6 +13,11 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 198, notes: [
+    "A change made on one device now reaches the others. Until today only a training block could travel: a session was frozen the moment it had arrived anywhere, so a corrected weight or an edited set count stayed on the device you typed it on, and deleting a session let the other device put it back. Every session now carries the moment it was written, the newer copy wins, and a deletion travels too (and is remembered for 90 days, long enough for every device to hear about it).",
+    "Your weight, yoga, mobility, nutrition, measurement and DEXA logs merge entry by entry. They used to travel as whole lists under a rule meant for settings — whichever device already had a list kept its own — so entries made on the other device could quietly disappear. Days only one device has are now kept, and a day edited on both keeps the later edit.",
+    "This applies to entries written from now on. Anything logged before today has no timestamp, and an untimestamped entry never overwrites what is on the device you are reading.",
+  ] },
   { v: 197, notes: [
     "Your backup refuses two more ways of losing things. It already turned away a push with no sessions or no profile; it now also turns away one with no training blocks, or with no settings at all. Both are what a half-finished restore leaves behind, and either would have replaced the only copy of blocks written by hand over months.",
     "Restoring from a backup file now goes through the same code as every other restore, so a restored block carries a timestamp and can reach your other devices. It used to be a second implementation that skipped that.",

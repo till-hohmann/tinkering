@@ -2,6 +2,8 @@
 // sessions, and the comparison queries from requirements §9.
 
 import * as db from "./db.js";
+import { rowDecision, mergeLogEntries, mergeTombstoneSets, pruneTombstones, addTombstone,
+  stampRow, LOG_PREFS } from "./sync.js";
 import { weekdayOf, weekNumberFor, previousOccurrence, todayISO } from "./model.js";
 import { cloudPushDebounced } from "./cloudsync.js";
 import { DEFAULT_ZONE_BOUNDS, maxHRof } from "./cardio-intel.js";
@@ -17,7 +19,7 @@ import { DEFAULT_ZONE_BOUNDS, maxHRof } from "./cardio-intel.js";
 // reverted to picking by date — so someone deliberately running an older block
 // would come back from a wipe running a different one, with nothing to indicate
 // it had changed. The ids they reference are themselves in the backup.
-export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "dexaBooked", "dexaReminderSeen", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "stretchProg", "activeProgramId", "autoSelectProgram", "audioPrefs", "yogaLog", "yogaPrefs"];
+export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "dexaBooked", "dexaReminderSeen", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "stretchProg", "activeProgramId", "autoSelectProgram", "audioPrefs", "yogaLog", "yogaPrefs", "deletedRows"];
 export async function syncedPrefs() {
   const out = {};
   for (const k of SYNCED_PREFS) { const v = await db.getPref(k); if (v !== undefined) out[k] = v; }
@@ -31,7 +33,20 @@ async function restorePrefs(prefs, { overwrite = false } = {}) {
   let touchedProfile = false;
   for (const k of SYNCED_PREFS) {
     if (prefs[k] === undefined) continue;
-    if (overwrite || (await db.getPref(k)) === undefined) { await db.setPref(k, prefs[k]); touchedProfile ||= k === "profile"; }
+    const mine = await db.getPref(k);
+    // ⚠ A LOG IS NOT A SETTING. add-if-missing is right for a preference — one
+    // device must not clobber a choice made on another — and wrong for a log,
+    // where it meant the device that already had one kept its whole copy and
+    // pushed it, dropping every entry only the other device had. Logs merge
+    // entry by entry (sync.js), newest wins.
+    if (!overwrite && LOG_PREFS[k] && mine && typeof mine === "object") {
+      await db.setPref(k, mergeLogEntries(mine, prefs[k], LOG_PREFS[k]));
+      continue;
+    }
+    // Tombstones are merged in mergeRestore and written there; a second,
+    // dumber write here would throw the other device's deletions away.
+    if (k === "deletedRows" && !overwrite) continue;
+    if (overwrite || mine === undefined) { await db.setPref(k, prefs[k]); touchedProfile ||= k === "profile"; }
   }
   // The profile is written straight to the pref store here, behind profile.js's
   // back. Without this its in-memory copy — and the display units derived from
@@ -99,8 +114,28 @@ export function shouldAdoptProgram(incoming, stored) {
   return a > b;
 }
 
+/**
+ * A DELETION IS A ROW. Removing a session or a block locally is invisible to the
+ * other device, whose next push simply offers it back — and the boot merge then
+ * restores it here. The id and the moment are kept instead, travel in the
+ * snapshot like everything else, and are pruned after 90 days.
+ */
+async function recordDeletion(kind, id) {
+  const map = (await db.getPref("deletedRows")) || {};
+  const next = { ...map, [kind]: addTombstone(map[kind], id, new Date().toISOString()) };
+  await db.setPref("deletedRows", prunedTombstones(next));
+}
+function prunedTombstones(map) {
+  const now = new Date().toISOString();
+  return Object.fromEntries(Object.entries(map || {}).map(([kind, rows]) => [kind, pruneTombstones(rows, now)]));
+}
+
 export async function mergeRestore(data, { overwrite = false } = {}) {
   if (!data) return 0;
+  // Deletions from every device, merged before anything is written: a row the
+  // snapshot still carries may have been deleted here, and vice versa.
+  const tombs = mergeTombstoneSets(await db.getPref("deletedRows"),
+    (data.prefs && data.prefs.deletedRows) || {});
   for (const p of data.programs || []) {
     const stored = await db.get("programs", p.id);
     // An explicit restore means "this device is now that backup", so the file's
@@ -111,20 +146,17 @@ export async function mergeRestore(data, { overwrite = false } = {}) {
       await db.put("programs", p.updatedAt ? p : { ...p, updatedAt: new Date().toISOString() });
       continue;
     }
-    if (!stored) { await db.put("programs", p); continue; }
     // ⚠ AN EDIT TO A BLOCK HAS NEVER SYNCED. This loop only ever added programs
     // the device was missing, so correcting Wednesday on one device and opening
-    // the app on another showed the old Wednesday for ever — the block was
-    // treated as immutable once it had arrived anywhere.
+    // the app on another showed the old Wednesday for ever.
     //
-    // A strictly newer `updatedAt` wins. No timestamp on the cloud copy means
-    // "unknown age", which loses: the risk of silently replacing a block someone
-    // is mid-way through is worse than the staleness it leaves behind.
-    if (shouldAdoptProgram(p, stored)) {
-      // The device owns whether it has archived the thing. Same reasoning as the
-      // re-seed above, and the same bug if it is left out.
-      await db.put("programs", { ...p, status: stored.status || p.status });
-    }
+    // A strictly newer `updatedAt` wins; no timestamp means "unknown age", which
+    // loses. A deletion newer than the copy on offer wins over both.
+    const verdict = rowDecision(p, stored, (tombs.programs || {})[p.id]);
+    if (verdict === "drop") { await db.del("programs", p.id); continue; }
+    if (verdict !== "adopt") continue;
+    // The device owns whether it has archived the thing.
+    await db.put("programs", stored ? { ...p, status: stored.status || p.status } : p);
   }
   let added = 0;
   if (data.sessions && data.sessions.length) {
@@ -136,9 +168,30 @@ export async function mergeRestore(data, { overwrite = false } = {}) {
       await db.putAll("sessions", data.sessions);
       added = data.sessions.length;
     } else {
-      const have = new Set((await db.getAll("sessions")).map((s) => s.id));
-      for (const s of data.sessions) if (s && s.id && !have.has(s.id)) { await db.put("sessions", s); added++; }
+      // ⚠ WAS "ADD IF THE ID IS MISSING", which made a session immutable the
+      // moment it had reached any device: a corrected weight, an edited set
+      // count or a deletion never travelled. Same rule as programs now.
+      const stored = new Map((await db.getAll("sessions")).map((x) => [x.id, x]));
+      for (const x of data.sessions) {
+        if (!x || !x.id) continue;
+        const verdict = rowDecision(x, stored.get(x.id), (tombs.sessions || {})[x.id]);
+        if (verdict === "adopt") { await db.put("sessions", x); added++; }
+        else if (verdict === "drop") await db.del("sessions", x.id);
+      }
     }
+  }
+  // Deletions for rows this snapshot no longer carries at all (the usual case:
+  // the other device deleted it, so its push simply lacks the row).
+  if (!overwrite) {
+    for (const [kind, store] of [["sessions", "sessions"], ["programs", "programs"]]) {
+      for (const [id, iso] of Object.entries(tombs[kind] || {})) {
+        const mine = await db.get(store, id);
+        if (!mine) continue;
+        const mineAge = mine.updatedAt ? Date.parse(mine.updatedAt) || 0 : 0;
+        if ((Date.parse(iso) || 0) >= mineAge) await db.del(store, id);
+      }
+    }
+    if (Object.keys(tombs).length) await db.setPref("deletedRows", prunedTombstones(tombs));
   }
   await restorePrefs(data.prefs, { overwrite });
   // An EXPLICIT restore means "this device is now that install", so it takes on
@@ -326,6 +379,7 @@ export async function deleteProgram(programId) {
   const gone = all.find((p) => p.id === programId);
   if (!gone) throw new Error("not_found");
   await db.del("programs", programId);
+  await recordDeletion("programs", programId);
   // If it was the pinned active one, fall back to whichever block covers today.
   const activeId = await db.getPref("activeProgramId");
   if (activeId === programId) {
@@ -403,7 +457,7 @@ export async function getMobilityLog() { return ((await db.getPref("mobilityLog"
 // accidental completion instead of being silently ignored.
 export async function addMobilityDone(iso, key, holds, eased) {
   const raw = ((await db.getPref("mobilityLog")) || []).filter((e) => normMob(e).date !== iso);
-  raw.push({ date: iso, key, ...(holds && holds.length ? { holds } : {}), ...(eased ? { eased: true } : {}) });
+  raw.push(stampRow({ date: iso, key, ...(holds && holds.length ? { holds } : {}), ...(eased ? { eased: true } : {}) }));
   raw.sort((a, b) => (normMob(a).date < normMob(b).date ? -1 : 1));
   await db.setPref("mobilityLog", raw); pushCloud();
 }
@@ -451,7 +505,7 @@ const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.at || 
 
 export async function addYogaDone(iso, entry) {
   const raw = (await db.getPref("yogaLog")) || [];
-  raw.push({ date: iso, at: new Date().toISOString(), ...entry });
+  raw.push(stampRow({ date: iso, at: new Date().toISOString(), ...entry }));
   raw.sort(byDate);
   await db.setPref("yogaLog", raw); pushCloud();
   return raw;
@@ -746,7 +800,7 @@ export async function addVO2max(value, date) {
   const log = await getVO2maxLog();
   const v = Math.round(value * 10) / 10;
   const i = log.findIndex((e) => e.date === date);
-  if (i >= 0) log[i] = { date, value: v }; else log.push({ date, value: v });
+  if (i >= 0) log[i] = stampRow({ date, value: v }); else log.push(stampRow({ date, value: v }));
   log.sort((a, b) => (a.date < b.date ? -1 : 1));
   await db.setPref("vo2maxLog", log);
   pushCloud();
@@ -769,7 +823,7 @@ export async function addMeasurement(date, values) {
   if (!Object.keys(clean).length) return;
   const log = await getMeasurementsLog();
   const i = log.findIndex((e) => e.date === date);
-  if (i >= 0) log[i] = { ...log[i], ...clean, date }; else log.push({ date, ...clean });
+  if (i >= 0) log[i] = stampRow({ ...log[i], ...clean, date }); else log.push(stampRow({ date, ...clean }));
   log.sort((a, b) => (a.date < b.date ? -1 : 1));
   await db.setPref("measurementsLog", log);
   pushCloud();
@@ -795,7 +849,7 @@ export async function addDexaScan(date, values) {
   if (Object.keys(clean).length <= 1) return;   // nothing but the date
   const log = await getDexaLog();
   const i = log.findIndex((e) => e.date === date);
-  if (i >= 0) log[i] = { ...log[i], ...clean }; else log.push(clean);
+  if (i >= 0) log[i] = stampRow({ ...log[i], ...clean }); else log.push(stampRow(clean));
   log.sort((a, b) => (a.date < b.date ? -1 : 1));
   await db.setPref("dexaLog", log);
   pushCloud();
@@ -835,7 +889,7 @@ export async function addWeight(date, kg) {
   const val = Math.round(n * 10) / 10;
   const log = await getWeightLog();
   const i = log.findIndex((e) => e.date === date);
-  if (i >= 0) log[i] = { date, kg: val }; else log.push({ date, kg: val });
+  if (i >= 0) log[i] = stampRow({ date, kg: val }); else log.push(stampRow({ date, kg: val }));
   log.sort((a, b) => (a.date < b.date ? -1 : 1));
   await db.setPref("weightLog", log);
   pushCloud();
@@ -853,7 +907,7 @@ export async function setNutrition(date, entry) {
   const log = await getNutritionLog();
   const clean = {};
   for (const k of ["kcal", "protein", "carbs", "fat"]) if (entry[k] != null && entry[k] !== "") clean[k] = Math.round(Number(entry[k]) || 0);
-  if (Object.keys(clean).length) log[date] = clean; else delete log[date];
+  if (Object.keys(clean).length) log[date] = stampRow(clean); else delete log[date];
   await db.setPref("nutritionLog", log);
   pushCloud();
 }
@@ -946,8 +1000,15 @@ export function resolveDay(program, isoDate) {
 }
 
 // --- Sessions ------------------------------------------------------------
-export const saveSession = (session) => { const p = db.put("sessions", session); pushCloud(); return p; };
-export const deleteSession = (id) => { const p = db.del("sessions", id); pushCloud(); return p; };
+// Stamped on every write, so another device can tell which copy is newer. This
+// is the rule programs have had since v188, now for the rows carrying the
+// training itself.
+export const saveSession = (session) => { const p = db.put("sessions", stampRow(session)); pushCloud(); return p; };
+export async function deleteSession(id) {
+  await db.del("sessions", id);
+  await recordDeletion("sessions", id);
+  pushCloud();
+}
 export const getSession = (id) => db.get("sessions", id);
 
 export const getSessionsForProgram = (programId) =>
