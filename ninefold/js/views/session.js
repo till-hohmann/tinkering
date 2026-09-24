@@ -17,7 +17,7 @@ import { interruptSheet } from "../components/interrupt.js";
 import { recommend, roundLoad, isDeloadWeek, loadCeiling, parseRange } from "../progression.js";
 import { canDoHere } from "../equipment.js";
 import { needsSub, primarySubstitute, candidatesFor, isApprox, metaFor, seedSubLoad,
-  backCalcOriginal, SUB_EXERCISES, ceilingPlan, progressionSource, implementAvailable } from "../substitution.js";
+  backCalcOriginal, SUB_EXERCISES, ceilingPlan, pickProgressionSource, implementAvailable } from "../substitution.js";
 import { runRoutine, isStretch } from "./routine.js";
 import { isStrengthHold } from "../holds.js";
 import { runStrength } from "./strength.js";
@@ -746,12 +746,13 @@ async function plannedRecs(program, day, weekday, iso, plannedLoc, equip) {
   for (const e of day.exercises || []) {
     const implement = program.exercises[e.exerciseId].implement;
     const hist = await exerciseHistory(program.id, weekday, e.exerciseId, iso);
-    let prev = hist.length ? progressionSource(hist, { implement, location: plannedLoc, equip }) : null;
+    // Both histories, filtered together: the block handover carries loads across,
+    // and a session done at a lighter rack never sets the target (v195).
+    const prev = pickProgressionSource(
+      { inProgram: hist, across: await exerciseHistoryAcross(weekday, e.exerciseId, iso) },
+      { implement, location: plannedLoc, equip });
     let srcProgram = program;
-    if (!prev) {   // new-block seed: carry loads across the block handover
-      prev = (await exerciseHistoryAcross(weekday, e.exerciseId, iso)).pop() || null;
-      if (prev && prev.programId) srcProgram = (await getAllPrograms()).find((p) => p.id === prev.programId) || program;
-    }
+    if (prev && prev.programId) srcProgram = (await getAllPrograms()).find((p) => p.id === prev.programId) || program;
     const prevRange = prev ? prescribedRangeAt(srcProgram, prev.weekNumber, weekday, e.exerciseId) : null;
     out.push(recommend({ curRx: e, prevEx: prev ? prev.exercise : null, prevRange,
       implement, location: plannedLoc, equip, exerciseId: e.exerciseId, deload }));

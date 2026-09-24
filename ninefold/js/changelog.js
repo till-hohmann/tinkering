@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 195, notes: [
+    "Fixed: the first time a new block meets a lift, it could take its target from a session done somewhere with lighter dumbbells. A block starts with no history of its own and falls back to the last time the app saw that lift anywhere — and that fallback ignored the rule, added in v191, that a set pinned at a lighter rack's ceiling does not measure you. An incline press was prescribed at 27 kg off a 22.5 kg session, when the last session at the heavier rack had been 32. It now reads both histories under the same rule, and a capped session in this block loses to a real one in the last.",
+  ] },
   { v: 194, notes: [
     "Your heavy lifts are no longer paired with anything. A 5×5 bench had been handing you a barbell row between sets, because the pairings were written by the block generator, which could see the exercise but not the prescription — and pairing the day's main work is exactly what a strength week should not do. A compound with two minutes' rest, or a top set of eight or fewer, now always runs on its own with its full rest. Accessories still pair, which is what supersets were added for.",
     "Paired work is visible before you start. The day view and the pre-workout list group a superset behind one label, numbered 1/2 and 2/2, and say that you alternate and rest after the round. A paired day used to read exactly like any other until the session handed you a different exercise.",

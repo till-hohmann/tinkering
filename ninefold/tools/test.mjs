@@ -41,7 +41,8 @@ import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT,
 import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay, dayCellRole, finisherRoundsFor, isReducedPhase } from "../js/model.js";
 import { parseAppleExport, summarise, appleTime } from "../js/health/apple-import.js";
 import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES, alternativesFor,
-  ceilingPlan, progressionSource, backCalcOriginal, HEAVIER_EQUIVALENT, MATCH_REPS_MAX } from "../js/substitution.js";
+  ceilingPlan, progressionSource, pickProgressionSource, cappedElsewhere,
+  backCalcOriginal, HEAVIER_EQUIVALENT, MATCH_REPS_MAX } from "../js/substitution.js";
 import { e1rm } from "../js/progression.js";
 import { holdsPerSide, byId as libById } from "../js/exercise-library.js";
 import { dexaSchedule, addMonthsISO } from "../js/dexa.js";
@@ -3487,6 +3488,47 @@ group("supersets — the overviews show the day as it will run", () => {
   it("a day with no pairs is all singles", () => {
     assert.ok(planSections(day, [], { allow: true }).every((s) => s.kind === "single"));
     assert.deepEqual(planSections([], [], { allow: true }), []);
+  });
+});
+
+
+group("progression — the block handover cannot seed from a lighter rack", () => {
+  // Till's first Thursday of block 3: the block had no history for the lift, so
+  // the session fell back to "the last time I saw this anywhere" and took a
+  // session done where the dumbbells stop at 22.5 kg — prescribing 27 kg when
+  // the last session at his own rack had been 32.
+  const occ = (date, location, weightKg, reps, programId, extra = {}) =>
+    ({ date, location, programId, weekNumber: 1,
+       exercise: { sets: [{ weightKg, reps }, { weightKg, reps }], ...extra } });
+  const ctx = { implement: "dumbbell_pair", location: "Home", equip: TWO_RACKS };
+  const across = [occ("2026-08-27", "Home", 32, 9, "block2"), occ("2026-09-03", "Gym", 22.5, 15, "block2")];
+
+  it("with no history in this block, the fallback skips the capped session", () => {
+    const src = pickProgressionSource({ inProgram: [], across }, ctx);
+    assert.equal(src.date, "2026-08-27");
+    assert.equal(src.exercise.sets[0].weightKg, 32);
+  });
+  it("a clean occurrence in THIS block still wins over an older one", () => {
+    const inProgram = [occ("2026-09-17", "Home", 34, 8, "block3")];
+    assert.equal(pickProgressionSource({ inProgram, across }, ctx).date, "2026-09-17");
+  });
+  it("a capped reading in this block loses to a real one in the last", () => {
+    const inProgram = [occ("2026-09-22", "Gym", 22.5, 12, "block3")];
+    assert.equal(pickProgressionSource({ inProgram, across }, ctx).date, "2026-08-27");
+  });
+  it("when every reading is capped, the latest is still used — something beats nothing", () => {
+    const onlyCapped = [occ("2026-09-03", "Gym", 22.5, 15, "block2")];
+    assert.equal(pickProgressionSource({ inProgram: [], across: onlyCapped }, ctx).date, "2026-09-03");
+    assert.equal(pickProgressionSource({ inProgram: [], across: [] }, ctx), null);
+  });
+  it("a back-calculated session is never treated as capped, wherever it was done", () => {
+    const converted = [occ("2026-09-03", "Gym", 36, 6, "block2", { substituted: true, via: "incline_barbell_press" })];
+    assert.equal(cappedElsewhere(converted[0], ctx), false);
+    assert.equal(pickProgressionSource({ inProgram: [], across: converted }, ctx).date, "2026-09-03");
+  });
+  it("training AT the lighter rack still progresses from what you did there", () => {
+    const atGym = { ...ctx, location: "Gym" };
+    assert.equal(pickProgressionSource({ inProgram: [], across }, atGym).date, "2026-09-03");
   });
 });
 

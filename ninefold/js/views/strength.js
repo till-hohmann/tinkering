@@ -18,7 +18,8 @@ import { cueItemStart, cueItemEnd, cueTick } from "../components/sound.js";
 import { celebrate } from "../components/confetti.js";
 import { recommend, detectStall, roundLoad, isDeloadWeek, e1rm, warmupPlan, replanSets, loadCeiling, rackAt } from "../progression.js";
 import { availableAt, holdsPerSide } from "../exercise-library.js";
-import { alternativesFor, metaFor, seedSubLoad, SUB_EXERCISES, implementAvailable, progressionSource } from "../substitution.js";
+import { alternativesFor, metaFor, seedSubLoad, SUB_EXERCISES, implementAvailable,
+  pickProgressionSource } from "../substitution.js";
 import { MUSCLE_MAP, partsOf } from "../volume.js";
 
 import { muscleBody } from "../anatomy.js";
@@ -267,15 +268,16 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     // from scratch. Fall back to the last occurrence in any earlier block; the
     // SOURCE program's plan supplies its rep range so the engine's range bridges
     // re-base the load correctly. Stall detection stays block-scoped (fresh trend).
-    const seeded = await Promise.all(histories.map(async (h, i) =>
-      h.length ? null : (await exerciseHistoryAcross(weekday, exercises[i].exerciseId, iso)).pop() || null));
-    const progMap = seeded.some(Boolean)
+    // The earlier blocks are fetched for EVERY lift, not only for the ones with
+    // no history here: a reading taken at a lighter rack has to be able to lose
+    // to a real one in the last block (substitution.js pickProgressionSource).
+    const acrossAll = await Promise.all(
+      exercises.map((e) => exerciseHistoryAcross(weekday, e.exerciseId, iso))
+    );
+    prevs = histories.map((h, i) => pickProgressionSource({ inProgram: h, across: acrossAll[i] },
+      { implement: metaFor(program, exercises[i].exerciseId).implement, location, equip }));
+    const progMap = prevs.some((p) => p && p.programId)
       ? Object.fromEntries((await getAllPrograms()).map((p) => [p.id, p])) : null;
-    // Progress from the last occurrence that measured YOU rather than a lighter
-    // rack elsewhere (substitution.js progressionSource).
-    prevs = histories.map((h, i) => (h.length
-      ? progressionSource(h, { implement: metaFor(program, exercises[i].exerciseId).implement, location, equip })
-      : seeded[i]));
     const deload = isDeloadWeek((program.weeks || []).find((w) => w.weekNumber === M.weekNumberFor(program, iso)));
     recs = exercises.map((e, i) => {
       const prev = prevs[i];
@@ -372,13 +374,12 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       repRange: baseRx.repRange || "8-12", restSeconds: baseRx.restSeconds || 90, role: baseRx.role,
       // a swap inherits the slot's planned count; an added lift was never planned
       _plannedSets: baseRx._plannedSets != null ? baseRx._plannedSets : 0 };
-    let hist = await exerciseHistory(program.id, weekday, exId, iso);
+    const hist = await exerciseHistory(program.id, weekday, exId, iso);
     let srcProgram = program;
-    let prev = hist.length ? hist[hist.length - 1] : null;
-    if (!prev) {   // new-block seed (see runStrength)
-      prev = (await exerciseHistoryAcross(weekday, exId, iso)).pop() || null;
-      if (prev && prev.programId) srcProgram = (await getAllPrograms()).find((p) => p.id === prev.programId) || program;
-    }
+    const prev = pickProgressionSource(
+      { inProgram: hist, across: await exerciseHistoryAcross(weekday, exId, iso) },
+      { implement: lib.implement, location, equip });
+    if (prev && prev.programId) srcProgram = (await getAllPrograms()).find((p) => p.id === prev.programId) || program;
     const prevRange = prev ? prescribedRangeAt(srcProgram, prev.weekNumber, weekday, exId) : null;
     const deload = isDeloadWeek((program.weeks || []).find((w) => w.weekNumber === M.weekNumberFor(program, iso)));
     const rec = recommend({ curRx: rx, prevEx: prev ? prev.exercise : null, prevRange,

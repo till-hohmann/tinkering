@@ -141,19 +141,45 @@ export function ceilingPlan({ originalId, implement, plannedLoad, plannedReps, r
  * Substituted entries are already back-calculated and always count.
  *   occurrences: ascending [{ location, exercise }]
  */
-export function progressionSource(occurrences, { implement, location, equip }) {
+export function cappedElsewhere(occ, { implement, location, equip }) {
+  const o = occ || {};
+  if (!o.location || o.location === location || !o.exercise || o.exercise.substituted) return false;
+  const there = loadCeiling(implement, o.location, equip);
+  const here = loadCeiling(implement, location, equip);
+  if (there == null || (here != null && here <= there)) return false;
+  const ts = topSet(o.exercise);
+  return !!ts && ts.weightKg >= there - 1e-9;
+}
+
+export function progressionSource(occurrences, ctx) {
   const occ = occurrences || [];
   if (!occ.length) return null;
-  const here = loadCeiling(implement, location, equip);
-  const cappedAway = (o) => {
-    if (!o.location || o.location === location || !o.exercise || o.exercise.substituted) return false;
-    const there = loadCeiling(implement, o.location, equip);
-    if (there == null || (here != null && here <= there)) return false;
-    const ts = topSet(o.exercise);
-    return !!ts && ts.weightKg >= there - 1e-9;
-  };
-  for (let i = occ.length - 1; i >= 0; i--) if (!cappedAway(occ[i])) return occ[i];
+  for (let i = occ.length - 1; i >= 0; i--) if (!cappedElsewhere(occ[i], ctx)) return occ[i];
   return occ[occ.length - 1];
+}
+
+/**
+ * The occurrence to progress from, across BOTH histories a session can draw on.
+ *
+ * ⚠ THE NEW-BLOCK SEED IGNORED THE RULE ABOVE. History is program-scoped, so the
+ * first time a block meets a lift it falls back to "the last time I saw this
+ * anywhere" — and that fallback took the latest occurrence outright. Till's
+ * first Thursday of block 3 therefore seeded an incline press from a session
+ * done at a rack that stops at 22.5 kg, and prescribed 27 kg off it, when the
+ * last session at his own rack had been 32. The filter has to apply to the
+ * fallback too, and a capped reading in this block must be able to lose to a
+ * real one in the last.
+ *
+ * Preference order: a clean occurrence in THIS block, then a clean one in an
+ * earlier block, then whatever exists — something beats nothing.
+ */
+export function pickProgressionSource({ inProgram = [], across = [] }, ctx) {
+  const clean = (list) => {
+    const s = progressionSource(list, ctx);
+    return s && !cappedElsewhere(s, ctx) ? s : null;
+  };
+  return clean(inProgram) || clean(across)
+    || progressionSource(inProgram, ctx) || progressionSource(across, ctx) || null;
 }
 
 // Implement available in a location? (bodyweight always; rest from equipmentProfile.locations)
