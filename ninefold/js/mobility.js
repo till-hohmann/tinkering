@@ -27,6 +27,7 @@
 import { MOBILITY_DAYS as DEFAULT_DAYS, MOBILITY_SESSIONS as DEFAULT_SESSIONS,
   MOBILITY_TITLE as DEFAULT_TITLE, MOBILITY_MINUTES as DEFAULT_MINUTES } from "./mobility-program.js";
 import { isStrengthHold } from "./holds.js";
+import { nearestWeekdayISO } from "./model.js";
 
 export let MOBILITY_DAYS = DEFAULT_DAYS;
 export let MOBILITY_SESSIONS = DEFAULT_SESSIONS;
@@ -63,6 +64,24 @@ const T = 10;
 
 export const isMobilityDay = (weekday) => MOBILITY_DAYS.has(weekday);
 export const sessionFor = (weekday) => MOBILITY_SESSIONS[weekday] || null;
+/** Which weekday's session a stored entry's key names (A -> Wed, and so on). */
+export const weekdayForKey = (key) =>
+  Object.keys(MOBILITY_SESSIONS).find((wd) => MOBILITY_SESSIONS[wd].key === key) || null;
+
+/**
+ * The PLANNED day an M&S entry satisfies. Running Wednesday's session on
+ * Thursday — the "do it late" path the Plan tab offers — logged it under
+ * Thursday, and Wednesday stayed undone while Thursday (not an M&S day) showed
+ * nothing. The entry's key says which day's session it was, so the planned date
+ * is the nearest such weekday to the day it was logged.
+ */
+export function entryPlanDate(entry) {
+  const e = typeof entry === "string" ? { date: entry } : (entry || {});
+  const wd = e.key ? weekdayForKey(e.key) : null;
+  if (!wd || !e.date) return e.date || null;
+  return nearestWeekdayISO(e.date, wd);
+}
+
 export const sessionByKey = (key) =>
   Object.values(MOBILITY_SESSIONS).find((s) => s.key === key) || null;
 

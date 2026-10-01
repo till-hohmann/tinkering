@@ -52,7 +52,8 @@ import { CHANGELOG, notesSince, versionNumber } from "../js/changelog.js";
 import { addDaysISO, prevISO, daysBetweenISO, todayISO as todayISOof } from "../js/dates.js";
 import { applyHoldResults as mobilityHoldResults } from "../js/mobility.js";
 import { replanSets } from "../js/progression.js";
-import { topSetWeight, fmtLoad } from "../js/model.js";
+import { topSetWeight, fmtLoad, sessionPlanDate, nearestWeekdayISO } from "../js/model.js";
+import { entryPlanDate, weekdayForKey } from "../js/mobility.js";
 import { buildBackup } from "../js/export.js";
 import { checkAsanas, byId as asanaById } from "../js/yoga/asanas.js";
 import { ASANA_ART_KEYS } from "../js/yoga/asana-art.js";
@@ -3840,6 +3841,69 @@ group("sync — logs merge entry by entry, not blob by blob", () => {
   it("missing sides are handled without inventing an empty log", () => {
     assert.deepEqual(mergeLogEntries(null, [{ date: "2026-09-21" }], { key: "date" }), [{ date: "2026-09-21" }]);
     assert.deepEqual(mergeLogEntries([{ date: "2026-09-21" }], null, { key: "date" }), [{ date: "2026-09-21" }]);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// v199 — a session done late still ticks off the day it was for
+// ---------------------------------------------------------------------------
+group("plan — the day a logged session satisfies", () => {
+  const program = { id: "blk", weeks: [
+    { weekNumber: 1, startDate: "2026-09-14", days: {} },
+    { weekNumber: 2, startDate: "2026-09-21", days: {} },
+    { weekNumber: 3, startDate: "2026-09-28", days: {} }] };
+  const sess = (date, weekday, weekNumber) => ({ id: "s", date, weekday, weekNumber, programId: "blk" });
+
+  it("a session logged on its own day answers for that day", () => {
+    assert.equal(sessionPlanDate(program, sess("2026-09-23", "Wed", 2)), "2026-09-23");
+  });
+  it("a session done LATE answers for the day it was for", () => {
+    // Wednesday's workout, logged on Thursday: the plan still owes Wednesday.
+    assert.equal(sessionPlanDate(program, sess("2026-09-24", "Wed", 2)), "2026-09-23");
+  });
+  it("a day replayed from an earlier week ticks off THAT week's day", () => {
+    // "Do this workout now" on week 1's Monday while you are in week 3 — the
+    // week number pins it exactly, where "nearest Monday" would not.
+    assert.equal(sessionPlanDate(program, sess("2026-09-30", "Mon", 1)), "2026-09-14");
+  });
+  it("falls back to the logged date when it cannot know better", () => {
+    assert.equal(sessionPlanDate(null, sess("2026-09-24", "Wed", 2)), "2026-09-24");
+    assert.equal(sessionPlanDate(program, { id: "s", date: "2026-09-24" }), "2026-09-24", "no weekday");
+    assert.equal(sessionPlanDate(program, sess("2026-09-24", "Wed", 9)), "2026-09-24", "week not in this block");
+    assert.equal(sessionPlanDate(program, { ...sess("2026-09-24", "Wed", 2), programId: "other" }), "2026-09-24");
+    assert.equal(sessionPlanDate(program, null), null);
+  });
+});
+
+group("plan — the day an M&S entry satisfies", () => {
+  it("keys name the day whose session they are", () => {
+    assert.equal(weekdayForKey("A"), "Wed");
+    assert.equal(weekdayForKey("B"), "Fri");
+    assert.equal(weekdayForKey("C"), "Sun");
+    assert.equal(weekdayForKey("Z"), null);
+  });
+  it("Wednesday's routine done on Thursday ticks off Wednesday", () => {
+    // Exactly the report: logged 2026-10-01 (a Thursday), session A = Wednesday.
+    assert.equal(entryPlanDate({ date: "2026-10-01", key: "A" }), "2026-09-30");
+  });
+  it("done on its own day, it stays on that day", () => {
+    assert.equal(entryPlanDate({ date: "2026-09-30", key: "A" }), "2026-09-30");
+  });
+  it("done a day EARLY it counts for the day coming, not the one gone", () => {
+    // Saturday, running Sunday's session: +1 beats -6.
+    assert.equal(entryPlanDate({ date: "2026-10-03", key: "C" }), "2026-10-04");
+  });
+  it("the nearest matching weekday is used, past preferred on a draw", () => {
+    assert.equal(nearestWeekdayISO("2026-10-01", "Thu"), "2026-10-01");
+    assert.equal(nearestWeekdayISO("2026-10-01", "Mon"), "2026-09-28", "3 back beats 4 forward");
+    assert.equal(nearestWeekdayISO("2026-10-01", "Sun"), "2026-10-04", "3 forward beats 4 back");
+    assert.equal(nearestWeekdayISO(null, "Mon"), null);
+  });
+  it("an entry with no key — the legacy shape — answers for its own date", () => {
+    assert.equal(entryPlanDate({ date: "2026-09-30" }), "2026-09-30");
+    assert.equal(entryPlanDate("2026-09-30"), "2026-09-30");
+    assert.equal(entryPlanDate(null), null);
   });
 });
 

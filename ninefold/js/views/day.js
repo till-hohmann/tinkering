@@ -4,7 +4,7 @@
 
 import { getActiveProgram, getProgram, resolveDay, getSessionsForProgram } from "../store.js";
 import { addDaysISO as addDays } from "../dates.js";
-import { todayISO, WEEKDAYS, finisherRoundsFor, isReducedPhase } from "../model.js";
+import { todayISO, WEEKDAYS, finisherRoundsFor, isReducedPhase, sessionPlanDate } from "../model.js";
 import { el, mount, go, locationBadge, backBtn, addActionBar, supersetGroup } from "../ui.js";
 import { planSections, supersetsAllowed } from "../supersets.js";
 import { getProfile } from "../profile.js";
@@ -33,7 +33,8 @@ export async function renderDay(pid, n, wd) {
   const today = todayISO();
   const sessions = await getSessionsForProgram(program.id);
   let profile = null; try { profile = await getProfile(); } catch (_) {}
-  const done = sessions.find((s) => s.date === dayIso && s.weekday === wd && hasContent(s));
+  const done = sessions.find((s) => s.weekday === wd && hasContent(s)
+    && (s.date === dayIso || sessionPlanDate(program, s) === dayIso));
   const type = day ? day.type : "rest";
   const exName = (id) => (program.exercises[id] || {}).name || id;
 

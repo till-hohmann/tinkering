@@ -5,7 +5,7 @@
 
 import { getAllPrograms, resolveDay, getAllSessions, mobilityDoneDates } from "../store.js";
 import { addDaysISO as addDays } from "../dates.js";
-import { todayISO, WEEKDAYS, programForDate, weekNumberFor, weekdayOf, dayCellRole } from "../model.js";
+import { todayISO, WEEKDAYS, programForDate, weekNumberFor, weekdayOf, dayCellRole, sessionPlanDate } from "../model.js";
 import { isMobilityDay } from "../mobility.js";
 import { el, mount, go } from "../ui.js";
 
@@ -40,7 +40,15 @@ export async function renderCalendar(monthKey) {
 
   const sessions = await getAllSessions();
   const doneByDate = {};
-  for (const s of sessions) if (hasContent(s)) doneByDate[s.date] = s;
+  for (const s of sessions) {
+    if (!hasContent(s)) continue;
+    doneByDate[s.date] = s;                       // the day you trained
+    // …and the day it was FOR, when a session was run late or replayed. Both
+    // cells read as done, which is what each of them is.
+    const prog = programs.find((p) => p.id === s.programId);
+    const planned = sessionPlanDate(prog, s);
+    if (planned && !doneByDate[planned]) doneByDate[planned] = s;
+  }
   const mobDone = await mobilityDoneDates();
 
   const firstDow = (new Date(y, m - 1, 1).getDay() + 6) % 7; // 0 = Monday

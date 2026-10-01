@@ -121,9 +121,45 @@ function trim(n) {
 }
 
 // --- Dates (local-time, no UTC drift) ------------------------------------
+/**
+ * THE PLANNED DAY A LOGGED SESSION SATISFIES, which is not always the day it
+ * was logged on.
+ *
+ * "Do this workout now" runs any planned day and logs it under TODAY — that is
+ * deliberate, the training happened today — but the plan screens then looked
+ * for a session whose `date` equalled the planned day's date, so the day you
+ * actually did stayed marked undone for ever. The session already knows which
+ * day it belongs to: its programme, its week number and its weekday pin exactly
+ * one date.
+ */
+export function sessionPlanDate(program, session) {
+  if (!session) return null;
+  if (!program || !session.weekday || (session.programId && session.programId !== program.id)) return session.date;
+  const w = (program.weeks || []).find((x) => x.weekNumber === session.weekNumber);
+  const i = WEEKDAYS.indexOf(session.weekday);
+  if (!w || !w.startDate || i < 0) return session.date;
+  return addDaysISO(w.startDate, i);
+}
+
+/**
+ * The nearest date with `weekday` to `iso`, preferring the past on a draw —
+ * "I did Wednesday's session" means the Wednesday just gone when it is
+ * Thursday, and the Sunday coming when it is Saturday.
+ */
+export function nearestWeekdayISO(iso, weekday) {
+  const want = WEEKDAYS.indexOf(weekday);
+  if (!iso || want < 0) return iso || null;
+  const have = WEEKDAYS.indexOf(weekdayOf(iso));
+  let delta = want - have;
+  if (delta > 3) delta -= 7;
+  if (delta < -3) delta += 7;
+  return addDaysISO(iso, delta);
+}
+
 // The calendar day lives in dates.js — re-exported so every caller that already
 // reaches for it here keeps working, with one implementation behind them all.
 export { todayISO, addDaysISO, prevISO, daysBetweenISO } from "./dates.js";
+import { addDaysISO } from "./dates.js";
 
 // JS getDay(): 0=Sun..6=Sat -> our Mon-first weekday code.
 export function weekdayOf(isoDate) {

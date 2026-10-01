@@ -13,6 +13,10 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 199, notes: [
+    "A session done late now ticks off the day it was for. Wednesday's M&S run on Thursday, or any workout started with \"do this workout now\", was logged under the day you did it — correct — but the Plan tab kept looking for it on the planned day and left that day marked undone for ever. The plan now reads each logged session as answering for the day it belongs to: a workout by its week and weekday, an M&S routine by which of your four sessions it was. Both days read as done, because both are true — you trained today, and the day it was for is covered.",
+    "This applies to everything already logged, including the routine you ran yesterday: nothing had to be re-entered.",
+  ] },
   { v: 198, notes: [
     "A change made on one device now reaches the others. Until today only a training block could travel: a session was frozen the moment it had arrived anywhere, so a corrected weight or an edited set count stayed on the device you typed it on, and deleting a session let the other device put it back. Every session now carries the moment it was written, the newer copy wins, and a deletion travels too (and is remembered for 90 days, long enough for every device to hear about it).",
     "Your weight, yoga, mobility, nutrition, measurement and DEXA logs merge entry by entry. They used to travel as whole lists under a rule meant for settings — whichever device already had a list kept its own — so entries made on the other device could quietly disappear. Days only one device has are now kept, and a day edited on both keeps the later edit.",

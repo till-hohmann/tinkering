@@ -462,12 +462,24 @@ export async function addMobilityDone(iso, key, holds, eased) {
   await db.setPref("mobilityLog", raw); pushCloud();
 }
 export async function removeMobilityDone(iso) {
-  const raw = ((await db.getPref("mobilityLog")) || []).filter((e) => normMob(e).date !== iso);
+  const { entryPlanDate } = await import("./mobility.js");
+  const raw = ((await db.getPref("mobilityLog")) || [])
+    .filter((e) => normMob(e).date !== iso && entryPlanDate(normMob(e)) !== iso);
   await db.setPref("mobilityLog", raw); pushCloud();
 }
-export async function mobilityEntryOn(iso) { return (await getMobilityLog()).find((e) => e.date === iso) || null; }
-export async function mobilityDoneOn(iso) { return (await getMobilityLog()).some((e) => e.date === iso); }
-export async function mobilityDoneDates() { return new Set((await getMobilityLog()).map((e) => e.date)); }
+// Asked by date, answered by PLAN date: a session run late belongs to the day
+// it was for (mobility.js entryPlanDate), and the day you ran it is already in
+// the log. Both are accepted so a redo on the day itself still matches.
+const mobMatches = async (iso) => {
+  const { entryPlanDate } = await import("./mobility.js");
+  return (await getMobilityLog()).filter((e) => e.date === iso || entryPlanDate(e) === iso);
+};
+export async function mobilityEntryOn(iso) { return (await mobMatches(iso))[0] || null; }
+export async function mobilityDoneOn(iso) { return (await mobMatches(iso)).length > 0; }
+export async function mobilityDoneDates() {
+  const { entryPlanDate } = await import("./mobility.js");
+  return new Set((await getMobilityLog()).map((e) => entryPlanDate(e) || e.date));
+}
 // --- yoga practice log -------------------------------------------------------
 // Cloud-synced via SYNCED_PREFS ("yogaLog"). One entry per completed practice:
 //   { date, at, intent, style, level, minutes, peak, substitutes, poses, sequence }

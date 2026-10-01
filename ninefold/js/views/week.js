@@ -4,7 +4,7 @@
 
 import { getActiveProgram, getAllPrograms, getProgram, resolveDay, getSessionsForProgram,
   mobilityDoneDates, getYogaLog } from "../store.js";
-import { todayISO, weekNumberFor, WEEKDAYS } from "../model.js";
+import { todayISO, weekNumberFor, WEEKDAYS, sessionPlanDate } from "../model.js";
 import { addDaysISO as addDays } from "../dates.js";
 import { el, mount, go, locationBadge } from "../ui.js";
 import { workoutFigure, illustration } from "../illustrations.js";
@@ -150,7 +150,10 @@ export async function renderWeek(pid, n) {
     const dayIso = addDays(week.startDate, i);
     const { day, template } = resolveDay(program, dayIso);
     const isToday = isActive && dayIso === today;
-    const doneSession = sessions.find((s) => s.date === dayIso && s.weekday === wd);
+    // The day a session SATISFIES, not the day it was logged — a workout done
+    // late, or replayed from another week, still ticks off the day it was for.
+    const doneSession = sessions.find((s) => s.weekday === wd
+      && (s.date === dayIso || sessionPlanDate(program, s) === dayIso));
     const isDone = hasContent(doneSession) || !!doneSession;
     const type = day ? day.type : "rest";
     const label = type === "cardio" ? `Cardio (${runKindLabel(day.prescription || "")})`
