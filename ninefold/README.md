@@ -14,7 +14,7 @@ Offline-first PWA. No account, no sign-up, no server unless you deploy one yours
 
 The interference model is the part worth stealing. Galpin orders the nine adaptations along a neuromuscular-to-metabolic continuum and notes that *"the closer they are to each other on the list, the more compatible."* That makes conflict **computable** rather than a table someone hand-wrote — skill and speed sit together and train together happily; hypertrophy and speed span most of the spectrum, and the app says so before you build a block that fights itself.
 
-**Runs the session.** Pre-routine → core → post-routine → summary, with a timed routine engine (voice cues, haptics, wake lock, lock-screen audio), implement-aware weight entry (an illustrated plate calculator, a dumbbell scroller that snaps to the weights actually on your rack), ghosted previous values, and a rest timer.
+**Runs the session.** Pre-routine → core → post-routine → summary, with a timed routine engine (voice cues mixed over your music, haptics, a wake lock and an in-app screen lock for the pocket), implement-aware weight entry (an illustrated plate calculator, a dumbbell scroller that snaps to the weights actually on your rack), ghosted previous values, and a rest timer.
 
 **Coaches the progression.** An autoregulating engine prescribes each lift's next load and reps by double progression, bridges rep-range changes with an effort-adjusted estimated 1RM, snaps every prescription to weights you can physically load, and detects stalls. It never prescribes a dumbbell you don't own.
 
