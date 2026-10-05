@@ -3907,6 +3907,118 @@ group("plan — the day an M&S entry satisfies", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// The audio session. A browser module, so it runs against a stub AudioContext:
+// what matters is WHEN the app holds a live session, not what it sounds like.
+async function soundTests() {
+  console.log("\nsound — the app lets go of the music");
+  const listeners = {};
+  const doc = { hidden: false, addEventListener: (t, f) => { listeners[t] = f; } };
+  const session = { type: "auto" };
+  const made = [];
+  class FakeCtx {
+    constructor() { this.state = "suspended"; this.sampleRate = 48000; this.currentTime = 0;
+      this.destination = {}; this.sources = []; made.push(this); }
+    resume() { this.state = "running"; return Promise.resolve(); }
+    suspend() { this.state = "suspended"; return Promise.resolve(); }
+    createBuffer() { return {}; }
+    node() { return { connect: (n) => n, disconnect() {} }; }
+    param() { return { value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} }; }
+    createGain() { return { ...this.node(), gain: this.param() }; }
+    createDynamicsCompressor() {
+      return { ...this.node(), threshold: this.param(), knee: this.param(), ratio: this.param(),
+        attack: this.param(), release: this.param() };
+    }
+    createOscillator() { return { ...this.node(), frequency: this.param(), start() {}, stop() {} }; }
+    createBufferSource() {
+      const s = { ...this.node(), loop: false, playing: false,
+        start() { s.playing = true; }, stop() { s.playing = false; } };
+      this.sources.push(s);
+      return s;
+    }
+  }
+  const saved = {};
+  for (const k of ["document", "localStorage", "fetch", "AudioContext", "window", "navigator"]) {
+    saved[k] = Object.getOwnPropertyDescriptor(globalThis, k);
+  }
+  const put = (k, v) => Object.defineProperty(globalThis, k, { value: v, configurable: true, writable: true });
+  put("document", doc);
+  put("localStorage", { getItem: () => null, setItem() {} });
+  put("fetch", async () => ({ ok: false }));
+  put("AudioContext", FakeCtx);
+  put("window", globalThis);
+  put("navigator", { audioSession: session });
+  // Run the release timer at once rather than waiting out its grace period.
+  const realTimeout = globalThis.setTimeout;
+  let pending = [];
+  globalThis.setTimeout = (f) => { pending.push(f); return pending.length; };
+  const flush = () => { const p = pending; pending = []; p.forEach((f) => f()); };
+
+  try {
+    const S = await import("../js/components/sound.js?test");
+    const looping = () => made.flatMap((c) => c.sources).filter((s) => s.loop && s.playing).length;
+
+    it("an unlock outside a run starts no silent loop", () => {
+      S.unlockAudio();
+      flush();
+      assert.equal(looping(), 0);
+    });
+    it("a run holds the session, and its end hands it back", () => {
+      S.beginRunAudio();
+      assert.equal(looping(), 1, "the keep-alive runs during the routine");
+      S.endRunAudio();
+      flush();
+      assert.equal(looping(), 0, "no silent loop after the routine");
+      assert.equal(made[0].state, "suspended", "the context sleeps");
+    });
+    it("coming back to the app after a run does not wake the audio (the Spotify bug)", () => {
+      made[0].state = "interrupted";
+      doc.hidden = false;
+      listeners.visibilitychange();
+      assert.equal(made[0].state, "interrupted");
+      assert.equal(looping(), 0);
+    });
+    it("mid-run, coming back still re-wakes it", () => {
+      S.beginRunAudio();
+      made[0].state = "interrupted";
+      listeners.visibilitychange();
+      assert.equal(made[0].state, "running");
+      S.endRunAudio();
+      flush();
+    });
+    it("a run that restarts inside the grace period keeps its loop", () => {
+      S.beginRunAudio();
+      S.endRunAudio();
+      S.beginRunAudio();
+      flush();
+      assert.equal(looping(), 1);
+      S.endRunAudio();
+      flush();
+      assert.equal(looping(), 0);
+    });
+    it("a cue after the release wakes the context itself", () => {
+      made[0].state = "interrupted";
+      S.cueTick();
+      assert.equal(made[0].state, "running");
+    });
+    it("leaving mid-duck puts the session back to ambient", () => {
+      S.cueTick();
+      assert.equal(session.type, "transient");
+      doc.hidden = true;
+      listeners.visibilitychange();
+      assert.equal(session.type, "ambient");
+      doc.hidden = false;
+    });
+  } finally {
+    globalThis.setTimeout = realTimeout;
+    for (const [k, d] of Object.entries(saved)) {
+      if (d) Object.defineProperty(globalThis, k, d); else delete globalThis[k];
+    }
+  }
+}
+
+await soundTests();
+
 await workerTests();
 
 for (const [name, fn] of groups) { console.log("\n" + name); fn(); }

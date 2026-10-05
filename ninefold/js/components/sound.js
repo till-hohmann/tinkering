@@ -62,8 +62,16 @@ function applySession() { setSessionType(baseType()); }
 // A silent, perpetually-looping source keeps the iOS audio session alive so the
 // context never gets suspended during long quiet stretches (e.g. a 30-min walk
 // with no cues) — which previously killed every cue that followed.
+//
+// ONLY WHILE A GUIDED RUN OR ROUTINE IS RUNNING. It used to be started by any
+// unlock and never stopped, so after a warm-up the app held a live, looping
+// audio session for the rest of the day — and every time it came back to the
+// foreground it resumed it. Reported from a run: switching to the app stopped
+// Spotify outright, every time. "Ambient" is supposed to mix; on the phone it
+// did not, and an app with nothing to say has no business touching the audio
+// session at all. See releaseAudio().
 function startKeepAlive() {
-  if (!ctx || keepAlive) return;
+  if (!ctx || keepAlive || !runActive) return;
   try {
     const buf = ctx.createBuffer(1, Math.max(1, Math.round(ctx.sampleRate * 0.5)), ctx.sampleRate);
     const src = ctx.createBufferSource();
@@ -94,9 +102,16 @@ export function unlockAudio() {
   } catch {}
 }
 
-// Re-wake the Web Audio context when the app/screen comes back to the foreground.
+// Re-wake the Web Audio context when the app comes back to the foreground — but
+// only mid-run. Outside a guided run or routine there is nothing to keep warm,
+// and resuming anyway is what took the music down. Going to the background
+// also settles any duck in flight: a timer frozen with the page would otherwise
+// leave the session "transient" until it next came back.
 try {
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) resumeAudio(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { if (duckTimer) { clearTimeout(duckTimer); duckTimer = null; applySession(); } return; }
+    if (runActive) resumeAudio();
+  });
 } catch {}
 
 // These live in localStorage because they're read SYNCHRONOUSLY at import, before
@@ -187,12 +202,33 @@ export async function ensureAudioRunning() {
 // the screen is on (the wake-lock keeps it on during the workout).
 export function beginRunAudio() {
   runActive = true;
+  clearTimeout(releaseTimer); releaseTimer = null;
   try { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
   applySession();
   try { if (ctx && ctx.state !== "running") ctx.resume(); } catch {}
   startKeepAlive();
 }
-export function endRunAudio() { runActive = false; applySession(); }
+export function endRunAudio() {
+  runActive = false;
+  applySession();
+  // Late enough for the closing chime or the last spoken line to finish.
+  clearTimeout(releaseTimer);
+  releaseTimer = setTimeout(releaseAudio, 2500);
+}
+
+// Hand the audio session back. The silent loop stops and the context sleeps, so
+// iOS sees an app that is playing nothing. The next cue wakes it on its own:
+// say(), tone() and breath() all resume a context that is not running.
+let releaseTimer = null;
+function releaseAudio() {
+  releaseTimer = null;
+  if (runActive) return;
+  try { if (keepAlive) { keepAlive.stop(); keepAlive.disconnect(); } } catch {}
+  keepAlive = null;
+  if (duckTimer) { clearTimeout(duckTimer); duckTimer = null; }
+  applySession();
+  try { if (ctx && ctx.state === "running") ctx.suspend(); } catch {}
+}
 
 // Speak a command clip (e.g. "speed-up"). No-op when muted. Falls back to a tone
 // (and kicks off a load) if the clip isn't decoded yet, so a cue is never missed.
@@ -231,7 +267,8 @@ export async function testAudio() {
     say("speed-up", { gain: 1.6 });
   } finally {
     enabled = wasEnabled;
-    setTimeout(() => { mode = prevMode; applySession(); }, 1500);  // restore the user's mode after it plays
+    // Restore the user's mode after it plays, and let go of the session again.
+    setTimeout(() => { mode = prevMode; applySession(); if (!runActive) releaseAudio(); }, 1500);
   }
 }
 
@@ -309,7 +346,9 @@ function beepRaw(freq, dur, gainVal) {
 
 function tone(freq, dur = 0.12, vol = 0.25) {
   if (!enabled || !ctx) return;
-  if (ctx.state === "suspended") ctx.resume();
+  // Not only "suspended": iOS parks a backgrounded context as "interrupted", and
+  // a strength rest timer no longer has a foreground resume to lean on.
+  if (ctx.state !== "running") ctx.resume();
   beepRaw(freq, dur, vol);
 }
 
@@ -367,7 +406,7 @@ function breathNoise() {
 
 function breath(f0, f1, dur, peak, attack) {
   if (!enabled || !ctx) return;
-  if (ctx.state === "suspended") ctx.resume();
+  if (ctx.state !== "running") ctx.resume();
   try {
     const src = ctx.createBufferSource();
     src.buffer = breathNoise();

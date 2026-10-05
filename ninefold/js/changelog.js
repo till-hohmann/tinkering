@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 200, notes: [
+    "Switching to the app no longer stops your music. Once a warm-up had played, the app kept its audio running in the background for the rest of the day, silent but live, and every time you came back to it during a run it woke that audio up again. On the phone, that stopped Spotify outright. The app now lets go of the audio as soon as a routine or guided run ends, and only wakes it again for the next cue.",
+  ] },
   { v: 199, notes: [
     "A session done late now ticks off the day it was for. Wednesday's M&S run on Thursday, or any workout started with \"do this workout now\", was logged under the day you did it — correct — but the Plan tab kept looking for it on the planned day and left that day marked undone for ever. The plan now reads each logged session as answering for the day it belongs to: a workout by its week and weekday, an M&S routine by which of your four sessions it was. Both days read as done, because both are true — you trained today, and the day it was for is covered.",
     "This applies to everything already logged, including the routine you ran yesterday: nothing had to be re-entered.",
