@@ -4001,6 +4001,32 @@ async function soundTests() {
       S.cueTick();
       assert.equal(made[0].state, "running");
     });
+    it("leaving the app suspends a running context (the strength-day bug)", () => {
+      made[0].state = "running";                  // a rest-timer beep woke it
+      doc.hidden = true;
+      listeners.visibilitychange();
+      assert.equal(made[0].state, "suspended", "suspended by us, so Safari will not auto-resume it");
+      doc.hidden = false;
+      listeners.visibilitychange();
+      assert.equal(made[0].state, "suspended", "and coming back does not wake it");
+    });
+    it("if Safari resumed it on the way back anyway, it goes straight back to sleep", () => {
+      made[0].state = "running";
+      doc.hidden = false;
+      listeners.visibilitychange();
+      assert.equal(made[0].state, "suspended");
+    });
+    it("mid-run, leaving suspends and coming back resumes", () => {
+      S.beginRunAudio();
+      doc.hidden = true;
+      listeners.visibilitychange();
+      assert.equal(made[0].state, "suspended");
+      doc.hidden = false;
+      listeners.visibilitychange();
+      assert.equal(made[0].state, "running");
+      S.endRunAudio();
+      flush();
+    });
     it("leaving mid-duck puts the session back to ambient", () => {
       S.cueTick();
       assert.equal(session.type, "transient");

@@ -102,15 +102,29 @@ export function unlockAudio() {
   } catch {}
 }
 
-// Re-wake the Web Audio context when the app comes back to the foreground — but
-// only mid-run. Outside a guided run or routine there is nothing to keep warm,
-// and resuming anyway is what took the music down. Going to the background
-// also settles any duck in flight: a timer frozen with the page would otherwise
-// leave the session "transient" until it next came back.
+// LEAVING THE APP SUSPENDS THE CONTEXT, and that is the whole fix for "switching
+// back to the app stops my music". When the app goes to the background iOS
+// marks a running context "interrupted", and when it comes back Safari resumes
+// an interrupted context ON ITS OWN, no code of ours involved. That resume is
+// what took Spotify down, on a strength day as much as a run day (v200 only
+// stopped OUR resume, which is why it did not fix the strength case). A context
+// we suspended ourselves stays suspended: Safari only auto-resumes what it
+// interrupted. So on the way out we suspend, and on the way back only a running
+// guided run or routine wakes it. Anything else wakes on its next cue: say(),
+// tone() and breath() all resume a context that is not running.
+//
+// If Safari got there first anyway, the context is put straight back to sleep.
+// Going to the background also settles any duck in flight: a timer frozen with
+// the page would otherwise leave the session "transient" until it came back.
 try {
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) { if (duckTimer) { clearTimeout(duckTimer); duckTimer = null; applySession(); } return; }
+    if (document.hidden) {
+      if (duckTimer) { clearTimeout(duckTimer); duckTimer = null; applySession(); }
+      try { if (ctx && ctx.state !== "suspended" && ctx.state !== "closed") ctx.suspend(); } catch {}
+      return;
+    }
     if (runActive) resumeAudio();
+    else { try { if (ctx && ctx.state === "running") ctx.suspend(); } catch {} }
   });
 } catch {}
 

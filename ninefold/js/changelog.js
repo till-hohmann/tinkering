@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 201, notes: [
+    "Switching back to the app mid-workout no longer stops your music. v200 fixed this after a run but not during a strength workout, where the rest timer keeps the app's sound on. When you left the app, iOS paused that sound, and when you came back Safari restarted it by itself, which stopped Spotify. The app now pauses its own sound the moment you leave, so there is nothing for Safari to restart. The next beep or cue wakes it again.",
+  ] },
   { v: 200, notes: [
     "Switching to the app no longer stops your music. Once a warm-up had played, the app kept its audio running in the background for the rest of the day, silent but live, and every time you came back to it during a run it woke that audio up again. On the phone, that stopped Spotify outright. The app now lets go of the audio as soon as a routine or guided run ends, and only wakes it again for the next cue.",
   ] },
