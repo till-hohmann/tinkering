@@ -131,6 +131,10 @@ export const LOG_PREFS = {
   mobilityLog: { key: "date" },
   nutritionLog: { key: "date" },      // a map keyed by date
   yogaLog: { key: "at" },             // several practices a day, so the timestamp
+  // Not a log, but it has a log's sync problem: a pair added on one device and
+  // a limit edited on the other must both survive. Each pair is an entry keyed
+  // by its id, stamped on every edit, and the newer edit wins.
+  shoes: { key: "id" },
 };
 
 /** Stamp an entry as written now, so the other device can tell which is newer. */

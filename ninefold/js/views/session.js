@@ -15,6 +15,8 @@ import { planSections, supersetsAllowed } from "../supersets.js";
 import { illustration, workoutFigure } from "../illustrations.js";
 import { unlockAudio } from "../components/sound.js";
 import { interruptSheet } from "../components/interrupt.js";
+import { shoePrompt } from "../components/shoe-picker.js";
+import { countsForShoes } from "../shoes.js";
 import { recommend, roundLoad, isDeloadWeek, loadCeiling, parseRange } from "../progression.js";
 import { canDoHere } from "../equipment.js";
 import { needsSub, primarySubstitute, candidatesFor, isApprox, metaFor, seedSubLoad,
@@ -264,6 +266,14 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
     draft.adhocPlace = adhocPlace;
     draft.plannedLocation = plannedLoc;
     persist();
+    // Which shoes, right after where. Asked only for sessions that wear a pair
+    // and only once a pair exists. The answer rides the draft, so a resume or a
+    // "complete what's done" keeps it, and the saved session carries it.
+    const features = profile.features || {};
+    if (features.shoes && countsForShoes(day.type)) {
+      const shoeId = await shoePrompt(stage);
+      if (shoeId !== undefined) { draft.shoeId = shoeId; persist(); }
+    }
   }
   // substitute only when actually elsewhere AND either some lift's kit is missing
   // there, or some dumbbell lift's planned load is above the heaviest dumbbell

@@ -2,8 +2,11 @@
 // deltas vs the previous week, PRs, cardio comparison, a substitution note when
 // the session was relocated, and an inline edit mode to fix logged sets.
 
-import { getActiveProgram, getSession, saveSession, previousExercise, previousCardio, previousStrengthSession }
-  from "../store.js";
+import { getActiveProgram, getSession, saveSession, previousExercise, previousCardio, previousStrengthSession,
+  getShoes } from "../store.js";
+import { getProfile } from "../profile.js";
+import { countsForShoes } from "../shoes.js";
+import { shoeSwitcher } from "../components/shoe-picker.js";
 import * as M from "../model.js";
 import { el, mount, go, locationBadge, addActionBar, backBtn, countUp } from "../ui.js";
 import { illustration } from "../illustrations.js";
@@ -42,6 +45,9 @@ export async function renderSummary(sessionId) {
   // tree of synchronous builders, and this is the only thing in it that needs
   // to ask the network layer a question.
   const whoopActive = ((await provider()) || {}).id === "whoop";
+  const shoesOn = !!((await getProfile()).features || {}).shoes && countsForShoes(session.type);
+  const shoeList = shoesOn ? await getShoes() : [];
+  let shoeSwitch = null;
 
   const isToday = session.date === M.todayISO();
   const backHref = isToday ? "#/" : "#/progress";
@@ -162,8 +168,30 @@ export async function renderSummary(sessionId) {
         el("span.badge.accent", { text: `Week ${session.weekNumber} · ${session.weekday}` }),
         session.preRoutineDone ? el("span.badge", { text: "✓ warm-up" }) : null,
         session.postRoutineDone ? el("span.badge", { text: "✓ cool-down" }) : null,
+        shoesOn && !editing && (shoeList.length || session.shoeId)
+          ? el("button.badge", { "aria-label": "Change the shoes for this session", onclick: toggleShoes }, shoeLabel())
+          : null,
       ]),
+      shoeSwitch,
     ]);
+  }
+
+  // Which pair this session counted toward, and a way to change it. The total on
+  // every pair is derived from the sessions, so moving one here moves its km.
+  function shoeLabel() {
+    if (!session.shoeId) return "Shoes: none";
+    const s = shoeList.find((x) => x.id === session.shoeId);
+    return "Shoes: " + (s ? s.name : "unknown pair");
+  }
+  async function toggleShoes() {
+    if (shoeSwitch) { shoeSwitch = null; draw(); return; }
+    shoeSwitch = await shoeSwitcher(session.shoeId, async (id) => {
+      session.shoeId = id;
+      await saveSession(session);
+      shoeSwitch = null;
+      draw();
+    });
+    draw();
   }
 
   function substitutionCard() {

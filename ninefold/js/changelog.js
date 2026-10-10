@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 202, notes: [
+    "Running shoes. Switch it on under Profile, What you track, then add your pair on the Running shoes card. Each run or strength session asks which shoes you're in, with your last pair preselected. A run adds the distance you log and a strength session adds 0.5 km. Profile shows each pair's total against its limit (600 km unless you change it), amber from 50 km before and red at the limit, and Today tells you when a pair is worn out. Picked the wrong pair? Tap the shoe tag on the session summary to change it.",
+  ] },
   { v: 201, notes: [
     "Switching back to the app mid-workout no longer stops your music. v200 fixed this after a run but not during a strength workout, where the rest timer keeps the app's sound on. When you left the app, iOS paused that sound, and when you came back Safari restarted it by itself, which stopped Spotify. The app now pauses its own sound the moment you leave, so there is nothing for Safari to restart. The next beep or cue wakes it again.",
   ] },

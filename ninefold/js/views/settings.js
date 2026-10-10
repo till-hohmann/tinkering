@@ -27,6 +27,7 @@ import { weightLabel, weightValue, weightToKg, lengthLabel, lengthValue, lengthT
 import { resolvedConfig, setRuntimeConfig, hasBackup } from "../config.js";
 import * as db from "../db.js";
 import { el, mount, go, setChildren } from "../ui.js";
+import { shoesCard } from "../components/shoes-card.js";
 import { cloudPull, cloudCheck, getCloudHealth } from "../cloudsync.js";
 // Baked in rather than read at runtime: an iOS standalone PWA exposes neither
 // caches.keys() nor SW messaging to the page, so the code reports its own version.
@@ -1225,6 +1226,7 @@ export async function renderSettings() {
 
   // section header between grouped setting cards (keeps an 11-card list scannable)
   const sectionH = (t) => el("h2", { style: "margin:26px 2px 0", text: t });
+  const shoeCard = feats.shoes ? await shoesCard() : null;
 
   mount([
     el("h1", { text: "Profile" }),
@@ -1258,6 +1260,7 @@ export async function renderSettings() {
     sectionH("Devices & cardio"),
     trackerCard,
     feats.cardio ? hrCard : null,
+    shoeCard,
 
     sectionH("Appearance"),
     featuresCard,

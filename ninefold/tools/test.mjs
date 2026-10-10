@@ -70,6 +70,8 @@ import { ASANAS } from "../js/yoga/asanas.js";
 import { flowSeconds as flowSecondsOf, elapsedAt as flowElapsedAt } from "../js/yoga/compose.js";
 import { isStrengthHold, applyHoldResults, repairHoldRatchet, HOLD_CAP } from "../js/holds.js";
 import { shouldAdoptProgram, SYNCED_PREFS } from "../js/store.js";
+import { makeShoe, sessionShoeKm, shoeTotals, shoeStatus, defaultShoeId, wornOut, countsForShoes,
+  STRENGTH_KM, DEFAULT_LIMIT_KM } from "../js/shoes.js";
 import { shouldAdoptRow, rowDecision, mergeLogEntries, mergeTombstones, pruneTombstones,
   addTombstone, mergeTombstoneSets, LOG_PREFS } from "../js/sync.js";
 import { pairScore, buildSupersets, usableSupersets, orderWithSupersets, occupiesEquipment,
@@ -4044,6 +4046,96 @@ async function soundTests() {
 }
 
 await soundTests();
+
+// ---------------------------------------------------------------------------
+group("shoes — kilometres per pair", () => {
+  const run = (shoeId, km, modality = "run_outdoor", extra = {}) =>
+    ({ id: "r" + Math.random(), type: "cardio", shoeId, date: "2026-10-10", cardioResult: { distanceKm: km, modality }, ...extra });
+  const lift = (shoeId, extra = {}) =>
+    ({ id: "s" + Math.random(), type: "strength", shoeId, date: "2026-10-10", strengthResult: [{ exerciseId: "x", sets: [] }], ...extra });
+
+  it("a run adds the distance logged, a strength session adds 0.5 km", () => {
+    assert.equal(sessionShoeKm(run("a", 9.11)), 9.11);
+    assert.equal(sessionShoeKm(lift("a")), STRENGTH_KM);
+    assert.equal(STRENGTH_KM, 0.5);
+  });
+  it("a treadmill run counts; a bike or an elliptical does not", () => {
+    assert.equal(sessionShoeKm(run("a", 5, "run_treadmill")), 5);
+    assert.equal(sessionShoeKm(run("a", 20, "bike")), 0);
+    assert.equal(sessionShoeKm(run("a", 6, "elliptical")), 0);
+  });
+  it("an untagged session counts toward no pair (everything logged before the feature)", () => {
+    assert.equal(sessionShoeKm(run(undefined, 10)), 0);
+    assert.equal(sessionShoeKm(run(null, 10)), 0);
+  });
+  it("a strength session with nothing logged adds nothing", () => {
+    assert.equal(sessionShoeKm(lift("a", { strengthResult: [] })), 0);
+  });
+  it("a run with no distance, or a nonsense one, adds nothing", () => {
+    assert.equal(sessionShoeKm(run("a", null)), 0);
+    assert.equal(sessionShoeKm(run("a", -3)), 0);
+    assert.equal(sessionShoeKm({ type: "cardio", shoeId: "a", cardioResult: null }), 0);
+  });
+  it("only runs and strength sessions ask", () => {
+    assert.ok(countsForShoes("strength"));
+    assert.ok(countsForShoes("cardio"));
+    assert.ok(!countsForShoes("mobility"));
+    assert.ok(!countsForShoes("yoga"));
+    assert.ok(!countsForShoes("rest"));
+  });
+  it("totals are per pair, summed from the sessions", () => {
+    const t = shoeTotals([run("a", 10), run("a", 5.5), lift("a"), run("b", 8), lift(null)]);
+    assert.equal(t.a, 16);
+    assert.equal(t.b, 8);
+    assert.equal(Object.keys(t).length, 2);
+  });
+  it("amber 50 km before the limit, red at it, and the limit is per pair", () => {
+    assert.equal(shoeStatus(549.9), "ok");
+    assert.equal(shoeStatus(550), "soon");
+    assert.equal(shoeStatus(599.9), "soon");
+    assert.equal(shoeStatus(600), "replace");
+    assert.equal(shoeStatus(700, 800), "ok");
+    assert.equal(shoeStatus(760, 800), "soon");
+    assert.equal(shoeStatus(10, 0), "ok", "a missing limit falls back to 600, not to replace-at-once");
+  });
+  it("a new pair starts clean at the default limit", () => {
+    const s = makeShoe("  Brooks Ghost 18 ", "2026-10-10T08:00:00.000Z");
+    assert.equal(s.name, "Brooks Ghost 18");
+    assert.equal(s.limitKm, DEFAULT_LIMIT_KM);
+    assert.equal(s.retired, false);
+    assert.equal(s.warnDismissed, false);
+    assert.equal(s.addedOn, "2026-10-10");
+    assert.ok(s.id.startsWith("shoe-"));
+    assert.ok(s.updatedAt, "stamped, so the per-entry merge can order edits");
+  });
+  it("the pair you wore last is preselected; a retired one never is", () => {
+    const a = { id: "a", retired: false }, b = { id: "b", retired: false }, c = { id: "c", retired: true };
+    const sessions = [
+      run("a", 5, "run_outdoor", { completedAt: "2026-10-01T08:00:00" }),
+      lift("b", { completedAt: "2026-10-05T08:00:00" }),
+      run("c", 5, "run_outdoor", { completedAt: "2026-10-09T08:00:00" }),
+    ];
+    assert.equal(defaultShoeId([a, b, c], sessions), "b");
+    assert.equal(defaultShoeId([a, b], []), "a", "first active pair when nothing is tagged");
+    assert.equal(defaultShoeId([c], sessions), null, "no active pair, nothing to preselect");
+  });
+  it("the Today warning lists active pairs past their limit, until dismissed", () => {
+    const a = { id: "a", limitKm: 600 }, b = { id: "b", limitKm: 600, warnDismissed: true },
+      c = { id: "c", limitKm: 600, retired: true }, d = { id: "d", limitKm: 600 };
+    const worn = wornOut([a, b, c, d], { a: 612, b: 700, c: 900, d: 580 });
+    assert.deepEqual(worn.map((s) => s.id), ["a"]);
+  });
+  it("shoes sync as entries keyed by id, so pairs from both devices survive", () => {
+    assert.ok(SYNCED_PREFS.includes("shoes"));
+    assert.deepEqual(LOG_PREFS.shoes, { key: "id" });
+    const mine = [{ id: "a", name: "Brooks", limitKm: 600, updatedAt: "2026-10-10T08:00:00Z" }];
+    const theirs = [{ id: "a", name: "Brooks", limitKm: 650, updatedAt: "2026-10-11T08:00:00Z" },
+      { id: "b", name: "Spare", limitKm: 600, updatedAt: "2026-10-11T08:00:00Z" }];
+    const merged = mergeLogEntries(mine, theirs, LOG_PREFS.shoes);
+    assert.equal(merged.length, 2);
+    assert.equal(merged.find((s) => s.id === "a").limitKm, 650, "the newer edit wins");
+  });
+});
 
 await workerTests();
 

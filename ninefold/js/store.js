@@ -19,7 +19,7 @@ import { DEFAULT_ZONE_BOUNDS, maxHRof } from "./cardio-intel.js";
 // reverted to picking by date — so someone deliberately running an older block
 // would come back from a wipe running a different one, with nothing to indicate
 // it had changed. The ids they reference are themselves in the backup.
-export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "dexaBooked", "dexaReminderSeen", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "stretchProg", "activeProgramId", "autoSelectProgram", "audioPrefs", "yogaLog", "yogaPrefs", "deletedRows"];
+export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "dexaBooked", "dexaReminderSeen", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "stretchProg", "activeProgramId", "autoSelectProgram", "audioPrefs", "yogaLog", "yogaPrefs", "deletedRows", "shoes"];
 export async function syncedPrefs() {
   const out = {};
   for (const k of SYNCED_PREFS) { const v = await db.getPref(k); if (v !== undefined) out[k] = v; }
@@ -878,6 +878,23 @@ export async function setDexaBooked(iso) {
   await db.setPref("dexaBooked", iso || null);
   pushCloud();
 }
+// Running shoes. The list of pairs only: how far each has gone is derived from
+// the sessions that name it (shoes.js), never stored. Every edit stamps the
+// pair it touched so the per-entry merge can tell which copy is newer.
+export async function getShoes() {
+  const v = await db.getPref("shoes");
+  return Array.isArray(v) ? v : [];
+}
+export async function saveShoe(shoe) {
+  const list = await getShoes();
+  const row = stampRow(shoe);
+  const i = list.findIndex((s) => s.id === shoe.id);
+  if (i >= 0) list[i] = row; else list.push(row);
+  await db.setPref("shoes", list);
+  pushCloud();
+  return row;
+}
+
 export async function getDexaReminderSeen() {
   const v = await db.getPref("dexaReminderSeen");
   return v && typeof v.due === "string" ? v : null;

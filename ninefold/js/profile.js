@@ -98,6 +98,7 @@ export function defaultProfile() {
       // and a feature nobody can find is a feature nobody has.
       yoga: true,
       strengthStandards: true,
+      shoes: false,
     },
 
     // WHICH BODY SITES THIS PERSON IS PROTECTING. Site names only — "knees",
@@ -126,6 +127,7 @@ export const TRACKED_FEATURES = [
   ["dexa", "DEXA scans", "Full body composition, if you get them"],
   ["vo2max", "VO₂max", "Track the number your watch reports"],
   ["strengthStandards", "Strength standards", "Score your big lifts against bodyweight-relative benchmarks"],
+  ["shoes", "Running shoes", "Kilometres per pair, and a warning when a pair is worn out"],
 ];
 
 // A place is a gym, a home rack, a hotel. `implements` is the vocabulary the

@@ -3,7 +3,9 @@
 
 import { getActiveProgram, getAllPrograms, resolveDay, getSessionOnDate, getSessionsForProgram,
   getNutrition, getBodyweight, getProteinPerKg, getDeficitTarget, getDraft, getVO2maxLog, getDexaLog, getDexaBooked, setDexaBooked, getDexaReminderSeen, setDexaReminderSeen,
-  mobilityDoneOn, getMobilityLog, yogaOn } from "../store.js";
+  mobilityDoneOn, getMobilityLog, yogaOn, getShoes, saveShoe, getAllSessions } from "../store.js";
+import { shoeTotals, wornOut } from "../shoes.js";
+import { fmtShoeKm } from "../components/shoe-picker.js";
 import { isMobilityDay, sessionFor, MOBILITY_TITLE, MOBILITY_MINUTES, MOBILITY_DAYS } from "../mobility.js";
 import { addDaysISO as addDays, daysBetweenISO as daysBetween } from "../dates.js";
 import { intentById } from "../yoga/intents.js";
@@ -178,6 +180,40 @@ async function reprogramReminder(iso) {
       text: `${last.name} ${days < 0 ? "ended" : "ends"} ${prettyDate(end).replace(/^\w+, /, "")}. Design the next block from your H2 macrocycle note, off this block's fresh test data — ask me to build it.` }),
     el("button.btn.block", { style: "margin-top:12px", onclick: () => go(`#/week/${last.id}/${last.lengthWeeks}`) }, "Review the current block →"),
   ]);
+}
+
+// A pair past its limit. Stays until dismissed (or the pair is retired, or its
+// limit raised), because unlike a DEXA date this does not stop being true by
+// itself. Dismissing it is per pair and travels with the pair.
+async function shoeReminder() {
+  let worn;
+  try {
+    const profile = await getProfile();
+    if (!(profile.features || {}).shoes) return null;
+    const shoes = await getShoes();
+    if (!shoes.length) return null;
+    const totals = shoeTotals(await getAllSessions());
+    worn = wornOut(shoes, totals).map((s) => ({ shoe: s, km: totals[s.id] || 0 }));
+  } catch { return null; }
+  if (!worn.length) return null;
+  const card = el("div.card", { style: "border-color:var(--red)" });
+  const dismiss = async () => {
+    try { for (const w of worn) await saveShoe({ ...w.shoe, warnDismissed: true }); } catch (_) {}
+    card.remove();
+  };
+  const one = worn.length === 1;
+  card.append(
+    el("div.row", {}, [
+      el("span.badge", { style: "color:var(--red);border-color:var(--red)", text: "Shoes" }), el("span.spacer"),
+      el("button.btn.ghost", { style: "min-height:32px;padding:0 10px", "aria-label": "Dismiss the shoe warning", onclick: dismiss }, "✕"),
+    ]),
+    el("h2", { style: "margin:8px 0 4px", text: one ? `${worn[0].shoe.name} is worn out` : "Some of your shoes are worn out" }),
+    el("p.dim", { style: "margin:0;font-size:.9rem;line-height:1.45",
+      text: worn.map((w) => `${w.shoe.name}: ${fmtShoeKm(w.km)}, past its ${fmtShoeKm(w.shoe.limitKm)} limit.`).join(" ")
+        + " Time for a new pair. Add it under Profile and retire the old one." }),
+    el("button.btn", { style: "margin-top:12px", onclick: () => go("#/settings") }, "Open Profile"),
+  );
+  return card;
 }
 
 // DEXA retest nudge. Shown ONCE per due date — see dexa.js for why a permanent
@@ -436,6 +472,10 @@ export async function renderHome() {
   // ===== DEXA retest nudge (as the 12-week retest approaches) =====
   const dexaNudge = await dexaReminder(iso);
   if (dexaNudge) children.push(dexaNudge);
+
+  // ===== running shoes past their limit =====
+  const shoeNudge = await shoeReminder();
+  if (shoeNudge) children.push(shoeNudge);
 
   // ===== streak strip =====
   const dotsRow = el("div.row", { style: "gap:9px;margin-top:2px" }, weekDots.map((d) =>
