@@ -266,8 +266,9 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
     draft.adhocPlace = adhocPlace;
     draft.plannedLocation = plannedLoc;
     persist();
-    // Which shoes, right after where. Asked only for sessions that wear a pair
-    // and only once a pair exists. The answer rides the draft, so a resume or a
+    // Which shoes, right after where. Asked only for sessions that wear a pair;
+    // with no pair yet, the prompt is where the first one gets added. The
+    // answer rides the draft, so a resume or a
     // "complete what's done" keeps it, and the saved session carries it.
     const features = profile.features || {};
     if (features.shoes && countsForShoes(day.type)) {

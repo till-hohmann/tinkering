@@ -7,8 +7,8 @@
 // gym that wants other shoes), so the session counts toward no pair.
 
 import { el, clear, backBtn } from "../ui.js";
-import { getShoes, getAllSessions } from "../store.js";
-import { activeShoes, shoeTotals, shoeStatus, defaultShoeId } from "../shoes.js";
+import { getShoes, saveShoe, getAllSessions } from "../store.js";
+import { activeShoes, shoeTotals, shoeStatus, defaultShoeId, makeShoe } from "../shoes.js";
 import { distanceValue, distanceLabel } from "../units.js";
 
 export function fmtShoeKm(km) {
@@ -53,20 +53,46 @@ function choiceButton({ shoe, km, status, lastUsed }, isPreferred, onPick) {
 
 /**
  * Full-screen prompt during the session flow. Resolves to a shoe id, or null
- * for "not in running shoes". Resolves `undefined` without asking when there is
- * no active pair, so the caller can skip it entirely.
+ * for "not in running shoes".
+ *
+ * ⚠ IT ALWAYS ASKS once shoes are tracked, even with no pair yet. It used to
+ * skip itself silently when there was nothing to choose from, and with the
+ * feature switched on but the first pair not yet added, that read as the
+ * feature not working. With no pair, the prompt is where you add one: the
+ * moment you are standing in it is the moment you know which it is. A new pair
+ * can be added from here at any time, too.
  */
 export async function shoePrompt(stage) {
   const { rows, preferred } = await shoeChoices();
-  if (!rows.length) return undefined;
   return new Promise((res) => {
+    const name = el("input", { type: "text", placeholder: "e.g. Brooks Ghost 18", "aria-label": "Name of the pair you're wearing",
+      style: "flex:1;min-width:0;padding:10px 12px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)" });
+    const note = el("p.note", { style: "margin-top:8px;min-height:1em" });
+    const addAndUse = async () => {
+      const n = name.value.trim();
+      if (!n) { note.textContent = "Type the pair's name first."; name.focus(); return; }
+      const shoe = await saveShoe(makeShoe(n));
+      res(shoe.id);
+    };
+    const addRow = el("div", { style: "margin-top:14px" + (rows.length ? ";display:none" : "") }, [
+      el("div.row", { style: "gap:8px;align-items:center" }, [
+        name, el("button.btn.primary", { onclick: addAndUse }, "Add and use"),
+      ]),
+      note,
+    ]);
+    const showAdd = el("button.btn.ghost.block", { style: "margin-top:10px" + (rows.length ? "" : ";display:none"),
+      onclick: () => { addRow.style.display = ""; showAdd.style.display = "none"; name.focus(); } }, "+ A new pair");
     clear(stage);
     stage.appendChild(el("div", {}, [
       backBtn("Today", "#/"),
       el("div.label", { style: "margin-top:8px", text: "Shoes" }),
       el("h1", { style: "margin:4px 0 0", text: "Which shoes are you in?" }),
-      el("p.dim", { text: "A run adds the distance you log. A strength session adds 0.5 km." }),
-      el("div.list", { style: "margin-top:16px" }, rows.map((r) => choiceButton(r, r.shoe.id === preferred, res))),
+      el("p.dim", { text: rows.length
+        ? "A run adds the distance you log. A strength session adds 0.5 km."
+        : "No pair yet. Add the one you're wearing: it starts at 0 km, and from now on each run adds its distance and each strength session 0.5 km." }),
+      rows.length ? el("div.list", { style: "margin-top:16px" }, rows.map((r) => choiceButton(r, r.shoe.id === preferred, res))) : null,
+      addRow,
+      showAdd,
       el("button.btn.block", { style: "margin-top:12px", onclick: () => res(null) }, "Not in running shoes"),
     ]));
   });

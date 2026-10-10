@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 204, notes: [
+    "With running shoes switched on, the shoe question now always appears. It used to skip itself until a pair had been added under Profile, which looked like it wasn't working. With no pair yet it asks you to add the one you're wearing, right there, and uses it. You can add a new pair from the same screen any time.",
+  ] },
   { v: 203, notes: [
     "Extra runs. The new + bubble on the orb starts a run that isn't in the plan. Pick a zone and record it with a stopwatch, or skip the stopwatch and log it straight away: pull it from your tracker or type the distance in. It counts in your run history, kilometres and shoes, not toward the week's planned sessions. The bubble shows how many extra runs you've done this week and how far, and REC while one is being recorded.",
     "The stopwatch keeps time when you switch to your music or the phone locks, and even if the app is closed. Tap the bubble to get back to it.",
