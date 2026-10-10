@@ -73,7 +73,7 @@ export async function renderHistory() {
       return el("button.item", { onclick: () => go(`#/summary/${s.id}`), style: "text-align:left" }, [
         el("div.ico", {}, [illustration(sessionFigureId(s))]),
         el("div.meta", {}, [
-          el("div.t", {}, [`${prettyShort(s.date)} `, el("span.faint", { text: `· Wk${s.weekNumber}` })]),
+          el("div.t", {}, [`${prettyShort(s.date)} `, el("span.faint", { text: s.extra ? "· Extra" : `· Wk${s.weekNumber}` })]),
           el("div.s", { text: sub }),
         ]),
         locationBadge(s.location),

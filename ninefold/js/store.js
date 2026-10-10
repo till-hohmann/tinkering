@@ -895,6 +895,15 @@ export async function saveShoe(shoe) {
   return row;
 }
 
+// An extra run in progress (views/extrarun.js): the stopwatch timestamps, the
+// zone and the shoes. DEVICE-LOCAL on purpose, like the session draft: a run is
+// being recorded on this phone, and another device resuming its stopwatch would
+// be nonsense. Separate from the session draft, so a planned workout left for
+// later and an extra run can both be in flight.
+export async function getExtraDraft() { return (await db.getPref("extraRunDraft")) || null; }
+export async function setExtraDraft(d) { await db.setPref("extraRunDraft", d || null); }
+export async function clearExtraDraft() { await db.setPref("extraRunDraft", null); }
+
 export async function getDexaReminderSeen() {
   const v = await db.getPref("dexaReminderSeen");
   return v && typeof v.due === "string" ? v : null;
@@ -1087,8 +1096,10 @@ export async function exerciseHistoryAcross(weekday, exerciseId, beforeDate) {
   return occ.sort((x, y) => (x.date < y.date ? -1 : 1));
 }
 export async function cardioHistoryAcross(weekday, beforeDate) {
+  // Extra runs are excluded: this seeds a PLANNED run's target, and an extra
+  // run on a Monday is not last Monday's prescribed run.
   return (await getAllSessions())
-    .filter((s) => s.weekday === weekday && s.type === "cardio" && s.cardioResult && (!beforeDate || s.date < beforeDate))
+    .filter((s) => !s.extra && s.weekday === weekday && s.type === "cardio" && s.cardioResult && (!beforeDate || s.date < beforeDate))
     .sort((x, y) => (x.date < y.date ? -1 : 1));
 }
 

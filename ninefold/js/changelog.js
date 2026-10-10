@@ -13,6 +13,10 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 203, notes: [
+    "Extra runs. The new + bubble on the orb starts a run that isn't in the plan. Pick a zone and record it with a stopwatch, or skip the stopwatch and log it straight away: pull it from your tracker or type the distance in. It counts in your run history, kilometres and shoes, not toward the week's planned sessions. The bubble shows how many extra runs you've done this week and how far, and REC while one is being recorded.",
+    "The stopwatch keeps time when you switch to your music or the phone locks, and even if the app is closed. Tap the bubble to get back to it.",
+  ] },
   { v: 202, notes: [
     "Running shoes. Switch it on under Profile, What you track, then add your pair on the Running shoes card. Each run or strength session asks which shoes you're in, with your last pair preselected. A run adds the distance you log and a strength session adds 0.5 km. Profile shows each pair's total against its limit (600 km unless you change it), amber from 50 km before and red at the limit, and Today tells you when a pair is worn out. Picked the wrong pair? Tap the shoe tag on the session summary to change it.",
   ] },

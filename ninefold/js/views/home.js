@@ -3,8 +3,9 @@
 
 import { getActiveProgram, getAllPrograms, resolveDay, getSessionOnDate, getSessionsForProgram,
   getNutrition, getBodyweight, getProteinPerKg, getDeficitTarget, getDraft, getVO2maxLog, getDexaLog, getDexaBooked, setDexaBooked, getDexaReminderSeen, setDexaReminderSeen,
-  mobilityDoneOn, getMobilityLog, yogaOn, getShoes, saveShoe, getAllSessions } from "../store.js";
+  mobilityDoneOn, getMobilityLog, yogaOn, getShoes, saveShoe, getAllSessions, getExtraDraft } from "../store.js";
 import { shoeTotals, wornOut } from "../shoes.js";
+import { extraRunsIn } from "../extra-run.js";
 import { fmtShoeKm } from "../components/shoe-picker.js";
 import { isMobilityDay, sessionFor, MOBILITY_TITLE, MOBILITY_MINUTES, MOBILITY_DAYS } from "../mobility.js";
 import { addDaysISO as addDays, daysBetweenISO as daysBetween } from "../dates.js";
@@ -422,7 +423,7 @@ export async function renderHome() {
   // (4 planned — Mon/Wed/Fri/Sun; done-on-another-day still counts for the week).
   const wkDateSet = week ? new Set(WEEKDAYS.map((_, i) => addDays(week.startDate, i))) : new Set();
   const mobWk = (await getMobilityLog()).filter((e) => wkDateSet.has(e.date)).length;
-  const makeMini = !showMobility ? null : () => {
+  const makeMSMini = !showMobility ? null : () => {
     const w = el("div.orbmini", { title: "Mobility & stability this week" });
     // Target = however many mobility sessions the ACTIVE program actually has.
     // This was hardcoded to 4, which was right for the routine it was written
@@ -431,6 +432,30 @@ export async function renderHome() {
     const mobTarget = MOBILITY_DAYS.size || 1;
     w.appendChild(ringStat({ pct: Math.min(1, mobWk / mobTarget), value: `${mobWk}/${mobTarget}`, sub: "M&S", size: 62, stroke: 6 }));
     return w;
+  };
+  // The other small bubble: an EXTRA run, off the plan. "+" until one is done
+  // this week, then how many and how far; "REC" while one is being recorded.
+  // Tapping it always goes to the extra-run flow, which resumes a run in progress.
+  const showExtraRun = !homeProfile || homeProfile.features.cardio !== false;
+  const extraDates = wkDateSet.size ? wkDateSet
+    : new Set(WEEKDAYS.map((_, i) => addDays(addDays(iso, -((new Date(iso + "T12:00:00").getDay() + 6) % 7)), i)));
+  const extraWk = showExtraRun ? extraRunsIn(await getAllSessions(), extraDates) : null;
+  const extraLive = showExtraRun ? await getExtraDraft() : null;
+  const makeExtraMini = !showExtraRun ? null : () => {
+    const recording = extraLive && extraLive.watch && extraLive.watch.finishedAt == null;
+    const unlogged = extraLive && !recording && (extraLive.logging || (extraLive.watch && extraLive.watch.finishedAt != null));
+    const big = recording ? "REC" : unlogged ? "LOG" : extraWk.count ? `+${extraWk.count}` : "+";
+    const small = recording ? "RUNNING" : unlogged ? "EXTRA RUN" : extraWk.count ? fmtShoeKm(extraWk.km).toUpperCase() : "RUN";
+    return el("button.orbmini.orbplus" + (recording ? ".live" : ""), {
+      "aria-label": recording ? "Extra run in progress" : "Add an extra run",
+      onclick: (e) => { e.stopPropagation(); go("#/extra-run"); },
+    }, [el("div.orbplus-in", {}, [el("div.v", { text: big }), el("div.k", { text: small })])]);
+  };
+  const makeMini = !makeMSMini && !makeExtraMini ? null : () => {
+    const f = document.createDocumentFragment();
+    if (makeMSMini) f.appendChild(makeMSMini());
+    if (makeExtraMini) f.appendChild(makeExtraMini());
+    return f;
   };
   const weekProgress = {
     pct: planned ? (completed / planned) * 100 : 0,

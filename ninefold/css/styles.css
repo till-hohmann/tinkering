@@ -445,6 +445,16 @@ img.exphoto { object-fit: cover; border-radius: inherit; background: var(--bg-el
    The M&S label matches the main orb's label (.onum em = 10px). */
 .orbmini .ringwrap .ringtext .v { font-size: .76rem; }
 .orbmini .ringwrap .ringtext .k { font-size: 10px; letter-spacing: .13em; margin-top: 1px; color: rgba(255,255,255,.55); }
+/* The extra-run bubble: the M&S bubble's twin on the other side of the orb, a
+   button rather than a ring. Same 62px footprint, same type scale. */
+.orbmini.orbplus { right: auto; left: -10px; width: 62px; height: 62px; border: 0; cursor: pointer;
+  color: #fff; font: inherit; align-items: center; justify-content: center;
+  box-shadow: 0 4px 18px rgba(0,0,0,.55), inset 0 0 0 6px rgba(255,255,255,.08); }
+.orbplus-in { display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.orbplus-in .v { font-size: 1.05rem; font-weight: 800; }
+.orbplus-in .k { font-size: 10px; letter-spacing: .13em; margin-top: 3px; color: rgba(255,255,255,.55); }
+.orbmini.orbplus.live { box-shadow: 0 4px 18px rgba(0,0,0,.55), inset 0 0 0 3px var(--red); }
+.orbmini.orbplus.live .v { color: var(--red); font-size: .9rem; }
 .gtile { background: var(--glass); border: 1px solid var(--glass-line); border-radius: 16px;
   padding: 12px 6px; -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
 @keyframes spin { to { transform: rotate(360deg); } }

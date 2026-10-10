@@ -28,12 +28,14 @@ import { renderBuilder } from "./views/builder.js";
 import { renderWelcome } from "./views/welcome.js";
 import { renderYoga, renderYogaBuild, renderYogaSession } from "./views/yoga.js";
 import { renderYSummary } from "./views/ysummary.js";
+import { renderExtraRun } from "./views/extrarun.js";
 
 // route table: hash pattern -> handler(params); tab = which bottom-nav tab is
 // active (null = a full-screen flow / drill-down, so the tab bar is hidden).
 const routes = [
   [/^#\/?$/, () => renderHome(), "today"],
   [/^#\/session\/([\d-]+)$/, (m) => renderSession(m[1]), null],
+  [/^#\/extra-run$/, () => renderExtraRun(), null],
   [/^#\/do\/([\w-]+)\/(\d+)\/(\w+)$/, (m) => renderPlannedSession(m[1], Number(m[2]), m[3]), null],
   [/^#\/summary\/([\w-]+)$/, (m) => renderSummary(m[1]), null],
   [/^#\/weeksummary\/(\d+)$/, (m) => renderWeekSummary(m[1]), null],

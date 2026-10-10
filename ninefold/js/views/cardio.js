@@ -13,7 +13,8 @@ import { runPlayer } from "../components/runplayer.js";
 import { muteToggle, unlockAudio } from "../components/sound.js";
 import { interruptSheet } from "../components/interrupt.js";
 import { segmentTarget, zoneForHR, nextCardioTarget, DEFAULT_ZONE_BOUNDS,
-  CARDIO_MODALITIES, modalityFromSport, classifyRun } from "../cardio-intel.js";
+  CARDIO_MODALITIES, modalityFromSport, classifyRun, zonesFromBounds } from "../cardio-intel.js";
+import { pickWorkoutIndex } from "../extra-run.js";
 
 // One plain-language line telling you the SHAPE of the session — intervals vs a
 // single continuous effort — so "am I doing intervals or one run?" is never a
@@ -24,7 +25,7 @@ function runStructure(prescription) {
   if (c.kind === "tempo") return { icon: "▬", text: "One continuous tempo effort (no intervals)" };
   return { icon: "▬", text: c.deload ? "One continuous easy run" : "One continuous steady run (no intervals)" };
 }
-import { bestWorkoutFor, provider, has, CAP } from "../health/index.js";
+import { bestWorkoutFor, workoutsFor, provider, has, CAP } from "../health/index.js";
 import { isDeloadWeek } from "../progression.js";
 import { distanceLabel, distanceValue, distanceToKm } from "../units.js";
 import * as M from "../model.js";
@@ -144,17 +145,27 @@ export async function runCardioCore(container, program, day, weekday, iso, { onD
 }
 
 // --- end phase: run details from Whoop (time pre-filled if tracked) -------
-export async function logCardio(container, program, day, weekday, iso, { trackedSec, onComplete, onExit }) {
-  const prev = await previousCardio(program.id, weekday, iso);
+export async function logCardio(container, program, day, weekday, iso, { trackedSec, onComplete, onExit, extra = null }) {
+  // An EXTRA run (extra-run.js) is judged against the zone picked for it and
+  // compared with nothing: last week's same-weekday run and the planned runs'
+  // targets are not its own, and prefilling from them would put a planned run's
+  // numbers into a run that was not it. `extra` = { zone, startedAtMs }.
+  const prev = extra ? null : await previousCardio(program.id, weekday, iso);
   const bounds = await getZoneBounds();
-  let history = await cardioHistory(program.id, weekday, iso);
-  if (!history.length) history = await cardioHistoryAcross(weekday, iso);   // new-block seed: targets carry across the handover
+  let history = extra ? [] : await cardioHistory(program.id, weekday, iso);
+  if (!extra && !history.length) history = await cardioHistoryAcross(weekday, iso);   // new-block seed: targets carry across the handover
   let modality = await getLastCardioModality();
+  const extraTarget = () => {
+    const z = zonesFromBounds(bounds)[extra.zone] || zonesFromBounds(bounds)[2];
+    return { kind: "steady", deload: false, zone: z, hrBand: [z.loBpm ?? 0, z.hiBpm] };
+  };
   // target depends on modality (distance creep + verdict prefer same-machine
   // history), so recompute it when the modality changes.
-  let target = nextCardioTarget({ prescription: day.prescription || "", history, bounds, deload: deloadFor(program, iso), modality });
+  const computeTarget = () => extra ? extraTarget()
+    : nextCardioTarget({ prescription: day.prescription || "", history, bounds, deload: deloadFor(program, iso), modality });
+  let target = computeTarget();
   const refreshTarget = () => {
-    target = nextCardioTarget({ prescription: day.prescription || "", history, bounds, deload: deloadFor(program, iso), modality });
+    target = computeTarget();
     updateInsight();
   };
   clear(container);
@@ -227,16 +238,48 @@ export async function logCardio(container, program, day, weekday, iso, { tracked
   const canPull = await has(CAP.workouts);
   const whoopNote = el("p.note", { style: "margin:8px 2px 0;display:none" });
   const pullBtn = el("button.btn.block", { style: "margin-top:10px", onclick: pullFromWhoop }, `⟲ Pull from ${tracker.label}`);
-  if (canPull) { container.appendChild(pullBtn); container.appendChild(whoopNote); }
+  // An extra run may share its day with the planned one, and "the best workout
+  // of the day" (the longest) is then a coin flip between the two. So an extra
+  // run lists the day's workouts, preselects the one nearest the stopwatch start
+  // (or the latest, when it was logged straight away), and lets you switch.
+  const choices = el("div.row.wrap", { style: "margin-top:8px;gap:6px;display:none" });
+  if (canPull) { container.appendChild(pullBtn); container.appendChild(whoopNote); container.appendChild(choices); }
   let whoopExtra = null;   // richer metrics captured from the tracker, persisted on save
   async function pullFromWhoop() {
     pullBtn.disabled = true; pullBtn.textContent = `Pulling from ${tracker.label}…`;
     try {
-      const m = await bestWorkoutFor(iso);
+      let m = null;
+      if (extra) {
+        const list = await workoutsFor(iso);
+        const i = pickWorkoutIndex(list, extra.startedAtMs);
+        if (i >= 0) {
+          m = list[i];
+          const timed = list.map((w, j) => ({ w, j })).filter(({ w }) => w && w.start);
+          if (timed.length > 1) {
+            const hhmm = (s) => { const d = new Date(s); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+            clear(choices);
+            for (const { w, j } of timed) {
+              const b = el("button.btn" + (j === i ? ".primary" : ""), { style: "min-height:34px;padding:0 10px;font-size:.82rem",
+                onclick: () => { [...choices.children].forEach((c) => c.classList.toggle("primary", c === b)); applyWorkout(w); } },
+                `${hhmm(w.start)} · ${w.sport || "workout"}${w.distanceKm != null ? " · " + distanceValue(w.distanceKm) + " " + distanceLabel() : ""}`);
+              choices.appendChild(b);
+            }
+            choices.style.display = "";
+          }
+        }
+      }
+      if (!m) m = await bestWorkoutFor(iso);
       if (!m) {
         whoopNote.textContent = `No ${tracker.label} workout found for today yet.`;
         whoopNote.style.display = ""; return;
       }
+      applyWorkout(m);
+    } catch (e) {
+      whoopNote.textContent = /401|not_linked/.test(e.message || "") ? `Connect ${tracker.label} in Profile first.` : `${tracker.label}: ` + (e.message || "couldn't load");
+      whoopNote.style.display = "";
+    } finally { pullBtn.disabled = false; pullBtn.textContent = `⟲ Pull from ${tracker.label}`; }
+  }
+  function applyWorkout(m) {
       if (m.timeSeconds) {
         hrIn.value = String(Math.floor(m.timeSeconds / 3600));
         minIn.value = String(Math.floor((m.timeSeconds % 3600) / 60)).padStart(2, "0");
@@ -257,10 +300,6 @@ export async function logCardio(container, program, day, weekday, iso, { tracked
         (hardMin ? ` · ${hardMin} min in Zone 4-5` : "") +
         (m.strain != null ? ` · strain ${m.strain}` : "");
       whoopNote.style.display = "";
-    } catch (e) {
-      whoopNote.textContent = /401|not_linked/.test(e.message || "") ? `Connect ${tracker.label} in Profile first.` : `${tracker.label}: ` + (e.message || "couldn't load");
-      whoopNote.style.display = "";
-    } finally { pullBtn.disabled = false; pullBtn.textContent = `⟲ Pull from ${tracker.label}`; }
   }
 
   container.appendChild(timeRow);

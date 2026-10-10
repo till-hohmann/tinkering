@@ -52,7 +52,7 @@ export function buildMarkdownLog(programs, sessions, iso) {
     if (s.type === "cardio" && s.cardioResult) {
       const c = s.cardioResult;
       const type = cardioType(programs, s);
-      L.push(`| ${s.date} | ${progName(programs, s.programId)} | ${s.weekNumber} | ${s.weekday} | ${type} | ${M.fmtDuration(c.timeSeconds)} | ${c.distanceKm} | ${c.avgHR} | ${fmtPace(M.paceSecPerKm(c), METRIC_PROFILE)} | ${c.feltRPE} |`);
+      L.push(`| ${s.date} | ${s.extra ? "extra run" : progName(programs, s.programId)} | ${s.extra ? "" : s.weekNumber} | ${s.weekday} | ${type} | ${M.fmtDuration(c.timeSeconds)} | ${c.distanceKm} | ${c.avgHR} | ${fmtPace(M.paceSecPerKm(c), METRIC_PROFILE)} | ${c.feltRPE} |`);
     }
   }
   L.push("");

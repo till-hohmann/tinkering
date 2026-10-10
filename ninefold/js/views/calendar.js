@@ -41,7 +41,9 @@ export async function renderCalendar(monthKey) {
   const sessions = await getAllSessions();
   const doneByDate = {};
   for (const s of sessions) {
-    if (!hasContent(s)) continue;
+    // An extra run ticks off no day: on a rest day it would show the rest as
+    // trained, and on a run day it would hide that the planned run is missing.
+    if (!hasContent(s) || s.extra) continue;
     doneByDate[s.date] = s;                       // the day you trained
     // …and the day it was FOR, when a session was run late or replayed. Both
     // cells read as done, which is what each of them is.

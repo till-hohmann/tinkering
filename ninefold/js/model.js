@@ -133,7 +133,7 @@ function trim(n) {
  * one date.
  */
 export function sessionPlanDate(program, session) {
-  if (!session) return null;
+  if (!session || session.extra) return null;   // an extra run is for no planned day
   if (!program || !session.weekday || (session.programId && session.programId !== program.id)) return session.date;
   const w = (program.weeks || []).find((x) => x.weekNumber === session.weekNumber);
   const i = WEEKDAYS.indexOf(session.weekday);

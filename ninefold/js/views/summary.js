@@ -52,7 +52,7 @@ export async function renderSummary(sessionId) {
   const isToday = session.date === M.todayISO();
   const backHref = isToday ? "#/" : "#/progress";
   const title = isToday
-    ? (session.type === "cardio" ? "Run complete" : "Session complete")
+    ? (session.extra ? "Extra run done" : session.type === "cardio" ? "Run complete" : "Session complete")
     : prettyDate(session.date);
 
   // precompute comparisons once (independent of edit state)
@@ -62,7 +62,9 @@ export async function renderSummary(sessionId) {
     prevStrength = await previousStrengthSession(program.id, session.weekday, session.date);
     for (const ex of session.strengthResult || [])
       prevByEx[ex.exerciseId] = await previousExercise(program.id, session.weekday, ex.exerciseId, session.date);
-  } else if (session.cardioResult) {
+  } else if (session.cardioResult && !session.extra) {
+    // Not for an extra run: last week's planned run on this weekday is not the
+    // run it should be compared with.
     prevCardio = await previousCardio(program.id, session.weekday, session.date);
   }
 
@@ -164,8 +166,8 @@ export async function renderSummary(sessionId) {
         canShare && !editing ? el("button.btn.ghost", { style: "padding:7px 13px", "aria-label": "Share session", onclick: (e) => shareSession(e.currentTarget) }, "⤴ Share") : null,
       ]),
       el("div.row.wrap", { style: "margin-top:10px" }, [
-        locationBadge(session.location),
-        el("span.badge.accent", { text: `Week ${session.weekNumber} · ${session.weekday}` }),
+        session.location ? locationBadge(session.location) : null,
+        el("span.badge.accent", { text: session.extra ? `Extra run · ${session.weekday}` : `Week ${session.weekNumber} · ${session.weekday}` }),
         session.preRoutineDone ? el("span.badge", { text: "✓ warm-up" }) : null,
         session.postRoutineDone ? el("span.badge", { text: "✓ cool-down" }) : null,
         shoesOn && !editing && (shoeList.length || session.shoeId)
@@ -255,7 +257,7 @@ export async function renderSummary(sessionId) {
           ]),
           el("p.note", { style: "margin-top:14px", text: cardioBlurb(cmp) }),
         ]));
-      } else {
+      } else if (!session.extra) {
         children.push(el("p.note", { style: "margin-top:10px", text: "First time on this weekday — no comparison yet." }));
       }
     }

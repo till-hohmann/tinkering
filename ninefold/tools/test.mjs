@@ -72,6 +72,8 @@ import { isStrengthHold, applyHoldResults, repairHoldRatchet, HOLD_CAP } from ".
 import { shouldAdoptProgram, SYNCED_PREFS } from "../js/store.js";
 import { makeShoe, sessionShoeKm, shoeTotals, shoeStatus, defaultShoeId, wornOut, countsForShoes,
   STRENGTH_KM, DEFAULT_LIMIT_KM } from "../js/shoes.js";
+import { isExtra, extraRunId, weekdayOf, makeExtraSession, extraRunsIn, pickWorkoutIndex,
+  startWatch, pauseWatch, resumeWatch, finishWatch, elapsedMs } from "../js/extra-run.js";
 import { shouldAdoptRow, rowDecision, mergeLogEntries, mergeTombstones, pruneTombstones,
   addTombstone, mergeTombstoneSets, LOG_PREFS } from "../js/sync.js";
 import { pairScore, buildSupersets, usableSupersets, orderWithSupersets, occupiesEquipment,
@@ -4048,6 +4050,92 @@ async function soundTests() {
 await soundTests();
 
 // ---------------------------------------------------------------------------
+group("extra runs — off the plan", () => {
+  const T0 = Date.parse("2026-10-10T08:00:00Z");
+  const min = 60000;
+  it("the stopwatch is timestamps: elapsed survives a frozen page", () => {
+    const w = startWatch(T0);
+    assert.equal(elapsedMs(w, T0 + 30 * min), 30 * min, "30 minutes later, however long the page was asleep");
+  });
+  it("a pause is excluded from the time, and resuming carries on", () => {
+    let w = startWatch(T0);
+    w = pauseWatch(w, T0 + 10 * min);
+    assert.equal(elapsedMs(w, T0 + 25 * min), 10 * min, "frozen while paused");
+    w = resumeWatch(w, T0 + 15 * min);
+    assert.equal(elapsedMs(w, T0 + 20 * min), 15 * min);
+    w = finishWatch(w, T0 + 40 * min);
+    assert.equal(elapsedMs(w, T0 + 90 * min), 35 * min, "a finished watch stops");
+  });
+  it("finishing while paused stops at the pause, not at the tap", () => {
+    let w = pauseWatch(startWatch(T0), T0 + 20 * min);
+    w = finishWatch(w, T0 + 50 * min);
+    assert.equal(elapsedMs(w, T0 + 60 * min), 20 * min);
+    assert.equal(w.pausedAt, null);
+  });
+  it("double pause and double finish are harmless", () => {
+    let w = pauseWatch(startWatch(T0), T0 + 5 * min);
+    assert.deepEqual(pauseWatch(w, T0 + 9 * min), w);
+    w = finishWatch(resumeWatch(w, T0 + 6 * min), T0 + 10 * min);
+    assert.deepEqual(finishWatch(w, T0 + 99 * min), w);
+  });
+  it("the record is an extra run with no programme, so the plan's index cannot see it", () => {
+    const s = makeExtraSession({ id: "extra-2026-10-10-080000", date: "2026-10-10",
+      cardioResult: { distanceKm: 6.2, modality: "run_outdoor" }, zone: 2, shoeId: "shoe-1", completedAt: "2026-10-10T09:00:00" });
+    assert.ok(isExtra(s));
+    assert.equal(s.programId, null);
+    assert.equal(s.weekNumber, null);
+    assert.equal(s.weekday, "Sat");
+    assert.equal(s.type, "cardio");
+    assert.equal(s.shoeId, "shoe-1");
+    assert.match(s.prescription, /Zone 2/);
+    assert.equal(sessionShoeKm(s), 6.2, "it wears the shoes like any run");
+  });
+  it("an extra run is for no planned day", () => {
+    const s = makeExtraSession({ id: "x", date: "2026-10-10", cardioResult: {}, completedAt: "" });
+    assert.equal(sessionPlanDate({ id: "p", weeks: [{ weekNumber: 1, startDate: "2026-10-05" }] }, s), null);
+  });
+  it("without a shoe answer the record names no pair", () => {
+    const s = makeExtraSession({ id: "x", date: "2026-10-10", cardioResult: {}, completedAt: "" });
+    assert.ok(!("shoeId" in s));
+  });
+  it("ids are local-time and sortable", () => {
+    assert.equal(extraRunId(new Date(2026, 9, 10, 7, 5, 9)), "extra-2026-10-10-070509");
+    assert.equal(weekdayOf("2026-10-12"), "Mon");
+    assert.equal(weekdayOf("2026-10-11"), "Sun");
+  });
+  it("the week's bubble counts extra runs and their km, nothing else", () => {
+    const week = new Set(["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10", "2026-10-11"]);
+    const r = extraRunsIn([
+      { extra: true, date: "2026-10-06", cardioResult: { distanceKm: 5 } },
+      { extra: true, date: "2026-10-10", cardioResult: { distanceKm: 7.5 } },
+      { extra: true, date: "2026-10-12", cardioResult: { distanceKm: 9 } },      // next week
+      { date: "2026-10-08", type: "cardio", cardioResult: { distanceKm: 12 } },  // the planned run
+      { extra: true, date: "2026-10-09", cardioResult: null },
+    ], week);
+    assert.equal(r.count, 3);
+    assert.equal(r.km, 12.5);
+  });
+  it("the tracker workout nearest the stopwatch start is the one", () => {
+    const ws = [
+      { sport: "Running", start: "2026-10-10T06:00:00Z", distanceKm: 12 },   // the planned morning run
+      { sport: "Weightlifting", start: "2026-10-10T12:00:00Z" },
+      { sport: "Running", start: "2026-10-10T17:03:00Z", distanceKm: 5 },    // the extra one
+    ];
+    assert.equal(pickWorkoutIndex(ws, Date.parse("2026-10-10T17:00:00Z")), 2);
+    assert.equal(pickWorkoutIndex(ws, Date.parse("2026-10-10T06:05:00Z")), 0);
+  });
+  it("logged straight away, the latest run is the one, not the longest", () => {
+    const ws = [
+      { sport: "Running", start: "2026-10-10T06:00:00Z", distanceKm: 12 },
+      { sport: "Running", start: "2026-10-10T17:03:00Z", distanceKm: 5 },
+      { sport: "Weightlifting", start: "2026-10-10T19:00:00Z" },
+    ];
+    assert.equal(pickWorkoutIndex(ws, null), 1);
+    assert.equal(pickWorkoutIndex([], null), -1);
+    assert.equal(pickWorkoutIndex([{ sport: "Running" }], null), -1, "no start time, nothing to match on");
+  });
+});
+
 group("shoes — kilometres per pair", () => {
   const run = (shoeId, km, modality = "run_outdoor", extra = {}) =>
     ({ id: "r" + Math.random(), type: "cardio", shoeId, date: "2026-10-10", cardioResult: { distanceKm: km, modality }, ...extra });
