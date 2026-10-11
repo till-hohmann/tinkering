@@ -569,10 +569,10 @@ export async function renderHome() {
     // The finisher line is COMPUTED from the day's own template — the same
     // formula the session player runs — never read out of the week's prose.
     // Quiet on reduced weeks, where the player itself suggests sitting it out.
-    const fRounds = dayType === "strength" && week && !M.isReducedPhase(week.phaseName)
-      ? M.finisherRoundsFor(template, weekNumber) : null;
-    const finisherLine = fRounds
-      ? `Finisher today: ${fRounds} × ${template.finisherIntervals.workSec} s hard / ${template.finisherIntervals.easySec} s easy on the bike or crosstrainer.`
+    const fin = dayType === "strength" && week && !M.isReducedPhase(week.phaseName)
+      ? M.finisherFor(template, day, weekNumber) : null;
+    const finisherLine = fin && fin.rounds
+      ? `Finisher today: ${fin.rounds} × ${M.fmtInterval(fin.workSec)} hard / ${M.fmtInterval(fin.easySec)} easy on the bike or crosstrainer.`
       : null;
     const heroClass = dayType === "cardio" ? ".cardio" : ".strength";
     children.push(el("div.hero" + heroClass, {}, [

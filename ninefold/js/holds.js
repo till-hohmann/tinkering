@@ -57,9 +57,14 @@ const round5 = (x) => Math.max(HOLD_MIN, Math.min(HOLD_CAP, Math.round(x / 5) * 
  * the person cannot reach — the opposite failure, and a harder one to notice.
  * The one broad token is `plank`, which covers plank, side plank, forearm plank
  * and copenhagen and is a strength hold in every one of those readings.
+ *
+ * Added for Block 4's M&S (2026-10): the prone superman hold and a single-leg
+ * bridge HOLD, both held to failure by someone new to trunk work. "bridge hold"
+ * and not "bridge": the plain glute bridge is done as slow reps on the clock and
+ * keeps the rule it has always had.
  */
 const STRENGTH_HOLD_RE =
-  /dead[_ ]?hang|plank|hollow|wall[_ ]?sit|copenhagen|l[_ ]?sit|leg[_ ]?raise|bird[_ ]?dog|hang(ing)?[_ ]?knee/i;
+  /dead[_ ]?hang|plank|hollow|wall[_ ]?sit|copenhagen|l[_ ]?sit|leg[_ ]?raise|bird[_ ]?dog|hang(ing)?[_ ]?knee|superman|bridge[_ ]?hold/i;
 
 export const isStrengthHold = (item) =>
   !!item && (STRENGTH_HOLD_RE.test(item.id || "") || STRENGTH_HOLD_RE.test(item.name || ""));

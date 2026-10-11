@@ -13,6 +13,11 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 205, notes: [
+    "Ready for Block 4. The Wednesday bike finisher can now change shape from week to week (30 s / 30 s first, then 3- and 4-minute reps), and the plan, Today and the finisher screen all show the same thing.",
+    "A training block can now bring its own version of your mobility & stability routine. Block 4 does: from 26 October your four sessions include some of the exercises from the running analysis, starting short and building up.",
+    "New exercises: cable hip abduction and suitcase carry.",
+  ] },
   { v: 204, notes: [
     "With running shoes switched on, the shoe question now always appears. It used to skip itself until a pair had been added under Profile, which looked like it wasn't working. With no pair yet it asks you to add the one you're wearing, right there, and uses it. You can add a new pair from the same screen any time.",
   ] },

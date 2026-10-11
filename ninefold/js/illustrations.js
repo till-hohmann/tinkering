@@ -188,6 +188,9 @@ const MAP = {
   wall_sit: "wallsit", step_down: "stepdown", backward_walk: "walk",
   dead_bug: "deadbug", side_plank: "sideplank", bird_dog: "birddog",
   adductors: "ninety",   // cool-down butterfly → seated hips-open figure
+  // Block 4 M&S additions: nearest existing poses until they get their own.
+  prone_superman: "birddog", tiptoe_lateral_steps: "walk", calf_wall_stretch: "calf_stretch",
+  banded_lateral_walk: "walk", hamstring_hinge: "hamstring",
   // Block 2+ rotation + dead hangs
   dead_hang: "deadhang", barbell_hip_thrust: "hipthrust", db_step_up: "stepup",
   // --- library expansion -----------------------------------------------------
@@ -196,7 +199,8 @@ const MAP = {
   leg_press: "legpress", leg_extension: "legext", leg_curl: "legcurl",
   nordic_curl: "nordic", slider_leg_curl: "bridge", pike_push_up: "pike",   // a slider curl IS a bridge with the heels travelling
   seated_cable_row: "seatedrow", db_shrug: "shrug", barbell_shrug: "shrug",
-  farmers_carry: "carry", db_chest_fly: "chestfly", cable_fly: "chestfly",
+  farmers_carry: "carry", suitcase_carry: "carry", cable_hip_abduction: "sideleg",
+  db_chest_fly: "chestfly", cable_fly: "chestfly",
   preacher_curl: "preacher", skullcrusher: "skullcrusher",
   hanging_knee_raise: "hangraise", ab_wheel: "abwheel",
   back_extension: "backext", seated_calf_raise: "seatedcalf",

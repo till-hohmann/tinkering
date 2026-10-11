@@ -119,6 +119,8 @@ export const HOLD_CAPS = {
   couch_stretch: 75, hip_9090: 90, adductor_rockback: 60, ankle_rock: 60,
   tib_raise: 70, soleus_raise: 60, glute_bridge: 90, sl_hip_abduction: 60,
   copenhagen: 45, wall_sit: 90, step_down: 60, dead_bug: 90, side_plank: 60, bird_dog: 90,
+  // Block 4 additions, from the 2026-10-09 gait analysis programme.
+  prone_superman: 60, tiptoe_lateral_steps: 45, calf_wall_stretch: 60, glute_figure4: 60,
 };
 
 // Harder variants, unlocked when the time cap is earned. `startSec` restarts the

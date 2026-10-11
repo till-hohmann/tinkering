@@ -694,7 +694,24 @@ export async function setMobilityRoutine(r) { await db.setPref("mobilityRoutine"
 // general routine instead, which is the correct default for them.
 export async function initMobilityRoutine() {
   const { applyRoutine, defaultRoutine } = await import("./mobility.js");
-  const stored = await getMobilityRoutine();
+  let stored = await getMobilityRoutine();
+
+  // A BLOCK MAY CARRY AN EVOLVED ROUTINE (Block 4 brings in the gait-analysis
+  // exercises). It rides the block because blocks already sync newest-wins,
+  // while this pref is add-if-missing: a revised routine pushed as a setting
+  // would never replace the one a phone already holds, and the phone's next push
+  // would put its old copy back over it. Once the block is active its routine
+  // becomes the stored one and stays, so the next block inherits it unless it
+  // brings its own. Compared by version so this writes once, not every boot.
+  try {
+    const prog = await getActiveProgram();
+    const r = prog && prog.mobilityRoutine;
+    if (r && r.version && (!stored || stored.version !== r.version) && applyRoutine(r)) {
+      await setMobilityRoutine(r);
+      stored = r;
+    }
+  } catch (err) { console.warn("block routine skipped", err); }
+
   if (stored && applyRoutine(stored)) return stored;
 
   // NOTHING STORED. Capture the build's routine ONLY on an install that is

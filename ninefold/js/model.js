@@ -289,6 +289,30 @@ export function finisherRoundsFor(template, weekNumber) {
   return Math.min(f.baseRounds + ((weekNumber || 1) - 1) * (f.addPerWeek || 0), f.maxRounds || 99);
 }
 
+// The finisher as it runs THIS week: { workSec, easySec, rounds, cue }.
+// The template carries the block's default (30/30, rounds growing weekly); a
+// week's own day may override the shape. Block 4 needs that: 30/30s for two
+// weeks, then 3-minute and 4-minute Zone 4 reps, which one fixed work/easy pair
+// on the template cannot say. Every reader (player, day card, Today) goes
+// through here, so a preview can never disagree with what the player runs.
+export function finisherFor(template, day, weekNumber) {
+  const base = template && template.finisherIntervals;
+  if (!base) return null;
+  const o = (day && day.finisherIntervals) || {};
+  return {
+    workSec: o.workSec || base.workSec,
+    easySec: o.easySec || base.easySec,
+    rounds: o.rounds || finisherRoundsFor(template, weekNumber),
+    cue: o.cue || base.cue || null,
+  };
+}
+/** "30 s" / "4 min" / "1 min 30 s": a finisher interval as people say it. */
+export function fmtInterval(sec) {
+  if (sec < 60) return `${sec} s`;
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return s ? `${m} min ${s} s` : `${m} min`;
+}
+
 // A reduced week: the finisher defaults to "sit this one out", so preview cards
 // stay quiet about it. Same test the session flow applies.
 export const isReducedPhase = (phaseName) => /taper|test|deload/i.test(phaseName || "");

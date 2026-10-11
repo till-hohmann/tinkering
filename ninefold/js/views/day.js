@@ -4,7 +4,7 @@
 
 import { getActiveProgram, getProgram, resolveDay, getSessionsForProgram } from "../store.js";
 import { addDaysISO as addDays } from "../dates.js";
-import { todayISO, WEEKDAYS, finisherRoundsFor, isReducedPhase, sessionPlanDate } from "../model.js";
+import { todayISO, WEEKDAYS, finisherFor, fmtInterval, isReducedPhase, sessionPlanDate } from "../model.js";
 import { el, mount, go, locationBadge, backBtn, addActionBar, supersetGroup } from "../ui.js";
 import { planSections, supersetsAllowed } from "../supersets.js";
 import { getProfile } from "../profile.js";
@@ -106,10 +106,9 @@ export async function renderDay(pid, n, wd) {
             // The round count for THIS week, from the template's own numbers —
             // the same formula the session player runs.
             (() => {
-              const r = isReducedPhase(week.phaseName) ? null : finisherRoundsFor(template, n);
-              const f = template.finisherIntervals;
-              return r && f ? el("p.note", { style: "margin:5px 0 0;color:var(--cyan)",
-                text: `This week: ${r} × ${f.workSec} s / ${f.easySec} s` }) : null;
+              const f = isReducedPhase(week.phaseName) ? null : finisherFor(template, day, n);
+              return f && f.rounds ? el("p.note", { style: "margin:5px 0 0;color:var(--cyan)",
+                text: `This week: ${f.rounds} × ${fmtInterval(f.workSec)} / ${fmtInterval(f.easySec)}` }) : null;
             })(),
           ]),
         ]),

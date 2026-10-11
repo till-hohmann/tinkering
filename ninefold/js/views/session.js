@@ -163,15 +163,15 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
   // rounds grow weekly (base + addPerWeek, capped), taper/test weeks default to
   // skip — and runs it through the routine engine with cues + timer.
   const finisherPhase = () => new Promise((res) => {
-    const f = template.finisherIntervals;
-    const rounds = M.finisherRoundsFor(template, weekNumber);
+    const f = M.finisherFor(template, day, weekNumber);
+    const rounds = f.rounds;
     const taper = M.isReducedPhase(week && week.phaseName);
     const start = () => {
       const items = [{ id: "easy_cardio", name: "Spin easy — get ready", mode: "timed",
         durationSeconds: 60, bilateral: false, cue: "Settle in on the bike or crosstrainer" }];
       for (let r = 1; r <= rounds; r++) {
         items.push({ id: "bike_hard", name: `HARD ${r}/${rounds}`, mode: "timed",
-          durationSeconds: f.workSec, bilateral: false, cue: "RPE 9 — drive the legs" });
+          durationSeconds: f.workSec, bilateral: false, cue: f.cue || "RPE 9 — drive the legs" });
         if (r < rounds) items.push({ id: "bike_easy", name: "Easy spin", mode: "timed",
           durationSeconds: f.easySec, bilateral: false, cue: "Light and loose" });
       }
@@ -187,13 +187,13 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
       el("div.illotile", { style: "width:52px;height:52px;flex:none;padding:0" }, [illustration("bike")]),
       el("div", { style: "min-width:0" }, [
         el("div.label", { text: "Finisher" }),
-        el("h2", { style: "margin:2px 0 0", text: `Intervals · ${rounds} × ${f.workSec}s/${f.easySec}s` }),
+        el("h2", { style: "margin:2px 0 0", text: `Intervals · ${rounds} × ${M.fmtInterval(f.workSec)} / ${M.fmtInterval(f.easySec)}` }),
       ]),
     ]));
     stage.appendChild(el("div.card.tight", { style: "margin-top:12px" }, [
       el("p.note", { style: "margin:0", text: template.finisher || "30 s hard / 30 s easy — bike or crosstrainer." })]));
     if (taper) {
-      stage.appendChild(el("p.note.center", { style: "margin-top:10px", text: "Taper week — the plan says sit this one out. Fresh legs matter more right now." }));
+      stage.appendChild(el("p.note.center", { style: "margin-top:10px", text: "Reduced week — the plan says sit this one out. Fresh legs matter more right now." }));
       stage.appendChild(el("button.btn.primary.big.block", { style: "margin-top:12px", onclick: () => res({ done: false, skipped: true, taper: true }) }, "Skip (taper)"));
       stage.appendChild(el("button.btn.block", { style: "margin-top:8px", onclick: start }, "Do it anyway"));
     } else {

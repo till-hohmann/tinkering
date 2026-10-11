@@ -221,6 +221,8 @@ export const MUSCLE_MAP = {
   db_shrug:                 { UpperBack: 1.0 }, // traps
   barbell_shrug:            { UpperBack: 1.0 },
   farmers_carry:            { UpperBack: 0.5, Core: 1.0 },
+  suitcase_carry:           { Core: 1.0, UpperBack: 0.25 },
+  cable_hip_abduction:      { Glutes: 1.0 },
   cable_lateral_raise:      { SideDelts: 1.0 },
   preacher_curl:            { Biceps: 1.0 },
   cable_curl:               { Biceps: 1.0 },

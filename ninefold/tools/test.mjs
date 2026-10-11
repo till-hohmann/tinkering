@@ -38,7 +38,8 @@ import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT,
   defaultEquipmentFor, plateLabel, plateColor, weightLabel, isImperialWeight, setDisplayProfile,
   distanceValue, distanceToKm, lengthValue, lengthToCm, fmtPace as fmtPaceU, paceLabel,
   METRIC_PROFILE, readEdit, isStockRack, rackFields, isImperialRack } from "../js/units.js";
-import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay, dayCellRole, finisherRoundsFor, isReducedPhase } from "../js/model.js";
+import { fmtWeight as fmtWeightM, fmtPace as fmtPaceM, setDisplay, dayCellRole, finisherRoundsFor, isReducedPhase,
+  finisherFor, fmtInterval } from "../js/model.js";
 import { parseAppleExport, summarise, appleTime } from "../js/health/apple-import.js";
 import { metaFor, candidatesFor, seedSubLoad, SUB_CANDIDATES, alternativesFor,
   ceilingPlan, progressionSource, pickProgressionSource, cappedElsewhere,
@@ -2752,6 +2753,12 @@ group("holds — a strength hold is not a stretch", () => {
     for (const id of ["hamstrings", "couch_stretch", "lats", "adductors", "tspine_rotation"])
       assert.ok(!isStrengthHold({ id }), `${id} is a stretch and must keep the stretch rule`);
   });
+  it("Block 4's new holds go to failure; the stretches and the rep bridge do not", () => {
+    for (const it of [{ id: "prone_superman" }, { id: "x", name: "Single-leg bridge hold" }])
+      assert.ok(isStrengthHold(it), `${it.id} should be a strength hold`);
+    for (const id of ["glute_bridge", "calf_wall_stretch", "glute_figure4", "tiptoe_lateral_steps"])
+      assert.ok(!isStrengthHold({ id }), `${id} keeps the rule it had`);
+  });
 
   it("⚠ does NOT lower the target when you come up short", () => {
     // THE WHOLE BUG. Under the stretch rule a 26-second hang against a 40-second
@@ -4050,6 +4057,35 @@ async function soundTests() {
 await soundTests();
 
 // ---------------------------------------------------------------------------
+group("finisher — a week can change its shape", () => {
+  const wed = { finisherIntervals: { workSec: 30, easySec: 30, baseRounds: 8, addPerWeek: 2, maxRounds: 10, cue: "RPE 9" } };
+  it("without an override the template runs, rounds growing weekly", () => {
+    assert.deepEqual(finisherFor(wed, {}, 1), { workSec: 30, easySec: 30, rounds: 8, cue: "RPE 9" });
+    assert.equal(finisherFor(wed, null, 2).rounds, 10);
+    assert.equal(finisherFor(wed, undefined, 5).rounds, 10, "capped");
+  });
+  it("a week's day overrides the shape: 4 x 4 min / 3 min", () => {
+    const f = finisherFor(wed, { finisherIntervals: { workSec: 240, easySec: 180, rounds: 4, cue: "Zone 4" } }, 4);
+    assert.deepEqual(f, { workSec: 240, easySec: 180, rounds: 4, cue: "Zone 4" });
+  });
+  it("a partial override keeps the rest of the template", () => {
+    const f = finisherFor(wed, { finisherIntervals: { rounds: 12 } }, 1);
+    assert.equal(f.workSec, 30); assert.equal(f.rounds, 12); assert.equal(f.cue, "RPE 9");
+  });
+  it("no template finisher, no finisher", () => {
+    assert.equal(finisherFor({}, { finisherIntervals: { workSec: 240 } }, 1), null);
+  });
+  it("intervals read the way people say them", () => {
+    assert.equal(fmtInterval(30), "30 s");
+    assert.equal(fmtInterval(240), "4 min");
+    assert.equal(fmtInterval(90), "1 min 30 s");
+  });
+  it("a deload week is a reduced week, so the finisher defaults to skip", () => {
+    assert.ok(isReducedPhase("Deload & hand-off"));
+    assert.ok(!isReducedPhase("Heavy Fours"));
+  });
+});
+
 group("extra runs — off the plan", () => {
   const T0 = Date.parse("2026-10-10T08:00:00Z");
   const min = 60000;

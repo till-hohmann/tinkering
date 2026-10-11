@@ -43,6 +43,10 @@ export const PATTERNS = {
   chest_iso:{ name: "Chest isolation", group: "upper", isolation: true },
   trap_iso: { name: "Trap / shrug", group: "upper", isolation: true },
   trap:     { name: "Trap / shrug", group: "upper", isolation: true },
+  // Added for Block 4 (2026-10): loaded glute-med work for a pelvic drop found in
+  // gait analysis. No builder template asks for it, so it never shapes a
+  // generated block; it exists so a hand-written block can name it.
+  hip_abd:  { name: "Hip abduction", group: "lower", isolation: true },
 };
 
 // role: compound = trained first, heaviest, drives the block.
@@ -271,6 +275,10 @@ export const EXERCISE_LIBRARY = [
     { cue: "Straight up, pause at the top" }),
   E("farmers_carry", "Farmer\u2019s Carry", "dumbbell_pair", "carry", "accessory",
     { cue: "Heavy, tall, breathe - grip and trunk under real load" }),
+  E("suitcase_carry", "Suitcase Carry", "dumbbell_single", "carry", "accessory",
+    { uni: true, cue: "One heavy bell, walk tall - do not lean away from it" }),
+  E("cable_hip_abduction", "Cable Hip Abduction", "cable", "hip_abd", "accessory",
+    { uni: true, cue: "Ankle strap, stand tall, sweep the leg out from the hip - no leaning" }),
   E("cable_lateral_raise", "Cable Lateral Raise", "cable", "delt", "accessory",
     { tags: ["lateral-delt"], uni: true, cue: "Constant tension where dumbbells go light at the bottom" }),
   E("preacher_curl", "Preacher Curl", "ez_bar", "arm", "accessory",

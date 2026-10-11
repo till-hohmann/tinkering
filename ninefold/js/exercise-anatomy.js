@@ -584,6 +584,19 @@ export const EXERCISE_ANATOMY = {
     m("Obliques", "synergist", "Core"),
     m("Gluteus medius", "stabilizer", "Glutes"),
   ],
+  suitcase_carry: [
+    m("Obliques", "primary", "Core"),
+    m("Quadratus lumborum", "primary", "Core"),
+    m("Gluteus medius", "synergist", "Glutes"),
+    m("Forearm flexors", "synergist", "Biceps"),
+    m("Upper trapezius", "stabilizer", "Back"),
+  ],
+  cable_hip_abduction: [
+    m("Gluteus medius", "primary", "Glutes"),
+    m("Gluteus minimus", "primary", "Glutes"),
+    m("Tensor fasciae latae", "synergist", "Quads"),
+    m("Obliques", "stabilizer", "Core"),
+  ],
   cable_lateral_raise: [
     m("Lateral deltoid", "primary", "Shoulders"),
     m("Supraspinatus", "synergist", "Shoulders"),
