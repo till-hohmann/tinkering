@@ -149,6 +149,36 @@ Each line: `file:` = save-as name · scene · which muscles run hot.
 - `file: side_plank.png` — Side plank on one forearm, hips stacked and lifted, body in one straight line, feet stacked. Front three-quarter view. HOT: external and internal oblique of the down side. WARM: quadratus lumborum, gluteus medius. RIM: lateral deltoid.
 - `file: bird_dog.png` — Bird dog on a mat, quadruped with the opposite arm and leg extended level with the torso, spine neutral, hips square. Side three-quarter view. HOT: erector spinae. WARM: gluteus maximus, transversus abdominis. RIM: posterior deltoid.
 
+### Not yet rendered (audit 2026-10-11)
+
+Every id the app can show was checked against `img/exercises/manifest.json` and the
+borrowing table in `js/exercise-photo.js`: 234 of 251 have a render of their own, and
+these 17 have none (they draw the line-art figure). The first group is in the current
+plan (Block 4, its warm-ups and the M&S routine), so do those first.
+
+**In use now (Block 4 · M&S · warm-ups)**
+
+- `file: cable_hip_abduction.png` — Standing cable hip abduction, ankle strap on the outside leg, that leg swept out to the side to about 30° from the hip, torso upright and square, hand on the cable tower for balance. Front three-quarter view. HOT: gluteus medius, gluteus minimus. WARM: tensor fasciae latae. RIM: external oblique of the standing side.
+- `file: nordic_curl.png` — Nordic hamstring curl, kneeling on a pad with the heels anchored under a padded bar, body straight from knee to head, lowering forward at about 45° from vertical, hands ready to catch. Side view. HOT: hamstrings, biceps femoris and semitendinosus. WARM: gastrocnemius. RIM: gluteus maximus, erector spinae.
+- `file: suitcase_carry.png` — Suitcase carry, walking with one heavy dumbbell in one hand at the side, the other arm free, shoulders level, torso perfectly upright, no lean away from the weight. Front three-quarter view, mid-stride. HOT: external and internal oblique and quadratus lumborum on the side opposite the weight. WARM: gluteus medius, forearm flexors. RIM: upper trapezius.
+- `file: prone_superman.png` — Prone superman hold on a mat, face down, arms extended overhead, arms, chest and feet lifted just a few centimetres off the floor, eyes down, neck long. Side three-quarter view. HOT: erector spinae. WARM: gluteus maximus, posterior deltoid. RIM: hamstrings, lower trapezius.
+- `file: tiptoe_lateral_steps.png` — Tiptoe lateral steps, barefoot on a mat, up on the toes with the weight on the big toe, heels together and feet turned out at a right angle, mid side-step, torso tall. Front three-quarter view. HOT: gluteus medius, deep hip rotators (piriformis). WARM: gastrocnemius, soleus. RIM: transversus abdominis.
+- `file: calf_wall_stretch.png` — Wall calf stretch, hands on a wall at shoulder height, split stance, rear leg straight with the heel pressed flat to the floor, hips pushed forward. Side view. HOT (stretched): gastrocnemius of the rear leg. WARM: soleus, Achilles tendon. RIM: none.
+- `file: banded_lateral_walk.png` — Mini-band lateral walk, a resistance band just above the knees, quarter-squat stance, mid side-step with the knees pushing out against the band, toes forward. Front three-quarter view. HOT: gluteus medius. WARM: gluteus minimus, tensor fasciae latae. RIM: quadriceps femoris.
+
+**Library only (no plan uses them yet)**
+
+- `file: back_extension.png` — 45° back extension on a hyperextension bench, hips on the pad, ankles locked, torso raised to a straight line with the legs, arms crossed on the chest. Side three-quarter view. HOT: erector spinae, gluteus maximus. WARM: hamstrings. RIM: rectus abdominis.
+- `file: barbell_shrug.png` — Standing barbell shrug at the top, bar held at the thighs with straight arms, shoulders lifted toward the ears, chin neutral. Front three-quarter view. HOT: upper trapezius. WARM: levator scapulae. RIM: forearm flexors.
+- `file: db_shrug.png` — Standing dumbbell shrug at the top, a dumbbell in each hand at the sides, shoulders lifted straight up. Front three-quarter view. HOT: upper trapezius. WARM: levator scapulae. RIM: forearm flexors.
+- `file: dip.png` — Parallel-bar dip at the bottom, torso leaning slightly forward, elbows at about 90°, legs bent and crossed behind. Side three-quarter view. HOT: pectoralis major (sternal head), triceps brachii. WARM: anterior deltoid. RIM: serratus anterior.
+- `file: farmers_carry.png` — Farmer's carry, walking tall with a heavy dumbbell in each hand at the sides, shoulders back and level, mid-stride. Front three-quarter view. HOT: upper trapezius, forearm flexors. WARM: obliques. RIM: gluteus medius.
+- `file: hack_squat.png` — Machine hack squat at the bottom, back flat on the angled pad, shoulders under the pads, knees tracking over the toes, thighs at parallel. Side three-quarter view. HOT: quadriceps femoris. WARM: gluteus maximus. RIM: adductor magnus.
+- `file: leg_extension.png` — Seated leg extension machine at full lockout, knees straight, pad on the lower shins, hands on the side handles. Side three-quarter view. HOT: quadriceps femoris, rectus femoris and vastus lateralis. WARM: vastus medialis. RIM: none.
+- `file: leg_press.png` — 45° leg press, sitting back in the sled seat, feet shoulder-width on the platform, knees at about 90° at the bottom of the rep. Side three-quarter view. HOT: quadriceps femoris. WARM: gluteus maximus, adductor magnus. RIM: none.
+- `file: pike_push_up.png` — Pike push-up at the bottom, hips high in an inverted V, head lowered between the hands toward the floor, elbows at about 45°. Side view. HOT: anterior deltoid. WARM: triceps brachii, upper trapezius. RIM: serratus anterior, rectus abdominis.
+- `file: slider_leg_curl.png` — Slider leg curl on a mat, lying on the back with the hips lifted in a bridge, heels on sliders, knees curled in to about 90°. Side view. HOT: hamstrings. WARM: gluteus maximus, gastrocnemius. RIM: erector spinae.
+
 ---
 
 ## Export spec
