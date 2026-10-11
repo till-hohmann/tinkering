@@ -13,6 +13,13 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 208, notes: [
+    "The reps − and + buttons in a workout are visible again. They were showing as two blank squares either side of the number.",
+    "With Food & energy switched off, Today and Body no longer show the food cards. With Mobility switched off, the calendar no longer shows its dots.",
+    "Body opens as soon as you've logged a weigh-in, a measurement or a scan. It used to wait for your first workout.",
+    "Before a new block starts, Today says when it starts and doesn't remind you about leg days yet.",
+    "Setting up a place now marks which kit preset it matches, and the block builder shows how many build and easy weeks your chosen length gives.",
+  ] },
   { v: 207, notes: [
     "Ashtanga works again. Since August, almost every posture in an Ashtanga practice was being swapped for Child's pose, for everyone. You now get the full Primary Series, with easier versions at the beginner level. With a knee limitation set, the practice no longer uses Child's pose at all.",
     "Tapping Later or Swap mid-exercise no longer loses the sets you had already logged on it. A lift you only partly finished now shows up under \"Before you finish\" as, say, \"1 of 3 sets\", so you can go back to it.",

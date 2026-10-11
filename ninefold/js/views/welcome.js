@@ -89,7 +89,7 @@ function intro(body) {
     ]),
     el("p.note.center", { style: "margin-top:18px", text: "Takes about a minute. You can skip any of it." }),
   );
-  bar("Get started", next, el("button.btn.big.block", { onclick: restore }, "I already have a backup"));
+  bar("Get started", next, el("button.btn.big.secondary", { onclick: restore }, "I already have a backup"));
 }
 
 // --- restore from a backup ---------------------------------------------------

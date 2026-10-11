@@ -7,6 +7,7 @@ import { getAllPrograms, resolveDay, getAllSessions, mobilityDoneDates } from ".
 import { addDaysISO as addDays } from "../dates.js";
 import { todayISO, WEEKDAYS, programForDate, weekNumberFor, weekdayOf, dayCellRole, sessionPlanDate } from "../model.js";
 import { isMobilityDay } from "../mobility.js";
+import { getProfile } from "../profile.js";
 import { el, mount, go } from "../ui.js";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June",
@@ -52,6 +53,9 @@ export async function renderCalendar(monthKey) {
     if (planned && !doneByDate[planned]) doneByDate[planned] = s;
   }
   const mobDone = await mobilityDoneDates();
+  // Mobility switched off: no dots, no legend entry (Today and Week already obeyed it).
+  const calProfile = await getProfile().catch(() => null);
+  const showMobility = !calProfile || calProfile.features.mobility !== false;
 
   const firstDow = (new Date(y, m - 1, 1).getDay() + 6) % 7; // 0 = Monday
   const daysInMonth = new Date(y, m, 0).getDate();
@@ -101,8 +105,8 @@ export async function renderCalendar(monthKey) {
     const inner = [el("span.cal-num", { text: String(d) })];
     if (done) inner.push(el("span.cal-mark", { text: "✓" }));
     else if (optional) inner.push(el("span.cal-mark.opt", { text: "+" }));
-    // mobility & stability day marker: violet dot, filled once done that day
-    if (isMobilityDay(weekdayOf(iso)))
+    // mobility & stability day marker: a dot, filled once done that day
+    if (showMobility && isMobilityDay(weekdayOf(iso)))
       inner.push(el("span.cal-mobdot" + (mobDone.has(iso) ? ".on" : "")));
     const aria = `${iso}, ${orphanDone ? (kind === "cardio" ? "run logged" : "session logged") : label}`;
     const node = actionable
@@ -148,7 +152,7 @@ export async function renderCalendar(monthKey) {
   // legend
   const lg = (sw, t) => el("span.li", {}, [el("span.sw" + sw), el("span", { text: t })]);
   children.push(el("div.cal-legend", {}, [
-    lg(".strength", "Strength"), lg(".cardio", "Cardio"), lg(".rest", "Rest"), lg(".mob", "M&S"),
+    lg(".strength", "Strength"), lg(".cardio", "Cardio"), lg(".rest", "Rest"), showMobility ? lg(".mob", "M&S") : null,
   ]));
 
   mount(children);

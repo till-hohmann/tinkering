@@ -81,6 +81,12 @@ function nextMonday() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+// "5 build weeks · 1 easy" — what a block shape actually does at this length.
+function shapeSplit(weeks) {
+  const easy = weeks.filter((w) => w !== "Build").length, build = weeks.length - easy;
+  return `${build} build week${build === 1 ? "" : "s"} · ${easy} easy`;
+}
+
 export async function renderBuilder() {
   const profile = await getProfile();
   if (!S || S.profile !== profile) S = freshState(profile);
@@ -171,6 +177,8 @@ function stepPriorities(body) {
       const picked = rank >= 0;
       const row = el("button.item" + (picked ? ".on" : ""), {
         style: "text-align:left" + (picked ? ";border-color:var(--accent)" : ""),
+        "aria-pressed": picked ? "true" : "false",
+        "aria-label": picked ? `${a.name}, priority ${rank + 1}` : a.name,
         onclick: () => {
           if (picked) S.priorities.splice(rank, 1);
           else S.priorities.push(a.id);
@@ -455,7 +463,10 @@ function stepShape(body) {
         style: "text-align:left" + (S.blockShapeId === sh.id ? ";border-color:var(--accent)" : ""),
         onclick: () => { S.blockShapeId = sh.id; render(); },
       }, [
-        el("div.meta", {}, [el("div.t", { text: sh.name }), el("div.s", { text: sh.blurb })]),
+        el("div.meta", {}, [el("div.t", { text: sh.name }), el("div.s", { text: sh.blurb }),
+          // The real split for the length picked above: the blurb used to say
+          // "six weeks building, one week easy" whatever the length.
+          el("div.s", { style: "margin-top:4px;color:var(--text)", text: shapeSplit(sh.build(S.lengthWeeks)) })]),
         S.blockShapeId === sh.id ? el("span.badge.accent", { text: "✓" }) : null,
       ].filter(Boolean))));
 
@@ -464,7 +475,9 @@ function stepShape(body) {
     // tomorrow, quietly overlapping and superseding a block that was still
     // running. Overlap remains available, it just has to be chosen.
     const afterAll = S.afterLastBlock;
-    startRow.replaceChildren(
+    // setChildren, not replaceChildren: the native one printed "null" when the
+    // date field is hidden (see ui.js).
+    setChildren(startRow,
       el("div", { style: "display:flex;flex-wrap:wrap;gap:8px" }, [
         afterAll ? el("button.progchip" + (S.startMode === "after" ? ".on" : ""), {
           onclick: () => { S.startMode = "after"; S.startDate = afterAll; render(); } }, "After my last block") : null,

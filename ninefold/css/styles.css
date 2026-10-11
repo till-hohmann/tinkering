@@ -275,7 +275,13 @@ button { font-family: inherit; font-size: 1rem; color: inherit; cursor: pointer;
   display: flex; gap: 10px; z-index: 50;
 }
 .actionbar .inner { max-width: 580px; margin: 0 auto; width: 100%; display: flex; gap: 10px; }
-.actionbar .btn { flex: 1; }
+/* min-width:0 and wrapping, as .btn-row already has: a long secondary label
+   ("I already have a backup") refused to shrink and pushed the primary button
+   off the right edge of every phone up to a 430 px Pro Max. */
+.actionbar .btn { flex: 1; min-width: 0; white-space: normal; line-height: 1.15; text-align: center; }
+/* A quieter companion to the bar's main action: sized to its label, not half the bar. */
+.actionbar .btn.secondary { flex: 0 1 40%; font-size: .9rem; font-weight: 700; padding: 0 14px;
+  background: transparent; border-color: var(--line); }
 /* A STICKY CTA ON A TABBED SCREEN HAS TO SIT ABOVE THE TAB BAR.
    Both are position:fixed bottom:0, and the tab bar's z-index (80) beats the
    action bar's (50) — so the primary button of the screen rendered UNDERNEATH
@@ -900,9 +906,14 @@ button.tick.commit:active { transform: scale(.9); background: var(--accent); col
 
 /* dumbbell / cable scroller */
 .scroller { display: flex; align-items: center; gap: 16px; justify-content: center; margin: 12px 0; }
-.scroller .stepbtn { width: 56px; height: 56px; border-radius: 50%; font-size: 1.7rem; font-weight: 800;
+/* Every stepper, not only the dumbbell scroller's. The reps −/+ in the strength
+   logger sit in .numfield and got the browser's default light-grey button with
+   near-white text: two blank squares either side of the rep count. */
+.stepbtn { width: 46px; height: 46px; border-radius: 50%; font-size: 1.3rem; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
   background: var(--bg-elev2); color: var(--text); border: 1px solid var(--line); transition: transform .08s; }
-.scroller .stepbtn:active { transform: scale(.92); }
+.stepbtn:active { transform: scale(.92); }
+.scroller .stepbtn { width: 56px; height: 56px; font-size: 1.7rem; }
 .scroller .reading { min-width: 140px; text-align: center; }
 .scroller .reading .w { font-size: 2.4rem; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .scroller .reading .eff { font-size: .82rem; color: var(--text-dim); }

@@ -3719,6 +3719,39 @@ group("dates — one calendar day, one implementation", () => {
     assert.notEqual(today, catchUp);
     assert.equal(sessionIdFor("2026-10-14", "Wed", "2026-10-07"), catchUp, "the same catch-up resumes its own draft");
   });
+  it("no native replaceChildren/append is handed a child that can be null", () => {
+    // The native methods print "null" for a null child (the builder's start
+    // date did). setChildren / el() skip it. Only TOP-LEVEL arguments matter:
+    // a null inside an el() array is already safe.
+    const topArgs = (src, start) => {
+      const args = []; let depth = 0, cur = "", q = null;
+      for (let i = start; i < src.length; i++) {
+        const c = src[i];
+        if (q) { cur += c; if (c === q && src[i - 1] !== "\\") q = null; continue; }
+        if (c === '"' || c === "'" || c === "`") { q = c; cur += c; continue; }
+        if ("([{".includes(c)) depth++;
+        if (")]}".includes(c)) { if (depth === 0) { args.push(cur); return args; } depth--; }
+        if (c === "," && depth === 0) { args.push(cur); cur = ""; continue; }
+        cur += c;
+      }
+      return args;
+    };
+    const offenders = [];
+    for (const f of jsFiles()) {
+      // Comments blanked (same length, so line numbers hold): ui.js quotes the bad idiom.
+      const src = readFileSync(f.path, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "))
+        .replace(/^[ \t]*\/\/.*$/gm, (c) => " ".repeat(c.length));
+      for (const m of src.matchAll(/\.(replaceChildren|append|prepend)\(/g)) {
+        for (const a of topArgs(src, m.index + m[0].length)) {
+          if (/:\s*(null|undefined|false)\s*$/.test(a.trim())) {
+            offenders.push(`${f.rel}:${src.slice(0, m.index).split("\n").length} ${m[1]}(… ${a.trim().slice(-40)})`);
+          }
+        }
+      }
+    }
+    assert.deepEqual(offenders, [], "use setChildren() from ui.js:\n  " + offenders.join("\n  "));
+  });
   it("the week a date falls in survives the spring clock change", () => {
     // Central Europe moves its clocks on 29 Mar 2026. The old arithmetic put Monday 30
     // March in week 1 of a block that started on the 23rd.

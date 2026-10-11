@@ -260,7 +260,7 @@ export const BLOCK_SHAPES = [
   {
     id: "classic",
     name: "Load then deload",
-    blurb: "Six weeks building, one week easy. The standard cadence — predictable, and it banks recovery on a schedule.",
+    blurb: "An easy week every seventh week and at the end. The standard cadence — predictable, and it banks recovery on a schedule.",
     // Deload every 7th week, and always close the block on one. The naive
     // version of this ("every 7th OR the last week") produced TWO CONSECUTIVE
     // deloads at 8, 15, 22... weeks, which is a fortnight of detraining rather

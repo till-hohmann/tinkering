@@ -807,9 +807,27 @@ export async function renderProgress() {
 // Everything about the body itself: the recomposition verdict (headline), the
 // DEXA scan read, bodyweight, tape measurements (waist + chest/arm/thigh),
 // nutrition, and the fitness/recovery markers (VO₂max, WHOOP training load).
+// ⚠ BODY USED TO WAIT FOR A WORKOUT. It shared Progress's "no sessions logged"
+// gate, so a weigh-in, a tape measurement or a DEXA scan entered before the
+// first session showed nothing here — and told you to go and train. Body now
+// opens as soon as there is anything about the body to show.
+async function hasBodyData() {
+  const lists = await Promise.all([getWeightLog(), getMeasurementsLog(), getDexaLog(), getVO2maxLog()]
+    .map((p) => p.catch(() => [])));
+  if (lists.some((l) => Array.isArray(l) && l.length)) return true;
+  const nutrition = await getNutritionLog().catch(() => ({}));
+  if (nutrition && Object.keys(nutrition).length) return true;
+  return (await getBodyweight().catch(() => null)) != null;
+}
+
 export async function renderComposition() {
   const { logged } = await scopedSessions();
-  if (!logged.length) return emptyState("Body");
+  if (!logged.length && !(await hasBodyData())) {
+    return mount([el("h1", { text: "Body" }), el("div.card", { style: "margin-top:14px" }, [
+      el("p.dim", { style: "margin:0", text: "Nothing logged about your body yet. Add your bodyweight, a tape measurement or a DEXA scan under Profile, and the trends start here." }),
+      el("button.btn.primary.block", { style: "margin-top:14px", onclick: () => go("#/settings") }, "Go to Profile"),
+    ])]);
+  }
 
   const children = [el("h1", { text: "Body" }), rangeSeg(renderComposition)];
   const cutoff = cutoffISO((RANGES.find((r) => r.key === rangeKey) || RANGES[3]).days);
@@ -924,7 +942,7 @@ export async function renderComposition() {
   mount(children);
   fillRecomp(recompCard, inRange, cutoff);   // async: waist/bodyweight × strength × energy balance
   fillDexa(dexaCard);                        // async: latest DEXA scan + change vs prior
-  fillNutrition(nutritionCard, cutoff);      // async: calories in vs WHOOP burn
+  if (!bwProfile || bwProfile.features.nutrition !== false) fillNutrition(nutritionCard, cutoff);   // async: calories in vs WHOOP burn
   fillLoad(loadCard);                        // async: WHOOP strain acute:chronic (always current)
 }
 

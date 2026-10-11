@@ -24,6 +24,11 @@ const NUM = "width:78px;text-align:center;padding:8px;background:var(--bg-elev2)
   "border:1px solid var(--line);border-radius:10px;color:var(--text)";
 
 /** A blank place carrying the stock rack for the profile's units. */
+const sameKit = (a, b) => {
+  const x = new Set(a || []), y = new Set(b || []);
+  return x.size === y.size && [...x].every((v) => y.has(v));
+};
+
 export function blankPlace(profile, name = "") {
   const kit = defaultEquipmentFor(profile);
   return {
@@ -122,11 +127,17 @@ export function placeEditor(place, profile, { onChange = () => {}, compact = fal
       kids.push(el("p.note", { style: "margin-top:4px", text:
         "Pick the closest, then correct it below. Each one says exactly what it ticks." }));
       kids.push(el("div.list", { style: "margin-top:9px" },
-        PRESETS.map(([label, sub, ids]) =>
-          el("button.item", { style: "text-align:left",
+        PRESETS.map(([label, sub, ids]) => {
+          // Mark the preset the kit currently matches. With no state shown, the
+          // first row ("Bodyweight only") read as the selected value while the
+          // place actually held everything.
+          const on = sameKit(place.implements, ids);
+          return el("button.item" + (on ? ".on" : ""), { style: "text-align:left", "aria-pressed": on ? "true" : "false",
             onclick: () => { place.implements = [...ids]; render(); onChange(); } }, [
             el("div.meta", {}, [el("div.t", { text: label }), el("div.s", { text: sub })]),
-          ]))));
+            on ? el("span.badge.accent", { text: "✓" }) : null,
+          ]);
+        })));
     }
 
     // WHICH PLATES ARE ON THE BAR HERE — a per-place fact, not a display setting.

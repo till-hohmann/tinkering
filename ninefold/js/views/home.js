@@ -103,7 +103,7 @@ async function fillFuelToday(card, iso) {
     ]),
     proteinTarget != null
       ? el("div.note", { style: "margin-top:12px", text: `Protein ${protein != null ? Math.round(protein) : 0} / ${proteinTarget} g` + (protein != null && protein >= proteinTarget ? " ✓" : "") })
-      : (logged ? null : el("div.note", { style: "margin-top:12px", text: "Copy your daily totals from MyFitnessPal." })),
+      : (logged ? null : el("div.note", { style: "margin-top:12px", text: "Copy your daily totals from your food tracker." })),
   );
   card.style.display = "";
 }
@@ -409,15 +409,21 @@ export async function renderHome() {
     if (dIso && isLegDay(resolveDay(program, dIso).day)) legPlanned++;
   });
   const todayIdx = WEEKDAYS.indexOf(weekday);
-  // amber once it's Thursday-or-later and the 2nd leg day still isn't in the bank
-  const legShort = legPlanned >= 2 && legDone < 2;
+  // amber once it's Thursday-or-later and the 2nd leg day still isn't in the bank.
+  // Not before the block has started: week 1 resolves for the days before it too,
+  // and on the Sunday before a Monday start it nagged about a week not yet begun.
+  const weekStarted = !!week && iso >= week.startDate;
+  const legShort = weekStarted && legPlanned >= 2 && legDone < 2;
   const legAmber = legShort && todayIdx >= 3;
 
   // ===== the living readiness orb — hero of the screen =====
   // Leads with RECOVERY while today's workout is still pending (so you see your
   // readiness before training), then flips to the week-progress count once the
   // session is done. Rest days have no workout to finish → show recovery too.
-  const kicker = week ? `Week ${weekNumber} · ${week.phaseName}` : "Today";
+  const kicker = !week ? "Today"
+    : iso < week.startDate
+      ? "Block starts " + new Date(week.startDate + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })
+      : `Week ${weekNumber} · ${week.phaseName}`;
   const orbHero = el("div.orbhero");
   // Small overlapping ring on the orb: mobility & stability sessions this week
   // (4 planned — Mon/Wed/Fri/Sun; done-on-another-day still counts for the week).
@@ -526,9 +532,9 @@ export async function renderHome() {
           atMilestone ? el("span.badge.accent", { style: "margin-left:4px", text: `${streak}-day milestone!` }) : null,
         ]),
         el("div.note", { style: "margin-top:4px", text: `${allSessions.filter(hasContent).length} sessions logged` }),
-        legPlanned >= 2
+        weekStarted && legPlanned >= 2
           ? el("div.note", { style: "margin-top:4px" + (legAmber ? ";color:var(--amber);font-weight:700" : ""),
-              text: `Legs ${legDone}× this week` + (legShort ? (legAmber ? " · get the 2nd in" : " · 2 planned") : " ✓") })
+              text: `Legs ${legDone}× this week` + (legShort ? (legAmber ? (legDone === 0 ? " · none yet" : " · get the 2nd in") : " · 2 planned") : " ✓") })
           : null,
       ]),
     ]),
@@ -684,7 +690,8 @@ export async function renderHome() {
 
   mount(children);
   if (!done) fillReadinessHero(orbHero, kicker, weekFallback, makeMini);   // pending workout → load WHOOP recovery (fall back to week progress if unavailable)
-  fillFuelToday(fuelToday, iso);
+  // "Food & energy" switched off meant nothing here: the card filled anyway.
+  if (!homeProfile || homeProfile.features.nutrition !== false) fillFuelToday(fuelToday, iso);
 }
 
 // A dead backup, said out loud. Deliberately narrow: only when a backup is
