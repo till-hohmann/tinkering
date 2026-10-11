@@ -17,7 +17,7 @@
 // an update and an offline open in the same short window — which is the exact
 // situation of someone who trains while travelling.
 
-const CACHE = "fittrack-v208";
+const CACHE = "fittrack-v209";
 const SHELL = [
   "./",
   "./index.html",
@@ -41,6 +41,7 @@ const SHELL = [
   "./js/substitution.js",
   "./js/supersets.js",
   "./js/slots.js",
+  "./js/wake.js",
   "./js/volume.js",
   "./js/standards.js",
   "./js/anatomy.js",

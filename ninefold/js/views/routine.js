@@ -27,12 +27,8 @@ import { isStrengthHold } from "../holds.js";
 import { breathsRemaining, breathPhaseAt, isInhale, breathSwell } from "../yoga/breath.js";
 import { loadNarration, narrationReady, speak, prefetch, stopNarration, resumeNarration,
   stageNarration, resetNarration } from "../yoga/narrate.js";
+import { holdWake, releaseWake } from "../wake.js";
 
-let wakeLock = null;
-async function requestWake() {
-  try { if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); } catch {}
-}
-function releaseWake() { try { wakeLock && wakeLock.release(); } catch {} wakeLock = null; }
 
 // --- SVG text (immune to iOS standalone-PWA font boosting; see setName) -----
 const FONT_STACK = `-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif`;
@@ -178,11 +174,11 @@ export function runRoutine(container, def, program, opts = {}) {
   let raf = null, lastTs = 0, lastTick = null;
 
   beginRunAudio();   // manage the audio session; the lock timeline carries cues if the screen locks
-  requestWake();
+  holdWake("routine");
   registerCleanup(() => {
     if (raf) cancelAnimationFrame(raf);
     if (extendRaf) cancelAnimationFrame(extendRaf);
-    clearRunTimeline(); releaseWake(); endRunAudio(); closeScreenLock(); resetNarration();
+    clearRunTimeline(); releaseWake("routine"); endRunAudio(); closeScreenLock(); resetNarration();
   });
 
   function fmt(s) {
@@ -580,8 +576,8 @@ export function runRoutine(container, def, program, opts = {}) {
     else setName(labelFor(step));
     renderTimedControls();
 
-    // Live foreground cue. Suppressed on the post-unlock catch-up (opts.silent),
-    // since the lock timeline already voiced those steps while the screen was off.
+    // Live foreground cue. Suppressed for the steps skipped in a post-unlock
+    // catch-up (opts.silent); the loop then announces the step you land on.
     endHoldBtn.style.display = tracked(step) ? "" : "none";
     const sayLive = !stepOpts.silent && !document.hidden;
     const kind = cueKindOf(step.item);
@@ -657,22 +653,32 @@ export function runRoutine(container, def, program, opts = {}) {
     if (finished) return;
     const dt = lastTs ? now - lastTs : 0;
     lastTs = now;
-    // A big gap means JS was frozen (screen locked) and the lock timeline carried
-    // the cues — so fast-forward SILENTLY, don't re-announce on unlock.
+    // A big gap means JS was frozen (screen locked). Skip the lapsed steps
+    // SILENTLY; the step you land on is announced after the catch-up.
     const resumed = dt > 1500;
     const step = steps[idx];
     if (!paused && !extending && step && step.type !== "checklist") {
       segMs += dt;
-      let guard = 0;
+      let guard = 0, advanced = false;
       // advance through every timed/transition step that elapsed (handles a long
       // gap while the screen was locked); stop at a checklist barrier or the end.
       while (steps[idx] && steps[idx].type !== "checklist" && segMs >= curDur() * 1000 && guard++ < 2000) {
+        advanced = true;
         const over = segMs - curDur() * 1000;
-        recordHold(curDur());   // completed in full (incl. +15s extras)
+        // Completed in full (incl. +15s extras) — but only when someone was
+        // there to see it. Steps that ran out while the phone was asleep had no
+        // cues (there is no lock timeline any more), so crediting each as a full
+        // hold walked stretch targets up on holds nobody was guided through. Not
+        // recorded counts as skipped, which never lowers a target.
+        if (!resumed) recordHold(curDur());
         if (steps[idx].type === "timed" && !resumed && !document.hidden) { cueItemEnd(); haptic(30); }
         enterStep(idx + 1, { silent: resumed });
         if (finished) return;
         segMs = over;
+      }
+      // …and say the step you have landed on, which nothing else will.
+      if (resumed && advanced && !document.hidden && steps[idx]) {
+        const keep = segMs; enterStep(idx); segMs = keep;
       }
     }
     if (!finished) { render(); raf = requestAnimationFrame(loop); }
@@ -726,7 +732,7 @@ export function runRoutine(container, def, program, opts = {}) {
     if (raf) cancelAnimationFrame(raf);
     clearRunTimeline();
     closeScreenLock();
-    releaseWake();
+    releaseWake("routine");
     endRunAudio();
     resetNarration();
     cueRoutineDone();
@@ -748,7 +754,7 @@ export function runRoutine(container, def, program, opts = {}) {
     if (extendRaf) cancelAnimationFrame(extendRaf);
     clearRunTimeline();
     closeScreenLock();
-    releaseWake();
+    releaseWake("routine");
     endRunAudio();
     resetNarration();
     onComplete && onComplete({ completed, holds: holdList() });

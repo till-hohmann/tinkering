@@ -236,7 +236,10 @@ export function nextCardioTarget({ prescription = "", history = [], bounds = DEF
 
   if (cls.kind === "interval") {
     // enough of the prescribed hard time actually spent in Z4-5 counts as done
-    const need = cls.plannedHardMin ? Math.max(4, Math.round(cls.plannedHardMin * 0.6)) : 6;
+    // Never more than was prescribed: six 30-second sprints are 3 minutes hard,
+    // and a floor of 4 made that session's verdict "fell short" every time.
+    const need = cls.plannedHardMin
+      ? Math.min(cls.plannedHardMin, Math.max(4, Math.round(cls.plannedHardMin * 0.6))) : 6;
     const target = { kind: "interval", deload: easy, zone: z4, hrBand: [z4.loBpm, z4.hiBpm], rpe: "8-9",
       plannedHardMin: cls.plannedHardMin, needHardMin: need,
       headline: `Hard reps: ${z4.loBpm}-${z4.hiBpm} bpm (Zone 4)`,

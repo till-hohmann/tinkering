@@ -274,14 +274,17 @@ export function compareStrength(implement, current, previous) {
 }
 
 // Cardio comparison: farther, faster pace, or lower HR = better (requirements §9).
+// A side that wasn't recorded has no delta: a run with no HR read "avg HR down
+// 150 bpm" as a green improvement, because missing was compared as 0.
+const deltaOf = (a, b) => (a > 0 && b > 0 ? a - b : null);
 export function compareCardio(current, previous) {
   if (!previous) return null;
   const curPace = paceSecPerKm(current), prevPace = paceSecPerKm(previous);
   return {
-    distanceDelta: (current.distanceKm || 0) - (previous.distanceKm || 0),
-    timeDelta: (current.timeSeconds || 0) - (previous.timeSeconds || 0),
+    distanceDelta: deltaOf(current.distanceKm, previous.distanceKm),
+    timeDelta: deltaOf(current.timeSeconds, previous.timeSeconds),
     paceDelta: curPace != null && prevPace != null ? curPace - prevPace : null, // negative = faster
-    hrDelta: (current.avgHR || 0) - (previous.avgHR || 0), // negative = better
+    hrDelta: deltaOf(current.avgHR, previous.avgHR), // negative = better
     curPace, prevPace,
   };
 }

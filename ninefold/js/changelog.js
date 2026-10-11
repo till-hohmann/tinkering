@@ -13,6 +13,14 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 209, notes: [
+    "The screen now stays on during a strength workout, so the end-of-rest beep plays. During runs and routines it now comes back on after you've locked and unlocked the phone; it used to stay off for the rest of the session.",
+    "A run that finishes while the phone is locked records the run's real time, not the time until you next looked at it. After unlocking, the app tells you which step you're on.",
+    "Mobility holds that ran out while the phone was locked no longer count as completed, so your stretch targets don't go up for holds you weren't guided through.",
+    "Starting a workout no longer quietly throws away another one you saved for later. The app asks whether to save what you did or discard it.",
+    "The run form no longer fills in last week's numbers as if they were today's; they show as hints instead. A run without heart rate no longer reads as \"avg HR down 150 bpm\".",
+    "Sprint interval sessions (30 s all-out with 2:30 easy) now get a guided run, and the heart-rate verdict for them can actually be met.",
+  ] },
   { v: 208, notes: [
     "The reps − and + buttons in a workout are visible again. They were showing as two blank squares either side of the number.",
     "With Food & energy switched off, Today and Body no longer show the food cards. With Mobility switched off, the calendar no longer shows its dots.",

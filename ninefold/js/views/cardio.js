@@ -50,14 +50,18 @@ export function parseRunSegments(prescription, bounds = DEFAULT_ZONE_BOUNDS) {
   const wu = txt.match(/WU\s*(\d+)\s*min/i);
   if (wu) segs.push({ kind: "warmup", label: "Warm-up jog", seconds: +wu[1] * 60, cue: "easy-jog" });
 
-  const iv = txt.match(/(\d+)\s*[x×]\s*(\d+)\s*(min|s)[^/]*?\/\s*(\d+)\s*(min|s)\s*easy/i);
+  // The easy part may be "2 min", "90 s" or "2:30" — the builder writes its own
+  // anaerobic day as "6 × 30 s all-out / 2:30 easy", which this used to miss, so
+  // the app's own prescription got no guided run at all.
+  const iv = txt.match(/(\d+)\s*[x×]\s*(\d+)\s*(min|s)[^/]*?\/\s*(?:(\d+):(\d{2})|(\d+)\s*(min|s))\s*easy/i);
   const tempo = txt.match(/(\d+)(?:\s*[-–]\s*\d+)?\s*min\s*(?:continuous|tempo|zone\s*3)/i);
   if (iv) {
     // a steady Zone-2 block BEFORE the reps (the Block-2+ "long run + strides"
     // structure: e.g. "Zone 2 42 min … then 6 x 20 s strides / 40 s easy")
     const steadyPre = txt.match(/zone\s*2\D{0,12}?(\d+)\s*min/i);
     if (steadyPre) segs.push({ kind: "steady", label: "Zone 2", seconds: +steadyPre[1] * 60, cue: "easy-jog" });
-    const reps = +iv[1], hard = toSec(iv[2], iv[3]), easy = toSec(iv[4], iv[5]);
+    const reps = +iv[1], hard = toSec(iv[2], iv[3]);
+    const easy = iv[4] != null ? +iv[4] * 60 + +iv[5] : toSec(iv[6], iv[7]);
     for (let r = 1; r <= reps; r++) {
       segs.push({ kind: "hard", label: `Hard ${r}/${reps}`, seconds: hard, cue: "speed-up" });
       if (r < reps) segs.push({ kind: "easy", label: "Easy", seconds: easy, cue: "slow-down" });
@@ -172,21 +176,26 @@ export async function logCardio(container, program, day, weekday, iso, { tracked
 
   // time as h : mm : ss number fields — iOS number pad has no ":" key, and
   // Monday Zone-2 runs can go over an hour.
-  const totSec = trackedSec != null ? trackedSec : prev ? prev.cardioResult.timeSeconds : 0;
+  // ⚠ LAST WEEK'S NUMBERS ARE A HINT, NOT AN ANSWER. They used to be filled in as
+  // values, so pressing Save without typing logged last week's run as today's.
+  // Only a tracker reading (today's data) is a value; last week is a placeholder.
+  const totSec = trackedSec != null ? trackedSec : 0;
+  const prevSec = prev ? prev.cardioResult.timeSeconds || 0 : 0;
   const tStyle = "width:52px;text-align:center;font-size:1.2rem;font-weight:700;padding:10px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)";
-  const hrIn = el("input", { type: "number", inputmode: "numeric", placeholder: "h",
+  const hrIn = el("input", { type: "number", inputmode: "numeric", placeholder: prevSec ? String(Math.floor(prevSec / 3600)) : "h",
     value: totSec ? String(Math.floor(totSec / 3600)) : "", style: tStyle });
-  const minIn = el("input", { type: "number", inputmode: "numeric", placeholder: "min",
+  const minIn = el("input", { type: "number", inputmode: "numeric", placeholder: prevSec ? String(Math.floor((prevSec % 3600) / 60)).padStart(2, "0") : "min",
     value: totSec ? String(Math.floor((totSec % 3600) / 60)).padStart(2, "0") : "", style: tStyle });
-  const secIn = el("input", { type: "number", inputmode: "numeric", placeholder: "sec", min: "0", max: "59",
+  const secIn = el("input", { type: "number", inputmode: "numeric", placeholder: prevSec ? String(prevSec % 60).padStart(2, "0") : "sec", min: "0", max: "59",
     value: totSec ? String(totSec % 60).padStart(2, "0") : "", style: tStyle });
   const fields = {
-    distance: el("input", { type: "text", inputmode: "decimal", placeholder: distanceLabel(),
-      value: prev ? String(distanceValue(prev.cardioResult.distanceKm)) : "" }),
-    hr: el("input", { type: "number", inputmode: "numeric", placeholder: "bpm",
-      value: prev ? String(prev.cardioResult.avgHR) : "" }),
+    distance: el("input", { type: "text", inputmode: "decimal",
+      placeholder: prev && prev.cardioResult.distanceKm ? `${distanceValue(prev.cardioResult.distanceKm)} last` : distanceLabel() }),
+    hr: el("input", { type: "number", inputmode: "numeric",
+      placeholder: prev && prev.cardioResult.avgHR ? `${prev.cardioResult.avgHR} last` : "bpm" }),
   };
-  let rpe = prev ? prev.cardioResult.feltRPE : 7;
+  // An old run with no RPE printed "undefined" here.
+  let rpe = (prev && Number.isFinite(prev.cardioResult.feltRPE)) ? prev.cardioResult.feltRPE : 7;
 
   const colon = () => el("span", { style: "font-weight:800;font-size:1.2rem", text: ":" });
   const timeRow = el("div.row", { style: "margin:12px 0" }, [
@@ -215,7 +224,7 @@ export async function logCardio(container, program, day, weekday, iso, { tracked
     el("h2", { style: "margin:0", text: "Add your run" }),
   ]));
   container.appendChild(el("p.note", { style: "margin:8px 2px 0",
-    text: trackedSec != null ? `Tracked ${M.fmtDuration(trackedSec)} moving time. Add the Whoop numbers now they're final.` : "Enter your run from Whoop." }));
+    text: trackedSec != null ? `Tracked ${M.fmtDuration(trackedSec)} moving time. Add distance and heart rate from your watch or tracker.` : "Enter your run: time or distance, and heart rate if you have it." }));
 
   // modality — run outdoor / treadmill / elliptical (tracked somewhat separately)
   const modSeg = el("div.segmented");
@@ -365,17 +374,21 @@ export async function logCardio(container, program, day, weekday, iso, { tracked
   ]));
   if (prev) {
     const c = prev.cardioResult;
-    container.appendChild(el("p.note", { text: `Last ${weekday}: ${c.distanceKm} km · ${M.fmtDuration(c.timeSeconds)} · HR ${c.avgHR} · pace ${M.fmtPace(M.paceSecPerKm(c))}` }));
+    container.appendChild(el("p.note", { text: `Last ${weekday}: ${c.distanceKm} km · ${M.fmtDuration(c.timeSeconds)} · HR ${c.avgHR || "–"} · pace ${M.fmtPace(M.paceSecPerKm(c))}` }));
   }
   container.appendChild(el("button.btn.primary.big.block", { style: "margin-top:14px", onclick: save }, "Save run"));
   updateInsight();
 
   function save() {
+    const timeSeconds = (Number(hrIn.value) || 0) * 3600 + (Number(minIn.value) || 0) * 60 + (Number(secIn.value) || 0);
+    const distanceKm = distanceToKm(M.parseNum(fields.distance.value)) ?? 0;   // typed in the display unit, stored in km
+    if (!timeSeconds && !distanceKm) { window.alert("Enter the time or the distance first."); return; }
     setLastCardioModality(modality);
+    const hr = Math.round(M.parseNum(fields.hr.value));
     onComplete && onComplete({
-      timeSeconds: (Number(hrIn.value) || 0) * 3600 + (Number(minIn.value) || 0) * 60 + (Number(secIn.value) || 0),
-      distanceKm: distanceToKm(M.parseNum(fields.distance.value)) ?? 0,   // typed in the display unit, stored in km
-      avgHR: Math.round(M.parseNum(fields.hr.value)),
+      timeSeconds,
+      distanceKm,
+      avgHR: hr > 0 ? hr : null,   // not recorded, rather than a heart rate of 0
       feltRPE: rpe,
       ...(whoopExtra || {}),   // max HR, per-zone minutes, strain, sport, source="whoop" (when pulled)
       modality,                // run_outdoor / run_treadmill / elliptical

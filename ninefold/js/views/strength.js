@@ -25,6 +25,7 @@ import { MUSCLE_MAP, partsOf } from "../volume.js";
 import { muscleBody } from "../anatomy.js";
 import * as M from "../model.js";
 import { laterMap, insertMap, remapResults, detachSlot } from "../slots.js";
+import { holdWake, releaseWake } from "../wake.js";
 
 // Full-screen demonstration, opened from the exercise head mid-session.
 //
@@ -338,7 +339,10 @@ export async function runStrength(container, program, day, weekday, iso, locatio
 
   const restTicker = new Ticker();
   let restPill = null, restTotal = 0;
-  registerCleanup(() => { restTicker.stop(); if (restPill) { restPill.remove(); restPill = null; } });
+  // The screen stays on for the whole lift: the rest timer runs on animation
+  // frames, and with the phone asleep its end-of-rest beep never came.
+  holdWake("strength");
+  registerCleanup(() => { restTicker.stop(); if (restPill) { restPill.remove(); restPill = null; } releaseWake("strength"); });
 
   // All-time best estimated-1RM per exercise, from every PRIOR session — so a
   // logged set that beats it celebrates on the spot (in-the-moment PR, not a

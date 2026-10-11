@@ -19,12 +19,8 @@ import { el, clear, haptic, registerCleanup } from "../ui.js";
 import { say, cueTick, cueRoutineDone, muteToggle,
   beginRunAudio, endRunAudio, setRunTimeline, clearRunTimeline, preloadVoice, ensureAudioRunning } from "./sound.js";
 import { lockButton, closeScreenLock } from "./screenlock.js";
+import { holdWake, releaseWake } from "../wake.js";
 
-let wakeLock = null;
-async function requestWake() {
-  try { if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); } catch {}
-}
-function releaseWake() { try { wakeLock && wakeLock.release(); } catch {} wakeLock = null; }
 
 const fmt = (s) => {
   s = Math.max(0, Math.round(s));
@@ -38,8 +34,8 @@ export function runPlayer(container, segments, { onDone } = {}) {
   let segMs = 0, totalMs = 0, extendMs = 0, lastTs = 0, raf = null, lastTick = null;
 
   beginRunAudio();
-  requestWake();
-  registerCleanup(() => { if (raf) cancelAnimationFrame(raf); releaseWake(); clearRunTimeline(); endRunAudio(); closeScreenLock(); });
+  holdWake("run");
+  registerCleanup(() => { if (raf) cancelAnimationFrame(raf); releaseWake("run"); clearRunTimeline(); endRunAudio(); closeScreenLock(); });
 
   // --- scaffold ---
   const segK = el("div.k");
@@ -118,8 +114,8 @@ export function runPlayer(container, segments, { onDone } = {}) {
       targetEl.className = "hr-target";
     }
     haptic(20);
-    // Live foreground cue. Suppressed during the post-unlock catch-up (opts.silent)
-    // because the lock timeline already voiced those segments while the screen was off.
+    // Live foreground cue. Suppressed for the segments skipped in a post-unlock
+    // catch-up (opts.silent); the loop then announces the one you land on.
     if (!opts.silent && !document.hidden) say(seg.cue);
     buildTimeline();   // refresh the lock timeline for the new position
   }
@@ -148,18 +144,30 @@ export function runPlayer(container, segments, { onDone } = {}) {
     if (finished) return;
     const dt = lastTs ? now - lastTs : 0;
     lastTs = now;
-    // A big gap means JS was frozen (screen locked) and the lock timeline carried
-    // the cues — so fast-forward SILENTLY, don't re-announce on unlock.
+    // A big gap means JS was frozen (screen locked). Skip the lapsed steps
+    // SILENTLY; the step you land on is announced after the catch-up.
     const resumed = dt > 1500;
     if (!paused) { segMs += dt; totalMs += dt; if (extending) extendMs += dt; }
+    let advanced = false;
     if (!paused && !extending) {
       let guard = 0;
       while (segments[idx] && segMs >= segments[idx].seconds * 1000 && guard++ < 500) {
+        advanced = true;
         const over = segMs - segments[idx].seconds * 1000;
+        // The run ended inside the frozen gap: the time past its last segment was
+        // never run. A 30-minute run unlocked at minute 35 recorded 35:00 of
+        // moving time, which then pre-filled the log and skewed the pace.
+        if (idx + 1 >= segments.length) totalMs -= over;
         enterSegment(idx + 1, { silent: resumed });
         if (finished) return;
         segMs = over;
       }
+    }
+    // THERE IS NO LOCK TIMELINE ANY MORE (sound.js: iOS can't play cues to a
+    // frozen PWA without killing the music), so the steps skipped while locked
+    // were never announced — and nor was the one you are now in. Announce it.
+    if (resumed && advanced && !finished && !document.hidden) {
+      const keep = segMs; enterSegment(idx); segMs = keep;
     }
     render();
     raf = requestAnimationFrame(loop);
@@ -182,7 +190,7 @@ export function runPlayer(container, segments, { onDone } = {}) {
     if (finished) return;
     finished = true;
     if (raf) cancelAnimationFrame(raf);
-    releaseWake();
+    releaseWake("run");
     clearRunTimeline();
     closeScreenLock();
     if (!document.hidden) say("done");   // foreground; if it ended locked the timeline already said it

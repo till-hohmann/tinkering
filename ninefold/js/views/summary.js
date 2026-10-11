@@ -138,7 +138,7 @@ export async function renderSummary(sessionId) {
 
   function cardioEditCard(c) {
     const inp = (v, mode) => el("input", { type: mode === "numeric" ? "number" : "text",
-      inputmode: mode, value: String(v), style: editIn() });
+      inputmode: mode, value: v == null ? "" : String(v), style: editIn() });
     const h = inp(Math.floor(c.timeSeconds / 3600), "numeric");
     const m = inp(Math.floor((c.timeSeconds % 3600) / 60), "numeric");
     const s = inp(c.timeSeconds % 60, "numeric");
@@ -234,7 +234,7 @@ export async function renderSummary(sessionId) {
         el("div.statgrid.three", { style: "margin-top:18px" }, [
           miniStat("Time", M.fmtDuration(c.timeSeconds)),
           miniStat("Pace", M.fmtPace(M.paceSecPerKm(c), { withUnit: false })),
-          miniStat("Avg HR", `${c.avgHR}`),
+          miniStat("Avg HR", `${c.avgHR || "–"}`),
         ]),
       ]));
       // WHOOP detail: max HR, strain, and time-in-zone (when the run was pulled in)
@@ -438,7 +438,7 @@ export async function renderSummary(sessionId) {
       const c = session.cardioResult || (session.cardioResult = {});
       c.timeSeconds = (Number(cardioRefs.h.value) || 0) * 3600 + (Number(cardioRefs.m.value) || 0) * 60 + (Number(cardioRefs.s.value) || 0);
       c.distanceKm = readEdit(cardioRefs.dist, c.distanceKm ?? 0, (v) => distanceToKm(M.parseNum(v)));
-      c.avgHR = Math.round(M.parseNum(cardioRefs.hr.value));
+      { const hr = Math.round(M.parseNum(cardioRefs.hr.value)); c.avgHR = hr > 0 ? hr : null; }
       c.feltRPE = Math.round(M.parseNum(cardioRefs.rpe.value));
     } else {
       flushStrengthEdits();

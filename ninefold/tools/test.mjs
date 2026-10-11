@@ -33,6 +33,8 @@ import { hasIllustration } from "../js/illustrations.js";
 import { compatibility, interference, analysePriorities, blockShape, isStrength } from "../js/builder/adaptations.js";
 import { generateProgram, spreadDays, summariseHistory } from "../js/builder/generate.js";
 import { auditBlock, parseReps } from "../js/builder/quality.js";
+import { parseRunSegments as parseRunSegmentsV } from "../js/views/cardio.js";
+import { nextCardioTarget } from "../js/cardio-intel.js";
 import { THEMES, themeById, DEFAULT_THEME } from "../js/theme.js";
 import { weightValue, fmtWeight, weightToKg, kgToLb, lbToKg, IMPERIAL_EQUIPMENT, METRIC_EQUIPMENT,
   defaultEquipmentFor, plateLabel, plateColor, weightLabel, isImperialWeight, setDisplayProfile,
@@ -53,7 +55,7 @@ import { CHANGELOG, notesSince, versionNumber } from "../js/changelog.js";
 import { addDaysISO, prevISO, daysBetweenISO, todayISO as todayISOof } from "../js/dates.js";
 import { applyHoldResults as mobilityHoldResults } from "../js/mobility.js";
 import { replanSets } from "../js/progression.js";
-import { topSetWeight, fmtLoad, sessionPlanDate, nearestWeekdayISO, weekNumberFor, sessionIdFor } from "../js/model.js";
+import { topSetWeight, fmtLoad, sessionPlanDate, nearestWeekdayISO, weekNumberFor, sessionIdFor, compareCardio } from "../js/model.js";
 import { entryPlanDate, weekdayForKey } from "../js/mobility.js";
 import { buildBackup } from "../js/export.js";
 import { checkAsanas, byId as asanaById } from "../js/yoga/asanas.js";
@@ -448,6 +450,23 @@ group("builder QC — the block that shipped must never generate again", () => {
     return r.program || r;
   };
 
+  it("every cardio session the builder writes gets a guided run, and a verdict it can pass", () => {
+    // The anaerobic day ("6 × 30 s all-out / 2:30 easy") parsed to nothing, so
+    // the app's own prescription had no player; and the verdict wanted 4 min in
+    // Zone 4-5 from a session that prescribes 3.
+    const seen = new Set();
+    for (const cardio of ["anaerobic", "vo2max", "long_endurance"]) {
+      const p = gen({ priorities: ["hypertrophy", cardio], cardioPerWeek: 2 });
+      for (const w of p.weeks) for (const d of Object.values(w.days)) {
+        if (!d || d.type !== "cardio" || !d.prescription) continue;
+        seen.add(cardio);
+        assert.ok(parseRunSegmentsV(d.prescription).length > 0, `no guided run for "${d.prescription}"`);
+        const t = nextCardioTarget({ prescription: d.prescription, history: [], bounds: undefined });
+        if (t && t.needHardMin != null && t.plannedHardMin) assert.ok(t.needHardMin <= t.plannedHardMin, d.prescription);
+      }
+    }
+    assert.equal(seen.size, 3, "generated a cardio day for each kind");
+  });
   it("isolation work is never prescribed in a strength rep range", () => {
     // The shipped block had leg extensions, calf raises, flies and curls at 5-6
     // reps for four weeks because accessories inherited the adaptation's span.
@@ -3712,6 +3731,14 @@ group("dates — one calendar day, one implementation", () => {
     }
     assert.deepEqual(offenders, [], offenders.join("; "));
   });
+  it("a run with no heart rate is not 'avg HR down 150 bpm'", () => {
+    const cmp = compareCardio({ distanceKm: 9, timeSeconds: 3500, avgHR: null },
+      { distanceKm: 8, timeSeconds: 3400, avgHR: 150 });
+    assert.equal(cmp.hrDelta, null);
+    assert.equal(cmp.distanceDelta, 1);
+    assert.equal(compareCardio({ distanceKm: 0, timeSeconds: 1800 }, { distanceKm: 5, timeSeconds: 1800 }).distanceDelta, null,
+      "an unrecorded distance is not 5 km shorter");
+  });
   it("a catch-up session never takes the id of today's own session", () => {
     const today = sessionIdFor("2026-10-14", "Wed", "2026-10-14");
     const catchUp = sessionIdFor("2026-10-14", "Wed", "2026-10-07");
@@ -4430,6 +4457,54 @@ await workerTests();
       assert.equal(results[0].exerciseId, "bench_press");
       assert.equal(results[0]._i, null, "and the new lift in slot 1 does not show it as done");
     });
+  });
+}
+
+// The screen wake lock: one implementation, re-taken after the page is hidden.
+{
+  const saved = {};
+  for (const k of ["navigator", "document"]) saved[k] = Object.getOwnPropertyDescriptor(globalThis, k);
+  let requests = 0, live = 0, onVisible = null;
+  const sentinel = () => {
+    live++;
+    const ls = {};
+    const s = { released: false,
+      release: async () => { if (!s.released) { s.released = true; live--; (ls.release || []).forEach((f) => f()); } },
+      addEventListener: (t, f) => { (ls[t] = ls[t] || []).push(f); } };
+    return s;
+  };
+  const sentinels = [];
+  let resolveNext = null;
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { wakeLock: {
+    request: () => { requests++; return new Promise((r) => { resolveNext = () => { const s = sentinel(); sentinels.push(s); r(s); }; }); } } } });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: {
+    visibilityState: "visible", addEventListener: (t, f) => { if (t === "visibilitychange") onVisible = f; } } });
+  const W = await import("../js/wake.js");
+  const r = {};
+  try {
+    const p1 = W.holdWake("strength"); W.holdWake("routine");
+    r.oneRequest = requests;                       // two holders, one request
+    resolveNext(); await p1;
+    r.heldAfter = W.wakeState().held;
+    W.releaseWake("routine"); r.stillHeld = W.wakeState().held && live === 1;
+    // The browser drops the lock when the page hides; coming back re-takes it.
+    sentinels[0].release();
+    r.droppedByBrowser = !W.wakeState().held;
+    onVisible(); resolveNext(); await Promise.resolve(); await Promise.resolve();
+    r.retaken = W.wakeState().held && requests === 2;
+    W.releaseWake("strength"); r.allReleased = !W.wakeState().held && live === 0;
+    // Released before the request resolved: the late lock is let go at once.
+    const p2 = W.holdWake("run"); W.releaseWake("run"); resolveNext(); await p2;
+    r.lateReleased = live === 0 && !W.wakeState().held;
+  } finally {
+    for (const [k, d] of Object.entries(saved)) { if (d) Object.defineProperty(globalThis, k, d); else delete globalThis[k]; }
+  }
+  group("wake lock — the screen stays on through a lock and a hand-over", () => {
+    it("two holders share one request", () => assert.equal(r.oneRequest, 1));
+    it("held once granted, and still held while one holder remains", () => { assert.ok(r.heldAfter); assert.ok(r.stillHeld); });
+    it("re-taken when the page comes back after the browser dropped it", () => { assert.ok(r.droppedByBrowser); assert.ok(r.retaken); });
+    it("released only when the last holder lets go", () => assert.ok(r.allReleased));
+    it("a release that beats the request lets the late lock go", () => assert.ok(r.lateReleased));
   });
 }
 

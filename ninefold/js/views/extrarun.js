@@ -25,6 +25,7 @@ import { shoePrompt } from "../components/shoe-picker.js";
 import { interruptSheet } from "../components/interrupt.js";
 import { beginRunAudio, endRunAudio, muteToggle, unlockAudio, cueItemStart, cueRoutineDone } from "../components/sound.js";
 import { lockButton, closeScreenLock } from "../components/screenlock.js";
+import { holdWake, releaseWake } from "../wake.js";
 
 const ZONE_HINT = { 1: "Very easy", 2: "Easy, conversational", 3: "Tempo", 4: "Threshold", 5: "Max" };
 
@@ -38,9 +39,6 @@ const localStamp = (d) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:00`;
 };
 
-let wakeLock = null;
-async function requestWake() { try { if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); } catch {} }
-function releaseWake() { try { wakeLock && wakeLock.release(); } catch {} wakeLock = null; }
 
 export async function renderExtraRun() {
   const stage = el("div.stage");
@@ -112,8 +110,8 @@ function stopwatch(stage, draft, zones) {
   let tick = null;
 
   beginRunAudio();
-  requestWake();
-  const stop = () => { if (tick) clearInterval(tick); tick = null; releaseWake(); endRunAudio(); closeScreenLock(); };
+  holdWake("extrarun");
+  const stop = () => { if (tick) clearInterval(tick); tick = null; releaseWake("extrarun"); endRunAudio(); closeScreenLock(); };
   registerCleanup(stop);
 
   clear(stage);

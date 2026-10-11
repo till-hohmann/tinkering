@@ -107,8 +107,15 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
       if (choice === "continue") { draft = { ...draft, ...saved }; resuming = true; }
       else if (choice === "complete") { return finalizeAndSave({ ...draft, ...saved }); }
       else { await clearDraft(); }   // "discard" → drop it, start fresh below
+    } else if (saved && !saved.completedAt && saved.id !== draftId && draftHasLog(saved)) {
+      // ⚠ THERE IS ONE DRAFT SLOT, and starting anything else used to empty it
+      // without a word: a session saved "for later" yesterday was deleted the
+      // moment today's started, and a second session started the same day was
+      // overwritten by the first set of the new one. Ask, and never lose work.
+      if ((await otherDraftPrompt(stage, saved)) === "save") await saveSession(finishedDraft(saved));
+      await clearDraft();
     } else if (saved && saved.date !== logDate) {
-      await clearDraft();   // stale draft from another day
+      await clearDraft();   // stale draft from another day, with nothing logged in it
     }
   } catch {}
 
@@ -411,6 +418,37 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
 // hard-closing the app mid-workout — iOS can't prompt at close, so the choice
 // lands here on the way back in). Returns "continue" (resume), "complete" (log
 // what's done and finish) or "discard" (throw it away and start fresh).
+const draftHasLog = (d) => !!(d && (((d.strengthResult || []).length) || d.cardioResult));
+
+// An unfinished draft as a saved session on its own day. Internal resume fields
+// stay out of the log.
+function finishedDraft(saved) {
+  const { _exIndex, _sub, ...d } = saved;
+  return { ...d, strengthResult: (d.strengthResult || []).map(({ _i, ...r }) => r),
+    completedAt: `${d.date}T12:00:00` };
+}
+
+function otherDraftPrompt(stage, saved) {
+  return new Promise((res) => {
+    clear(stage);
+    const n = (saved.strengthResult || []).length;
+    const what = saved.cardioResult && !n ? "a run logged" : `${n} exercise${n === 1 ? "" : "s"} logged`;
+    const when = new Date(saved.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" });
+    stage.appendChild(el("div", {}, [
+      backBtn("Today", "#/"),
+      el("div.card", { style: "margin-top:10px" }, [
+        el("div.label", { text: "Unfinished session" }),
+        el("h1", { style: "margin:6px 0 4px", text: "Another workout is still open" }),
+        el("p.dim", { style: "margin:0", text: `${saved.weekday}'s workout, started ${when}, with ${what}. Only one workout can be open at a time. Save what you did, or discard it, before starting this one.` }),
+      ]),
+    ]));
+    const bar = addActionBar(
+      el("button.btn.primary.big.block", { onclick: () => { bar.remove(); res("save"); } }, "Save what's done"),
+      el("button.btn.ghost.block", { style: "margin-top:8px", onclick: () => { bar.remove(); res("discard"); } }, "Discard it"),
+    );
+  });
+}
+
 function resumePrompt(stage, saved, day) {
   return new Promise((res) => {
     clear(stage);

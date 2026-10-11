@@ -68,7 +68,7 @@ export async function renderHistory() {
     ]));
     children.push(el("div.list", {}, sessions.map((s) => {
       const sub = s.type === "cardio" && s.cardioResult
-        ? `${distanceValue(s.cardioResult.distanceKm)} ${distanceLabel()} · ${fmtDuration(s.cardioResult.timeSeconds)} · HR ${s.cardioResult.avgHR}`
+        ? `${distanceValue(s.cardioResult.distanceKm)} ${distanceLabel()} · ${fmtDuration(s.cardioResult.timeSeconds)} · HR ${s.cardioResult.avgHR || "–"}`
         : `${(s.strengthResult || []).length} exercises · ${fmtWeight(Math.round(sessionVolume(s)))}`;
       return el("button.item", { onclick: () => go(`#/summary/${s.id}`), style: "text-align:left" }, [
         el("div.ico", {}, [illustration(sessionFigureId(s))]),
