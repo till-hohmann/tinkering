@@ -353,6 +353,30 @@ export const EXERCISE_ANATOMY = {
     m("Transversus abdominis", "synergist", "Core"),
     m("Posterior deltoid", "stabilizer", "Shoulders"),
   ],
+  // Block 4 M&S additions (the 2026-10-09 gait-analysis programme).
+  prone_superman: [
+    m("Erector spinae", "primary", "Back"),
+    m("Gluteus maximus", "synergist", "Glutes"),
+    m("Posterior deltoid", "synergist", "Shoulders"),
+    m("Hamstrings", "stabilizer", "Hamstrings"),
+  ],
+  tiptoe_lateral_steps: [
+    m("Gluteus medius", "primary", "Glutes"),
+    m("Piriformis and deep hip rotators", "primary", "Glutes"),
+    m("Gastrocnemius", "synergist", "Calves"),
+    m("Soleus", "synergist", "Calves"),
+    m("Transversus abdominis", "stabilizer", "Core"),
+  ],
+  calf_wall_stretch: [
+    m("Gastrocnemius", "primary", "Calves"),
+    m("Soleus", "synergist", "Calves"),
+  ],
+  banded_lateral_walk: [
+    m("Gluteus medius", "primary", "Glutes"),
+    m("Gluteus minimus", "synergist", "Glutes"),
+    m("Tensor fasciae latae", "synergist", "Quads"),
+    m("Quadriceps femoris", "stabilizer", "Quads"),
+  ],
 
   // --- library expansion ------------------------------------------------------
   deadlift: [
