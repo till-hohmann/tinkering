@@ -12,6 +12,13 @@ and proxies the data.
   device. The Worker keeps WHOOP tokens in KV keyed by **`sha256(linkId)`**, so a
   KV dump never exposes a usable credential.
 - OAuth CSRF is covered by a random, single-use, short-TTL `state`.
+- **The device that started a sign-in gets the tokens.** The callback parks them
+  under a single-use, 10-minute claim and sends the browser back to
+  `APP_ORIGIN/#/whoop-claim/<claim>`; the app redeems it with its own linkId,
+  and a claim started with any other linkId is refused. Without this, anyone
+  who knew the Worker URL could start a sign-in bound to their own link and
+  send you the real consent page. **Set `APP_ORIGIN`** in `wrangler.toml`:
+  without it the Worker falls back to binding the tokens directly.
 - The Worker stores **only OAuth tokens — never health data**, which streams
   straight through to the app on demand.
 - CORS is locked to the app origin; every data endpoint requires the linkId.
@@ -44,6 +51,9 @@ land in your shell history.
 
 ### 3. Deploy
 
+Put your KV namespace id and your app's address (`APP_ORIGIN`, e.g.
+`https://your-app.pages.dev`) into `wrangler.toml`, then:
+
 ```bash
 npx wrangler deploy
 ```
@@ -55,10 +65,11 @@ Then in the app: **Profile → WHOOP → Connect**.
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | POST | `/auth/start` | `Bearer <linkId>` | returns the WHOOP authorize URL |
-| GET | `/auth/callback` | (WHOOP redirect) | exchanges the code, stores tokens |
+| GET | `/auth/callback` | (WHOOP redirect) | exchanges the code, parks the tokens under a claim, returns to the app |
+| POST | `/auth/claim` | `Bearer <linkId>` | `{claim}`: binds the tokens to this link if it started the sign-in |
 | GET | `/status` | `Bearer <linkId>` | `{connected, profile?}` |
 | POST | `/disconnect` | `Bearer <linkId>` | deletes the stored tokens |
 | GET | `/workouts` `/recovery` `/sleep` `/cycle` | `Bearer <linkId>` | proxied WHOOP data (`limit/start/end/nextToken`) |
 
 KV namespace `STRONG_WHOOP` (id in `wrangler.toml`) holds `link:<hash>` token
-records and short-lived `state:<state>` entries — nothing else.
+records and short-lived `state:<state>` and `claim:<claim>` entries — nothing else.

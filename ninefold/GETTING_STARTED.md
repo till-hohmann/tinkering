@@ -96,6 +96,8 @@ It prints a URL like `https://ninefold-backup.you.workers.dev`.
 
 Finally, in the app: **Settings → Cloud backup**, paste that URL and the same password, tap **Save**, then **Test connection**. It should say "Reachable".
 
+**Set this up before October 2026?** Run `npx wrangler deploy` again in `backup-worker` (and in `whoop-worker` if you use WHOOP, with `APP_ORIGIN` set to your app's address in its `wrangler.toml`). The newer Workers refuse a backup upload built on an out-of-date copy, bound what a Health Shortcut can store, and tie a WHOOP sign-in to the device that started it. Your stored data is not touched, and the app works with either version.
+
 </details>
 
 ---

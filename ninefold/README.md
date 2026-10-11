@@ -35,10 +35,11 @@ Everything optional is off by default.
 **Buildless.** Plain ES modules, no framework, no bundler, no build step. What you read is what runs. It deploys as static files and it will still work in ten years.
 
 - **IndexedDB** for all data, via a small hand-rolled promise wrapper. No dependency.
-- **Service worker**, cache-first, so a workout runs with zero connectivity.
+- **Service worker**, cache-first, so a workout runs with zero connectivity. It installs all-or-nothing, so an interrupted update never leaves a broken offline app.
 - **Pure engines**, no DOM: `progression.js` (load prescription), `cardio-intel.js` (HR zones, VO₂max, next-session targets), `volume.js` (weekly sets vs landmarks), `substitution.js` (cross-location swaps), `builder/` (program generation), `standards.js` (strength benchmarks). All unit tested.
 - **Stored data is always metric.** Units are a display concern, converted at the edges — so switching them never invalidates a single logged session. An imperial gym is modelled as real 45/25/10/5/2.5 lb plates expressed in kg, so the engine rounds to weights that physically exist on that rack.
-- **Two optional Cloudflare Workers**: `backup-worker/` (durable off-device backup, token-protected KV) and `whoop-worker/` (an OAuth broker, because a PWA cannot hold a client secret).
+- **Sync that doesn't lose work** (`sync.js`, `cloudsync.js`). Rows, log entries and settings each carry a stamp that never goes backwards, and the newer one wins. Deletions travel too. The backup Worker refuses a push built on an older copy of the backup, and the app then pulls, merges and retries.
+- **Two optional Cloudflare Workers**: `backup-worker/` (durable off-device backup in token-protected KV, with write guards and a version check) and `whoop-worker/` (an OAuth broker, because a PWA cannot hold a client secret; a sign-in is bound to the device that started it).
 
 ```
 js/
@@ -49,7 +50,8 @@ js/
   *.js           pure engines + data access
 tools/
   check.mjs      resolves every import; parses every file as a real ES module
-  test.mjs       assertions for the pure engines
+  test.mjs       assertions for the engines, storage, sync and both Workers
+  fake-idb.mjs   an in-memory IndexedDB, so storage and sync run under node
   build-public.mjs   assembles the public tree and refuses on anything personal
 ```
 
