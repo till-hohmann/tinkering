@@ -27,7 +27,7 @@
 // rest of the plan hangs off.
 
 import { el, mount, go, backBtn, addActionBar, clear, setChildren } from "../ui.js";
-import { addDaysISO } from "../dates.js";
+import { addDaysISO, mondayOfISO } from "../dates.js";
 import { ADAPTATIONS, byId as adaptationById, analysePriorities, compatibility,
   BLOCK_SHAPES, isCardio, isStrength } from "../builder/adaptations.js";
 import { generateProgram } from "../builder/generate.js";
@@ -387,12 +387,20 @@ function stepSchedule(body) {
         el("button.progchip" + (value === n ? ".on" : ""), { onclick: () => onPick(n) }, String(n))));
 
   function render() {
-    const total = S.mandatoryDays + S.optionalDays;
+    const asked = S.mandatoryDays + S.optionalDays;
+    // The same limits the generator applies, said BEFORE generating: a week has
+    // seven days, and lifting stops at six (the summary used to promise "9 lifting").
+    const total = Math.min(asked, 7);
     S.cardioPerWeek = Math.min(S.cardioPerWeek, total);
-    const strength = total - S.cardioPerWeek;
+    const strength = Math.min(total - S.cardioPerWeek, 6);
     setChildren(summary, ...[
-      el("div", { text: `${total} session${total === 1 ? "" : "s"} a week: `
+      el("div", { text: `${strength + S.cardioPerWeek} session${strength + S.cardioPerWeek === 1 ? "" : "s"} a week: `
         + `${strength} lifting, ${S.cardioPerWeek} cardio.` }),
+      total - S.cardioPerWeek > 6
+        ? el("div.note.warn", { style: "margin-top:6px", text: "Lifting stops at six days a week, so one day stays free for recovery." })
+        : asked > 7
+          ? el("div.note.warn", { style: "margin-top:6px", text: `${asked} sessions don't fit in seven days, so the plan uses seven.` })
+          : null,
       S.optionalDays
         ? el("div", { style: "margin-top:4px", text: `${S.optionalDays} of them marked optional — the week still counts as complete without ${S.optionalDays === 1 ? "it" : "them"}.` })
         : null,
@@ -488,10 +496,12 @@ function stepShape(body) {
       ].filter(Boolean)),
       S.startMode === "custom"
         ? el("input", { type: "date", value: S.startDate, style: FIELD + ";margin-top:10px",
-            onchange: (e) => { if (e.target.value) { S.startDate = e.target.value; render(); } } })
+            // Weeks run Monday to Sunday everywhere in the app, so a block does too.
+            onchange: (e) => { if (e.target.value) { S.startDate = mondayOfISO(e.target.value); S.snappedFrom = S.startDate !== e.target.value ? e.target.value : null; render(); } } })
         : null,
     );
-    startNote.textContent = `Starts ${prettyDate(S.startDate)} and runs ${S.lengthWeeks} weeks.`
+    startNote.textContent = (S.startMode === "custom" && S.snappedFrom ? "Blocks run Monday to Sunday, so it starts on that week's Monday. " : "")
+      + `Starts ${prettyDate(S.startDate)} and runs ${S.lengthWeeks} weeks.`
       + (afterAll && S.startDate < afterAll ? " That overlaps a block you already have — the app runs whichever block covers each date." : "");
 
     bar("Generate", () => buildAndReview());

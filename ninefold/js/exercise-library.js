@@ -351,7 +351,7 @@ export function availableAt(implementsAtPlace) {
 // twice. A 0.6 penalty is smaller than the compound bonus, so a fresh compound
 // beats a repeated one while a compound still always beats an accessory.
 export function pickForPattern(pattern, pool, { preferUnilateral = false, exclude = [],
-    usedThisWeek = [], qualitiesUsed = [], deprioritise = [] } = {}) {
+    usedThisWeek = [], qualitiesUsed = [], deprioritise = [], preferPower = false } = {}) {
   const ex = new Set(exclude);
   const used = new Set(usedThisWeek);
   const quals = new Set(qualitiesUsed);
@@ -380,7 +380,11 @@ export function pickForPattern(pattern, pool, { preferUnilateral = false, exclud
     // Lifts the previous block already used, so consecutive blocks vary.
     // Deliberately small: variety is worth less than picking the right movement,
     // and it must never override the quality rule above.
-    - (stale.has(e.id) ? 0.4 : 0);
+    - (stale.has(e.id) ? 0.4 : 0)
+    // A power or speed block wants the lifts that are safe to move fast. The
+    // `power` flag was declared for this and read nowhere, so a speed block
+    // picked exactly what a hypertrophy block did.
+    + (preferPower && e.power ? 1.5 : 0);
   return candidates.slice().sort((a, b) => score(b) - score(a))[0];
 }
 

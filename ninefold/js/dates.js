@@ -46,3 +46,9 @@ export function daysBetweenISO(a, b) {
   const ms = parseISO(b).getTime() - parseISO(a).getTime();
   return Math.round(ms / 86400000);
 }
+
+/** The Monday on or before `iso` (weeks run Monday to Sunday). */
+export function mondayOfISO(iso) {
+  if (!iso) return iso;
+  return addDaysISO(iso, -((parseISO(iso).getDay() + 6) % 7));
+}

@@ -13,6 +13,14 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 210, notes: [
+    "The block builder is better at the edges. A block always starts on a Monday, and the builder says so if you pick another day. Six lifting days is the most it plans: pick seven and it keeps one day free instead of repeating a day of the split.",
+    "Push-ups, air squats and inverted rows are now prescribed at 10-20 reps taken close to failure, not at barbell reps like 3-5. Pull-ups, chin-ups and dips keep the block's rep range.",
+    "Rest on small-muscle work is capped at 2 minutes and on core at 90 seconds, so sessions in strength and power blocks are shorter and closer to their time estimate.",
+    "Hard interval sessions are placed away from leg days whenever the week has room. Sprint sessions top out at 10 efforts.",
+    "In blocks with a deload in the middle, the weeks after it build up again rather than jumping straight back to the hardest week.",
+    "Power and speed blocks prefer the lifts that are safe to move fast. The exercise list has no jumps or throws yet, and the builder now says so.",
+  ] },
   { v: 209, notes: [
     "The screen now stays on during a strength workout, so the end-of-rest beep plays. During runs and routines it now comes back on after you've locked and unlocked the phone; it used to stay off for the rest of the session.",
     "A run that finishes while the phone is locked records the run's real time, not the time until you next looked at it. After unlocking, the app tells you which step you're on.",

@@ -450,6 +450,81 @@ group("builder QC — the block that shipped must never generate again", () => {
     return r.program || r;
   };
 
+  it("seven lifting days becomes six, and no split day repeats", () => {
+    const r = generateProgram({ name: "T", startDate: "2026-08-10", lengthWeeks: 4, priorities: ["hypertrophy"],
+      mandatoryDays: 6, optionalDays: 3, cardioPerWeek: 0, places: [place] });
+    const labels = Object.values(r.program.dayTemplates).filter((t) => t.type === "strength").map((t) => t.label);
+    assert.equal(labels.length, 6);
+    assert.equal(new Set(labels).size, 6, labels.join(", "));
+    assert.ok(r.warnings.some((w) => /six/.test(w)));
+  });
+  it("a block always starts on a Monday", () => {
+    const r = generateProgram({ name: "T", startDate: "2026-10-14", lengthWeeks: 4, priorities: ["hypertrophy"],
+      mandatoryDays: 3, places: [place] });
+    assert.equal(r.program.startDate, "2026-10-12");
+    assert.equal(r.program.weeks[1].startDate, "2026-10-19");
+    assert.ok(r.warnings.some((w) => /Monday to Sunday/.test(w)));
+  });
+  it("small muscles rest at most two minutes, core one and a half, whatever the block", () => {
+    for (const a of ["strength", "power", "hypertrophy"]) {
+      const p = gen({ priorities: [a] });
+      for (const t of Object.values(p.dayTemplates)) for (const e of t.exercises || []) {
+        if (e.role === "accessory") assert.ok(e.restSeconds <= 120, `${a} ${e.exerciseId} ${e.restSeconds}s`);
+        if (e.role === "core") assert.ok(e.restSeconds <= 90, `${a} ${e.exerciseId} ${e.restSeconds}s`);
+      }
+    }
+  });
+  it("an air squat or a push-up is never prescribed at barbell reps", () => {
+    const bw = { ...place, implements: ["bodyweight", SURVEYED] };
+    for (const a of ["power", "strength", "hypertrophy"]) {
+      const p = gen({ priorities: [a], places: [bw] });
+      for (const w of p.weeks) for (const d of Object.values(w.days)) for (const e of d.exercises || []) {
+        if (["bodyweight_squats", "push_up", "inverted_row"].includes(e.exerciseId)) assert.equal(e.repRange, "10-20", `${a} ${e.exerciseId}`);
+      }
+    }
+  });
+  it("a power block leads with the lifts that are safe to move fast", () => {
+    const p = gen({ priorities: ["power"] });
+    const compounds = Object.values(p.dayTemplates).flatMap((t) => (t.exercises || []).filter((e) => e.role === "compound"));
+    assert.ok(compounds.some((e) => libById(e.exerciseId).power), "at least one power-flagged compound");
+    assert.equal(compounds.find((e) => libById(e.exerciseId).pattern === "squat").exerciseId, "back_squat");
+  });
+  it("sprint sessions stop at ten efforts", () => {
+    const p = gen({ priorities: ["hypertrophy", "anaerobic"], cardioPerWeek: 2, lengthWeeks: 12 });
+    for (const w of p.weeks) for (const d of Object.values(w.days)) {
+      const m = d.type === "cardio" && /^(\d+) × 30 s/.exec(d.prescription || "");
+      if (m) assert.ok(+m[1] <= 10, d.prescription);
+    }
+  });
+  it("after a mid-block deload the next wave ramps again instead of resuming at the peak", () => {
+    const p = gen({ lengthWeeks: 12, mandatoryDays: 4, optionalDays: 0, cardioPerWeek: 0 });
+    const sets = (w) => Object.values(w.days).reduce((n, d) => n + (d.exercises || []).reduce((k, e) => k + e.prescribedSets, 0), 0);
+    const [w6, w8, w11] = [p.weeks[5], p.weeks[7], p.weeks[10]].map(sets);
+    assert.ok(w8 < w6, `week 8 (${w8}) restarts below week 6 (${w6})`);
+    assert.ok(w11 > w8, `and climbs again by week 11 (${w11})`);
+  });
+  it("a hard interval day sits next to a leg day only when the week has no other day", () => {
+    const WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    for (const md of [3, 4, 5]) for (const cw of [1, 2]) {
+      const p = gen({ priorities: ["strength", "vo2max", "long_endurance"], mandatoryDays: md, optionalDays: 0, cardioPerWeek: cw });
+      const t = p.dayTemplates;
+      const leg = new Set(WD.filter((d) => t[d].type === "strength" && t[d].exercises.some((e) => ["squat", "hinge", "lunge"].includes(libById(e.exerciseId).pattern))));
+      const near = (d) => { const i = WD.indexOf(d); return leg.has(WD[(i + 6) % 7]) || leg.has(WD[(i + 1) % 7]); };
+      const hard = WD.filter((d) => t[d].type === "cardio" && t[d].adaptation === "vo2max");
+      const calm = WD.filter((d) => t[d].type !== "strength" && !hard.includes(d) && !near(d));
+      if (hard.some(near)) assert.deepEqual(calm, [], `${md}+${cw}: ${hard.join()} next to a leg day while ${calm.join()} was free`);
+    }
+  });
+  it("neglect is judged on the peak build week, never the deload", () => {
+    const p = gen({ lengthWeeks: 12, mandatoryDays: 4, optionalDays: 0, cardioPerWeek: 0 });
+    const h = summariseHistory([p]);
+    const weekTotal = (w) => Object.values(w.days).reduce((n, d) => n + (d.exercises || []).reduce((k, e) =>
+      k + e.prescribedSets * Object.values(MUSCLE_MAP[e.exerciseId] || {}).reduce((a, b) => a + b, 0), 0), 0);
+    const counted = Object.values(h.muscleTotals).reduce((a, b) => a + b, 0);
+    const deload = p.weeks.find((w) => /deload/i.test(w.phaseName));
+    const peak = Math.max(...p.weeks.filter((w) => !/deload/i.test(w.phaseName)).map(weekTotal));
+    assert.ok(Math.abs(counted - peak) < 0.01, `counted ${counted}, peak ${peak}, deload ${weekTotal(deload)}`);
+  });
   it("every cardio session the builder writes gets a guided run, and a verdict it can pass", () => {
     // The anaerobic day ("6 × 30 s all-out / 2:30 easy") parsed to nothing, so
     // the app's own prescription had no player; and the verdict wanted 4 min in

@@ -15,7 +15,7 @@
 import { ADAPTATIONS, byId as adaptationById, isCardio, isStrength, sessionOrder,
   analysePriorities, blockShape, PROGRESSION, floorGaps, WEEKLY_FLOOR } from "./adaptations.js";
 import { EXERCISE_LIBRARY, PATTERNS, availableAt, pickForPattern, qualityOf, byId as exerciseById } from "../exercise-library.js";
-import { addDaysISO } from "../dates.js";
+import { addDaysISO, mondayOfISO as mondayOf } from "../dates.js";
 import { MUSCLE_MAP, LANDMARKS } from "../volume.js";
 import { buildSupersets } from "../supersets.js";
 
@@ -155,6 +155,18 @@ function schemeFor(adaptation, weekIdx, totalBuildWeeks, role, exercise, setCap)
   // block's adaptation, intersected with the adaptation's span only where that
   // span is genuinely higher-rep (muscular endurance). A strength block still
   // gets its heavy compounds; its curls just stop being 5-rep curls.
+  // AN AIR SQUAT IS NOT A BARBELL SQUAT. Easy bodyweight compounds inherited
+  // the block's barbell ranges: 1-2 rep squats on a power block, 3-5 rep push-ups
+  // on a strength block — sets that load nothing. They are trained close to
+  // failure instead, the only way they become hard. Pull-ups, chin-ups and dips
+  // are heavy enough to keep the block's range.
+  if (isCompound && exercise && exercise.implement === "bodyweight" && !HARD_BODYWEIGHT.has(exercise.id)
+      && adaptation !== "muscular_endurance") {
+    const [setLoRawB, setHiRawB] = a.sets || [3, 4];
+    const hiB = Math.max(MIN_WORKING_SETS, Math.min(setHiRawB, setCap == null ? setHiRawB : setCap));
+    const stepsB = totalBuildWeeks > 1 ? Math.floor(weekIdx / 2) : 0;
+    return { sets: Math.max(2, Math.min(hiB, Math.min(setLoRawB, hiB) + stepsB)), repRange: "10-20" };
+  }
   const span = a.reps || [8, 12];
   const width = Math.max(2, Math.round((span[1] - span[0]) / 3));
   let lo, hi;
@@ -191,6 +203,8 @@ function schemeFor(adaptation, weekIdx, totalBuildWeeks, role, exercise, setCap)
 // Training Science Reference §1: the efficient window is ~6-15; isolation work
 // belongs at the top of it, where it can be loaded safely and accumulate volume.
 const ACCESSORY_REPS = [8, 15];
+// Bodyweight compounds hard enough to keep a strength rep range.
+const HARD_BODYWEIGHT = new Set(["pull_up", "chin_up", "dip", "nordic_curl"]);
 
 // The fewest sets an exercise may be trimmed to by the volume ceiling. Two hard
 // sets, twice a week, is the reference's own growth floor — below that the slot
@@ -208,8 +222,12 @@ const MIN_WORKING_SETS = 2;
 function restFor(adaptation, role, repRange) {
   const a = adaptationById(adaptation) || adaptationById("hypertrophy");
   const [lo, hi] = a.restSec || [90, 150];
-  if (role === "core") return Math.max(45, lo);
-  if (role !== "compound") return Math.round((lo + hi) / 2);
+  // Accessories and core take the middle of the range, CAPPED: a strength
+  // block's 180-300 s made curls rest 4 minutes and core 3, which turned a
+  // session estimated at an hour into one of 100 minutes. Small muscles recover
+  // in 1-2 minutes whatever the block is for.
+  if (role === "core") return Math.min(90, Math.max(45, lo));
+  if (role !== "compound") return Math.max(60, Math.min(120, Math.round((lo + hi) / 2)));
   const top = repTop(repRange);
   return top != null && top <= 5 ? Math.max(hi, HEAVY_REST_FLOOR) : hi;
 }
@@ -271,11 +289,15 @@ function cardioPrescription(adaptation, weekIdx, totalBuildWeeks, baseMinutes) {
     return { label: "VO₂max intervals", prescription: `${rounds} × 4 min hard (Zone 4-5) / 4 min easy`, zone: 4, minutes: rounds * 8 + 15 };
   }
   if (adaptation === "anaerobic") {
-    const rounds = Math.min(12, 6 + weekIdx);
+    // Ten all-out efforts at most: the adaptation's own ceiling, and the top of
+    // what sprint-interval work is dosed at. It used to climb to twelve.
+    const rounds = Math.min(10, 6 + weekIdx);
     return { label: "Anaerobic intervals", prescription: `${rounds} × 30 s all-out / 2:30 easy`, zone: 5, minutes: rounds * 3 + 15 };
   }
   const base = baseMinutes || 40;
-  const mins = Math.round((base * grow) / 5) * 5;
+  // Grows with the block, but one session tops out at 90 min (it reached 110 by
+  // week 11 of a long block). More Zone 2 than that is a second session.
+  const mins = Math.min(Math.max(base, 90), Math.round((base * grow) / 5) * 5);
   return { label: "Zone 2 base", prescription: `${mins} min steady, Zone 2 — conversational`, zone: 2, minutes: mins };
 }
 
@@ -333,7 +355,12 @@ export function summariseHistory(previousBlocks = []) {
   // being skipped is visible as a number rather than as a hunch.
   const totals = {};
   for (const p of blocks) {
-    const wk = (p.weeks || [])[Math.floor((p.weeks || []).length / 2)];   // a representative mid-block week
+    // THE PEAK BUILD WEEK, not the middle one: in a 12-week block the middle week
+    // is the deload, and reading it flagged healthy muscles as neglected.
+    const setsIn = (w) => Object.values((w && w.days) || {}).reduce((n, d) =>
+      n + ((d && d.exercises) || []).reduce((k, e) => k + (e.prescribedSets || 0), 0), 0);
+    const wk = (p.weeks || []).filter((w) => !/deload/i.test(w.phaseName || ""))
+      .reduce((best, w) => (!best || setsIn(w) > setsIn(best) ? w : best), null);
     for (const d of Object.values((wk && wk.days) || {})) {
       if (!d || d.type !== "strength") continue;
       for (const e of d.exercises || []) {
@@ -363,7 +390,7 @@ const NEGLECT_FRACTION = 0.5;
 // --- the generator -----------------------------------------------------------
 export function generateProgram(input) {
   const {
-    name, startDate, lengthWeeks = 6,
+    name, startDate: startDateAsked, lengthWeeks = 6,
     priorities = ["hypertrophy"],
     daysPerWeek = 3,
     availableDays = WEEKDAYS,
@@ -387,6 +414,14 @@ export function generateProgram(input) {
   } = input || {};
 
   const warnings = [];
+  // A BLOCK RUNS MONDAY TO SUNDAY. "Pick a date" accepted any day, and every
+  // week view, day view and done-tick assumes weeks start on a Monday: a block
+  // starting on a Wednesday showed Wednesday's plan under "Monday" and ticked the
+  // wrong cells. The start moves back to that week's Monday.
+  const startDate = mondayOf(startDateAsked);
+  if (startDateAsked && startDate !== startDateAsked) {
+    warnings.push(`Blocks run Monday to Sunday, so this one starts on Monday ${startDate}.`);
+  }
   const history = summariseHistory(previousBlocks);
   const previousExerciseIds = history.recentExerciseIds;
   const analysis = analysePriorities(priorities);
@@ -418,6 +453,12 @@ export function generateProgram(input) {
       warnings.push(`${strengthDays} lifting session${strengthDays === 1 ? "" : "s"} a week is below the two-a-week floor for holding muscle.`);
     }
   }
+  // SIX LIFTING DAYS AT MOST. The split stops at six, and a seventh lifting day
+  // wrapped round to Push A twice in the same week (16,000 of the swept blocks).
+  if (strengthDays > 6) {
+    warnings.push("Seven lifting days leaves no day to recover, so the plan lifts on six and keeps one free.");
+    strengthDays = 6;
+  }
   // The LAST sessions of the week are the optional ones — the week's mandatory
   // work should be banked before the bonus, not after it.
   const optionalCount = mandatoryDays == null ? 0 : Math.min(optionalDays, perWeek);
@@ -447,7 +488,7 @@ export function generateProgram(input) {
   // week order, so a skipped optional day never leaves a hole mid-week.
   const orderOf = (wd) => WEEKDAYS.indexOf(wd);
   const scheduled = [...strengthWeekdays, ...cardioWeekdays].sort((a, b) => orderOf(a) - orderOf(b));
-  const optionalSet = new Set(scheduled.slice(Math.max(0, scheduled.length - optionalCount)));
+  let optionalSet = new Set(scheduled.slice(Math.max(0, scheduled.length - optionalCount)));
   const missingPatterns = new Set();
   const weekUsed = new Set();      // soft variety bias across the whole week
   // Which sub-jobs the week has already covered (biceps, anti-rotation, rear
@@ -462,7 +503,8 @@ export function generateProgram(input) {
     const used = [];
     for (const pattern of dayPlan.patterns) {
       const pick = pickForPattern(pattern, pool, { exclude: used, usedThisWeek: [...weekUsed],
-        qualitiesUsed: [...weekQualities], deprioritise: previousExerciseIds });
+        qualitiesUsed: [...weekQualities], deprioritise: previousExerciseIds,
+        preferPower: strengthAdaptation === "power" || strengthAdaptation === "speed" });
       if (!pick) { missingPatterns.add(pattern); continue; }
       used.push(pick.id);
       weekUsed.add(pick.id);
@@ -503,9 +545,42 @@ export function generateProgram(input) {
   // base is the thing you build first.
   //
   // Only ever a DEFAULT: an explicit cardio priority still wins outright.
-  const cardioPlan = cardioAdaptations.length
+  let cardioPlan = cardioAdaptations.length
     ? cardioWeekdays.map((_, i) => cardioAdaptations[i % cardioAdaptations.length])
     : cardioWeekdays.map((_, i) => (cardioWeekdays.length >= 2 && i === 1 ? "vo2max" : "long_endurance"));
+
+  // HARD INTERVALS STAY AWAY FROM LEG DAYS. Day placement only ever spread the
+  // sessions out, so in about half of the swept blocks the interval day sat
+  // directly before or after a squat or deadlift day: either the legs arrive
+  // tired for the reps, or the reps take the edge off the lifting (the concurrent-
+  // training interference that matters most is exactly this one). Hard sessions
+  // take the cardio days with the fewest neighbouring leg days, and one still
+  // next to a leg day moves to a free day that isn't, if the week has one.
+  {
+    const LEG = new Set(["squat", "hinge", "lunge"]);
+    const legDays = new Set(strengthWeekdays.filter((_, i) => split[i % split.length].patterns.some((p) => LEG.has(p))));
+    const near = (wd) => { const i = WEEKDAYS.indexOf(wd); return [WEEKDAYS[(i + 6) % 7], WEEKDAYS[(i + 1) % 7]].filter((d) => legDays.has(d)).length; };
+    const isHard = (a) => a === "vo2max" || a === "anaerobic";
+    const hard = cardioPlan.filter(isHard), easy = cardioPlan.filter((a) => !isHard(a));
+    if (hard.length && easy.length) {
+      const byCalm = cardioWeekdays.map((d, i) => ({ d, i, n: near(d) })).sort((x, y) => x.n - y.n || x.i - y.i);
+      const hardDays = new Set(byCalm.slice(0, hard.length).map((x) => x.d));
+      let h = 0, e = 0;
+      cardioPlan = cardioWeekdays.map((d) => (hardDays.has(d) ? hard[h++] : easy[e++]));
+    }
+    const free = usableDays.filter((d) => !strengthWeekdays.includes(d) && !cardioWeekdays.includes(d));
+    cardioWeekdays.forEach((d, i) => {
+      if (!isHard(cardioPlan[i]) || !near(d)) return;
+      const better = free.find((f) => !near(f));
+      if (!better) return;
+      free.splice(free.indexOf(better), 1, d);
+      cardioWeekdays[i] = better;
+    });
+    // A moved day changes which sessions are the week's last, i.e. optional.
+    const resched = [...strengthWeekdays, ...cardioWeekdays].sort((a, b) => orderOf(a) - orderOf(b));
+    optionalSet = new Set(resched.slice(Math.max(0, resched.length - optionalCount)));
+    for (const d of strengthWeekdays) dayTemplates[d].optional = optionalSet.has(d);
+  }
   // Zone 2 sessions are lengthened toward the weekly floor rather than left at a
   // flat 40 min, which left every generated block short of it. Capped at 75 min
   // so one session never becomes an expedition.
@@ -527,6 +602,9 @@ export function generateProgram(input) {
     if (!dayTemplates[d]) dayTemplates[d] = { weekday: d, location: primaryPlace, type: "rest", label: "Rest", exercises: [] };
   }
 
+  if (priorities.includes("power") || priorities.includes("speed")) {
+    warnings.push("The exercise library has no jumps or throws yet, so power here means the compound lifts moved as fast as you can, with full rest. Add jumps or med-ball throws of your own if you have the space.");
+  }
   for (const pattern of missingPatterns) {
     warnings.push(`No ${PATTERNS[pattern].name.toLowerCase()} movement is possible with your equipment, so those days skip it. Adding even a pull-up bar would close most of these gaps.`);
   }
@@ -584,11 +662,28 @@ export function generateProgram(input) {
     return caps;
   })();
 
+  // EACH STRETCH BETWEEN DELOADS IS ITS OWN WAVE. The strength prescription used
+  // one counter for the whole block, so in a 12-week classic block the sets had
+  // reached their ceiling by week 5 and stayed flat to week 11, and the week after
+  // the mid-block deload went straight back to the peak. Now every run of build
+  // weeks ramps from its own start; later waves begin one step up from the first.
+  const wave = [];
+  {
+    let start = 0, n = 0;
+    for (let w = 0; w <= phases.length; w++) {
+      if (w === phases.length || /deload/i.test(phases[w])) {
+        for (let k = start; k < w; k++) wave[k] = { idx: k - start + (n ? 1 : 0), len: (w - start) + (n ? 1 : 0) };
+        if (w > start) n++;
+        start = w + 1;
+      }
+    }
+  }
   let buildIdx = 0;
   for (let w = 0; w < lengthWeeks; w++) {
     const phaseName = phases[w];
     const deload = /deload/i.test(phaseName);
     const isTest = /test/i.test(phaseName);
+    const wv = wave[w] || { idx: 0, len: 1 };
     const days = {};
     for (const weekday of WEEKDAYS) {
       const tpl = dayTemplates[weekday];
@@ -601,7 +696,7 @@ export function generateProgram(input) {
       days[weekday] = {
         weekday, type: "strength",
         exercises: tpl.exercises.map((e) => {
-          const s = schemeFor(strengthAdaptation, deload ? 0 : buildIdx, buildWeeks, e.role, exerciseById(e.exerciseId), setCaps[e.exerciseId]);
+          const s = schemeFor(strengthAdaptation, deload ? 0 : wv.idx, deload ? 1 : wv.len, e.role, exerciseById(e.exerciseId), setCaps[e.exerciseId]);
           return {
             // A deload cuts VOLUME and keeps the movement pattern; a test week
             // keeps load and cuts volume harder. Both are handled by the app's
@@ -623,8 +718,8 @@ export function generateProgram(input) {
       weekNumber: w + 1,
       startDate: addDaysISO(startDate, w * 7),
       phaseName,
-      scheme: describeScheme(strengthAdaptation, deload, buildIdx, buildWeeks),
-      intensity: deload ? "Easy — RPE 5-6" : `RPE ${7 + Math.min(1, Math.floor(buildIdx / 3))}-${8 + Math.min(1, Math.floor(buildIdx / 3))}`,
+      scheme: describeScheme(strengthAdaptation, deload, wv.idx, wv.len),
+      intensity: deload ? "Easy — RPE 5-6" : `RPE ${7 + Math.min(1, Math.floor(wv.idx / 3))}-${8 + Math.min(1, Math.floor(wv.idx / 3))}`,
       focus: weekFocus(strengthAdaptation, w, lengthWeeks, phaseName),
       days,
     });
