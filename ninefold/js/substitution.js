@@ -269,8 +269,18 @@ export function seedSubLoad(originalId, subId, plannedLoad, subImplement, locati
 // target it was matched to (Ls×R0), and the substitute sets actually performed,
 // produce the EQUIVALENT planned-exercise log (rounded to the planned lift's home
 // equipment). perf = actual est-1RM ÷ target est-1RM on the substitute (units
-// cancel); planned load scales by perf, reps stay at the planned target, RIR
-// carries through so the progression engine reads effort next week.
+// cancel).
+//
+// ⚠ PERFORMANCE BECOMES REPS AT THE PLANNED LOAD, NOT LOAD AT THE PLANNED REPS.
+// It used to scale the load and keep every set at R0. Two things then went wrong
+// next week: "every set at the top of the range" read as an easy session, and
+// identical reps across sets read as no decay, i.e. ~2 in reserve — the engine
+// double-jumped. A goblet day of 10/9/8 against a 100×10 squat came back as
+// "up to 110×8" while the same 10/9/8 lifted straight said "hold 100×10".
+// Solving Epley for reps at L0 turns that day into 100×10/9/8, which the engine
+// reads exactly as it reads a straight session. Only when the equivalent reps
+// fall outside what Epley can say (a very bad or very good day) does it fall
+// back to scaling the load.
 export function backCalcOriginal({ originalId, originalImplement, plannedLocation, plannedLoad, plannedReps,
                                    subId, subTargetLoad, subTargetReps, subSets, equip, approximate }) {
   const R0 = plannedReps || 6;
@@ -281,8 +291,13 @@ export function backCalcOriginal({ originalId, originalImplement, plannedLocatio
   // lift (an easy capped goblet ≠ an easy barbell squat), so we deliberately do
   // NOT carry it onto the planned lift — next week's engine infers effort from the
   // clean back-calculated reps instead, which is safer than over-reacting.
+  const L0 = roundLoad(plannedLoad || 0, originalImplement, plannedLocation, equip);
   const sets = (subSets || []).filter((s) => s.reps != null).map((s, i) => {
     const perf = e1rm(s.weightKg, s.reps) / denom;        // beat / met / missed the target
+    const reps = Math.round(perf * (30 + R0) - 30);       // Epley, solved for reps at L0
+    if (L0 > 0 && reps >= Math.max(1, R0 - 6) && reps <= R0 + 10) {
+      return { setNumber: i + 1, weightKg: L0, reps };
+    }
     const load = roundLoad((plannedLoad || 0) * perf, originalImplement, plannedLocation, equip);
     return { setNumber: i + 1, weightKg: load, reps: R0 };
   });

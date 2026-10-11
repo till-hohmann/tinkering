@@ -53,7 +53,7 @@ import { CHANGELOG, notesSince, versionNumber } from "../js/changelog.js";
 import { addDaysISO, prevISO, daysBetweenISO, todayISO as todayISOof } from "../js/dates.js";
 import { applyHoldResults as mobilityHoldResults } from "../js/mobility.js";
 import { replanSets } from "../js/progression.js";
-import { topSetWeight, fmtLoad, sessionPlanDate, nearestWeekdayISO } from "../js/model.js";
+import { topSetWeight, fmtLoad, sessionPlanDate, nearestWeekdayISO, weekNumberFor, sessionIdFor } from "../js/model.js";
 import { entryPlanDate, weekdayForKey } from "../js/mobility.js";
 import { buildBackup } from "../js/export.js";
 import { checkAsanas, byId as asanaById } from "../js/yoga/asanas.js";
@@ -408,6 +408,22 @@ group("service worker — offline-first means every module is precached", () => 
     const onDisk = new Set(walk("js"));
     const stale = [...listed].filter((f) => !onDisk.has(f));
     assert.deepEqual(stale, [], "SHELL names a file that isn't there");
+  });
+  it("every required precache file exists, so an all-or-nothing install can succeed", () => {
+    // The install is addAll now: one missing file fails it, and the app never
+    // updates. Files a build may lack belong in OPTIONAL. This runs in the public
+    // tree too, which has no data/ — exactly where the old list would have failed.
+    const shell = sw.slice(sw.indexOf("const SHELL"), sw.indexOf("const OPTIONAL"));
+    const required = [...shell.matchAll(/"\.\/([^"]+)"/g)].map((m) => m[1]);
+    const absent = required.filter((f) => {
+      try { readFileSync(new URL(`../${f}`, import.meta.url)); return false; } catch { return true; }
+    });
+    assert.ok(required.length > 50, "parsed the SHELL list");
+    assert.deepEqual(absent, [], "move these to OPTIONAL, or ship them");
+  });
+  it("the offline fallback answers page loads only", () => {
+    assert.match(sw, /req\.mode === "navigate" \? caches\.match\("\.\/index\.html"\)/);
+    assert.match(sw, /c\.addAll\(SHELL/);
   });
   it("the cache name and the reported version agree", () => {
     // They are declared in two files and must be bumped together every deploy.
@@ -1895,6 +1911,23 @@ group("yoga — the Primary Series stays the Primary Series", () => {
     const f = primarySeries({ limits: ["knees", "si_joint", "neck"], level: 3, breathSeconds: 5 });
     assert.deepEqual(auditFlow(f).errors.map((e) => e.id), []);
   });
+  it("through the path the app uses, a named level drops nothing", () => {
+    // The tests above call primarySeries with a number; the app calls
+    // generateFlow, which passes a level NAME. That path dropped 157 of 158
+    // postures into Child's pose for everyone, from v173 on, unseen.
+    for (const level of ["beginner", "advanced", "expert", 1, 3]) {
+      const f = generateFlow({ intent: "ashtanga", minutes: 90, limits: [], level, breathSeconds: 5 });
+      assert.equal(f.dropped.length, 0, `level ${level}: ${f.dropped.length} dropped`);
+      assert.ok(f.items.length > 150);
+    }
+  });
+  it("a knee limitation never gets Child's pose, through the app's path either", () => {
+    for (const level of ["beginner", "expert"]) {
+      const f = generateFlow({ intent: "ashtanga", minutes: 90, limits: ["knees"], level, breathSeconds: 5 });
+      const errs = auditFlow(f).errors.filter((e) => e.id === "safety.contraindicated");
+      assert.deepEqual(errs, [], errs.map((e) => e.message).join("; "));
+    }
+  });
   it("runs five rounds of each salutation as separate rounds", () => {
     const f = primarySeries({ limits: [], level: 3, breathSeconds: 5 });
     const roundsA = new Set(f.items.filter((i) => i.salutation === "A").map((i) => i.round));
@@ -2160,7 +2193,10 @@ group("yoga — every pose can be pictured, and none borrows another's", () => {
   });
 
   it("the import map names every pose, and no filename is claimed twice", () => {
-    const py = readFileSync(new URL("../tools/import-exercise-images.py", import.meta.url), "utf8");
+    // A dev-only tool: the public tree doesn't ship it (it names a local path).
+    let py;
+    try { py = readFileSync(new URL("../tools/import-exercise-images.py", import.meta.url), "utf8"); }
+    catch { return; }
     // ⚠ THE FILE IS CRLF, so the old `indexOf("\n}\n")` never matched: it
     // returned -1, `slice` read to the end, and this test was quietly grading
     // MAP *and* SKIP together. It passed for a year because SKIP's five reason
@@ -3158,6 +3194,39 @@ group("substitution — a dumbbell lift heavier than the rack you are standing a
       subId: "db_bench_press", subTargetLoad: 32, subSets: [{ weightKg: 32, reps: 6 }], equip: TWO_RACKS });
     assert.equal(out.sets[0].weightKg, 80);
   });
+
+  it("a substitute day progresses exactly like the same effort lifted straight", () => {
+    // Goblet squats matched to a 100×10 back squat, done 10/9/8 at the target.
+    const out = backCalcOriginal({ originalId: "back_squat", originalImplement: "barbell",
+      plannedLocation: "Gym", plannedLoad: 100, plannedReps: 10,
+      subId: "goblet_squat", subTargetLoad: 32, subTargetReps: 10,
+      subSets: [{ weightKg: 32, reps: 10 }, { weightKg: 32, reps: 9 }, { weightKg: 32, reps: 8 }], equip: TWO_RACKS });
+    assert.deepEqual(out.sets.map((s) => [s.weightKg, s.reps]), [[100, 10], [100, 9], [100, 8]]);
+    const rx = { repRange: "8-10", sets: 3 };
+    const next = (ex) => recommend({ curRx: rx, prevEx: ex, prevRange: "8-10", implement: "barbell",
+      location: "Gym", equip: TWO_RACKS, exerciseId: "back_squat" });
+    const straight = { exerciseId: "back_squat", sets: [{ weightKg: 100, reps: 10 }, { weightKg: 100, reps: 9 }, { weightKg: 100, reps: 8 }] };
+    const a = next(out), b = next(straight);
+    assert.equal(a.direction, b.direction);
+    assert.equal(a.load, b.load);
+    assert.equal(a.reps, b.reps);
+  });
+
+  it("a back-calculated entry is never a record, a standard, a trend point or a PR baseline", () => {
+    // Guarded by source: these readers are DOM-bound. Each must skip `substituted`.
+    for (const f of ["js/views/records.js", "js/views/progress.js", "js/views/strength.js", "js/views/summary.js"]) {
+      const src = readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
+      assert.match(src, /\.substituted\b/, `${f} must not count back-calculated sets as lifted`);
+    }
+  });
+  it("a day too far off for Epley to express in reps scales the load instead", () => {
+    const out = backCalcOriginal({ originalId: "back_squat", originalImplement: "barbell",
+      plannedLocation: "Gym", plannedLoad: 100, plannedReps: 10,
+      subId: "goblet_squat", subTargetLoad: 32, subTargetReps: 10,
+      subSets: [{ weightKg: 32, reps: 2 }], equip: TWO_RACKS });
+    assert.equal(out.sets[0].reps, 10);
+    assert.ok(out.sets[0].weightKg < 100 && out.sets[0].weightKg >= 20);
+  });
 });
 
 group("progression — a set that only measured a lighter rack is not the one to progress from", () => {
@@ -3637,8 +3706,33 @@ group("dates — one calendar day, one implementation", () => {
       if (/toISOString\(\)\s*\.\s*(slice|substring)\(\s*0\s*,\s*10\s*\)/.test(src)) offenders.push(`${f.rel}: date sliced out of a UTC timestamp`);
       if (/^\s*(export\s+)?(function|const)\s+(addDays|addDaysISO|addDaysLocal|prevISO|daysBetween|daysBetweenISO)\b/m.test(src))
         offenders.push(`${f.rel}: defines its own date helper — import it from dates.js`);
+      // Flooring a millisecond span into days loses a day across spring DST.
+      if (/Math\.floor\([^;]*\/\s*86400000/.test(src))
+        offenders.push(`${f.rel}: floors a millisecond span into days — use daysBetweenISO`);
     }
     assert.deepEqual(offenders, [], offenders.join("; "));
+  });
+  it("a catch-up session never takes the id of today's own session", () => {
+    const today = sessionIdFor("2026-10-14", "Wed", "2026-10-14");
+    const catchUp = sessionIdFor("2026-10-14", "Wed", "2026-10-07");
+    assert.equal(today, "sess-2026-10-14-Wed", "today's own session keeps the stored shape");
+    assert.notEqual(today, catchUp);
+    assert.equal(sessionIdFor("2026-10-14", "Wed", "2026-10-07"), catchUp, "the same catch-up resumes its own draft");
+  });
+  it("the week a date falls in survives the spring clock change", () => {
+    // Central Europe moves its clocks on 29 Mar 2026. The old arithmetic put Monday 30
+    // March in week 1 of a block that started on the 23rd.
+    const saved = process.env.TZ;
+    process.env.TZ = "Europe/Paris";
+    try {
+      const p = { startDate: "2026-03-23", lengthWeeks: 12 };
+      assert.equal(weekNumberFor(p, "2026-03-29"), 1);
+      assert.equal(weekNumberFor(p, "2026-03-30"), 2);
+      assert.equal(weekNumberFor(p, "2026-04-06"), 3);
+      assert.equal(weekNumberFor({ startDate: "2026-10-19", lengthWeeks: 6 }, "2026-10-26"), 2, "autumn too");
+    } finally {
+      if (saved === undefined) delete process.env.TZ; else process.env.TZ = saved;
+    }
   });
 });
 
@@ -3819,6 +3913,13 @@ group("sync — logs merge entry by entry, not blob by blob", () => {
     const theirs = [e("2026-09-21", 79.5, "2026-09-21T20:00:00.000Z")];
     assert.equal(mergeLogEntries(mine, theirs, { key: "date" })[0].value, 79.5);
     assert.equal(mergeLogEntries(theirs, mine, { key: "date" })[0].value, 79.5);
+  });
+  it("bare date strings (the oldest mobility entries) are each their own entry", () => {
+    // Keyed by e.date, every string fell under `undefined` and all but one vanished.
+    const merged = mergeLogEntries(["2026-01-01", "2026-01-03", { date: "2026-01-05" }],
+      ["2026-01-01", "2026-01-02", "2026-01-03"], { key: "date" });
+    assert.deepEqual(merged.map((e) => (typeof e === "string" ? e : e.date)),
+      ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-05"]);
   });
   it("an unstamped entry never overwrites the copy here", () => {
     const mine = [e("2026-09-21", 80, "2026-09-21T08:00:00.000Z")];
@@ -4262,6 +4363,155 @@ group("shoes — kilometres per pair", () => {
 });
 
 await workerTests();
+
+{
+  const { laterMap, insertMap, remapResults, detachSlot } = await import("../js/slots.js");
+  // Mirror of the logger's bookkeeping: a slot list, and results keyed by slot.
+  const slotOf = (results, list, id) => {
+    const r = results.find((x) => x._i === list.indexOf(id));
+    return r ? r.exerciseId : null;
+  };
+  group("strength logger — logged sets stay with the lift they were lifted on", () => {
+    it("Later on a superset member: each lift still finds its own sets", () => {
+      // [A, B, C, D]; B and C are a pair. Log B then C, then tap Later on B.
+      let list = ["A", "B", "C", "D"];
+      const results = [{ exerciseId: "B", _i: 1, sets: [1] }, { exerciseId: "C", _i: 2, sets: [1] }];
+      remapResults(results, laterMap(1, list.length));
+      list = ["A", "C", "D", "B"];
+      assert.equal(slotOf(results, list, "C"), "C", "C opens on its own set, not B's");
+      assert.equal(slotOf(results, list, "B"), "B");
+      assert.equal(slotOf(results, list, "D"), null);
+    });
+    it("Add after the current lift shifts every later slot", () => {
+      let list = ["A", "B", "C"];
+      const results = [{ exerciseId: "A", _i: 0 }, { exerciseId: "C", _i: 2 }];
+      remapResults(results, insertMap(1));
+      list = ["A", "X", "B", "C"];
+      assert.equal(slotOf(results, list, "C"), "C");
+      assert.equal(slotOf(results, list, "X"), null, "the added lift starts empty");
+    });
+    it("Swap keeps the old lift's sets in the log but off the slot", () => {
+      const results = [{ exerciseId: "bench_press", _i: 1, sets: [1, 2] }];
+      detachSlot(results, 1);
+      assert.equal(results.length, 1, "the work done is still logged");
+      assert.equal(results[0].exerciseId, "bench_press");
+      assert.equal(results[0]._i, null, "and the new lift in slot 1 does not show it as done");
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The device side of the backup, against an in-memory IndexedDB and a stub
+// fetch. Boot used to push a whole snapshot after a pull that had failed, which
+// let an out-of-date device overwrite newer rows in the only durable copy.
+async function syncTests() {
+  const { installFakeIDB } = await import("./fake-idb.mjs");
+  installFakeIDB();
+  const dbm = await import("../js/db.js");
+  const { setRuntimeConfig } = await import("../js/config.js");
+  const cs = await import("../js/cloudsync.js");
+  await setRuntimeConfig(dbm, { backup: { endpoint: "https://backup.example", token: "t".repeat(40) } });
+
+  const realFetch = globalThis.fetch, realNow = Date.now;
+  let clock = 1_000_000_000_000;
+  Date.now = () => clock;
+  const calls = [];
+  let getReply = null;            // () => Response | throws
+  globalThis.fetch = async (url, opts = {}) => {
+    const method = opts.method || "GET";
+    calls.push(method);
+    if (method === "PUT") return new Response("ok", { status: 200 });
+    return getReply();
+  };
+  const merged = [];
+  cs.setCloudMerge(async (d) => { merged.push(d); });
+  let built = 0;
+  const build = async () => { built++; return { sessions: [{ id: "a" }], programs: [], prefs: {} }; };
+  const run = async () => { calls.length = 0; merged.length = 0; built = 0; await cs.cloudPush(build); return {
+    calls: [...calls], merged: merged.length, built, health: await cs.getCloudHealth() }; };
+  const json = (o) => () => new Response(JSON.stringify(o), { status: 200 });
+
+  let offline, unauthorized, captive, fresh, again, stale, empty, results;
+  try {
+    getReply = () => { throw new TypeError("network down"); };
+    offline = await run();
+    getReply = () => new Response("unauthorized", { status: 401 });
+    unauthorized = await run();
+    getReply = () => new Response("<html>Sign in to the wifi</html>", { status: 200 });
+    captive = await run();
+    getReply = json({ sessions: [{ id: "b" }], programs: [] });
+    fresh = await run();
+    again = await run();
+    clock += 61_000;
+    stale = await run();
+    clock += 61_000;
+    getReply = () => new Response("null", { status: 200 });
+    empty = await run();
+    getReply = () => new Response("", { status: 503 });
+    results = { r503: (await cs.cloudPullResult()).status, rNull: null };
+    getReply = () => new Response("null", { status: 200 });
+    results.rNull = (await cs.cloudPullResult()).status;
+  } finally {
+    globalThis.fetch = realFetch;
+    Date.now = realNow;
+  }
+
+  // An explicit file restore, end to end through store.js on the fake IDB.
+  const store = await import("../js/store.js");
+  await dbm.setPref("weightLog", [{ date: "2026-10-01", kg: 90 }, { date: "2026-10-10", kg: 89 }]);
+  await dbm.setPref("mobilityLog", ["2026-01-01", "2026-01-03", { date: "2026-01-05", key: "A" }]);
+  await store.restoreBackup({ kind: "fitness-backup", programs: [], sessions: [{ id: "s1", date: "2026-09-01" }],
+    prefs: { weightLog: [{ date: "2026-10-01", kg: 91 }], mobilityLog: ["2026-01-01", "2026-01-02"] } });
+  const restoredWeight = await dbm.getPref("weightLog");
+  const restoredMob = await dbm.getPref("mobilityLog");
+
+  group("restore — an older backup file never deletes what was logged since", () => {
+    it("weigh-ins made after the export survive; the file wins the shared date", () => {
+      assert.deepEqual(restoredWeight.map((e) => [e.date, e.kg]), [["2026-10-01", 91], ["2026-10-10", 89]]);
+    });
+    it("legacy string entries in the mobility log are each their own entry", () => {
+      assert.deepEqual(restoredMob.map((e) => (typeof e === "string" ? e : e.date)),
+        ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-05"]);
+    });
+  });
+
+  group("cloud sync — never push without having heard from the backup", () => {
+    it("an unreachable backup gets no push, and the device says so", () => {
+      assert.deepEqual(offline.calls, ["GET"]);
+      assert.equal(offline.built, 0, "the snapshot is not even built");
+      assert.equal(offline.health.reason, "offline");
+    });
+    it("a refused token gets no push and is named as such", () => {
+      assert.deepEqual(unauthorized.calls, ["GET"]);
+      assert.equal(unauthorized.health.reason, "unauthorized");
+    });
+    it("a page that is not the backup (captive portal) counts as not heard from", () => {
+      assert.deepEqual(captive.calls, ["GET"]);
+    });
+    it("a good pull merges first, then pushes", () => {
+      assert.deepEqual(fresh.calls, ["GET", "PUT"]);
+      assert.equal(fresh.merged, 1);
+      assert.equal(fresh.health.ok, true);
+    });
+    it("a recent pull is trusted: no second GET inside a minute", () => {
+      assert.deepEqual(again.calls, ["PUT"]);
+      assert.equal(again.merged, 0);
+    });
+    it("a stale pull is refreshed and merged before the next push", () => {
+      assert.deepEqual(stale.calls, ["GET", "PUT"]);
+      assert.equal(stale.merged, 1);
+    });
+    it("an empty backup is a real answer: the first push goes through", () => {
+      assert.deepEqual(empty.calls, ["GET", "PUT"]);
+      assert.equal(empty.merged, 0, "nothing to merge");
+    });
+    it("the pull says which failure it was", () => {
+      assert.equal(results.r503, "error");
+      assert.equal(results.rNull, "empty");
+    });
+  });
+}
+await syncTests();
 
 for (const [name, fn] of groups) { console.log("\n" + name); fn(); }
 console.log(`\n${passed} passed, ${failed} failed`);

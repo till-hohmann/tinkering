@@ -134,10 +134,16 @@ function restore() {
       const db = await import("../db.js");
       const { setRuntimeConfig } = await import("../config.js");
       await setRuntimeConfig(db, { backup: { endpoint: ep, token: tok } });
-      const { cloudPull } = await import("../cloudsync.js");
-      const data = await cloudPull(8000);
+      const { cloudPullResult } = await import("../cloudsync.js");
+      const { status: pullStatus, data } = await cloudPullResult(8000);
       if (!data) {
-        status.textContent = "Connected, but there's no backup stored there yet. Check the URL, or go back and set up fresh.";
+        // A wrong token and an outage used to read as "nothing stored yet",
+        // which sends the user off to set up fresh over a backup that exists.
+        status.textContent = pullStatus === "empty"
+          ? "Connected, but there's no backup stored there yet. Check the URL, or go back and set up fresh."
+          : pullStatus === "unauthorized"
+            ? "The backup refused that token. Check it and try again."
+            : "Couldn't reach the backup just now. Check the URL and your connection, then try again.";
         go2.disabled = false; return;
       }
       const { mergeRestore } = await import("../store.js");

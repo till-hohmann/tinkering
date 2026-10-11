@@ -326,7 +326,10 @@ export async function renderSummary(sessionId) {
         let cmp = null;
         if (!editing && prev) {
           cmp = M.compareStrength(ex.implement, ex, prev.exercise);
-          if (cmp.topSetDelta > 0) prs.push(`${exName(program, ex.exerciseId)} top set ${M.fmtWeight(top)}`);
+          // No celebration either side of a substitute day: one of the two sets
+          // of numbers was back-calculated, not lifted.
+          if (ex.substituted || prev.exercise.substituted) { /* compare, but claim nothing */ }
+          else if (cmp.topSetDelta > 0) prs.push(`${exName(program, ex.exerciseId)} top set ${M.fmtWeight(top)}`);
           else if (cmp.volumeDelta > 0) prs.push(`${exName(program, ex.exerciseId)} volume up`);
         }
         const body = editing

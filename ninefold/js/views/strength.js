@@ -24,6 +24,7 @@ import { MUSCLE_MAP, partsOf } from "../volume.js";
 
 import { muscleBody } from "../anatomy.js";
 import * as M from "../model.js";
+import { laterMap, insertMap, remapResults, detachSlot } from "../slots.js";
 
 // Full-screen demonstration, opened from the exercise head mid-session.
 //
@@ -350,7 +351,8 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       // baseline, so ordinary working sets fired the personal-best celebration.
       if (!s.strengthResult || (s.date && s.date >= (opts.logDate || iso))) continue;
       for (const ex of s.strengthResult) for (const st of ex.sets || []) {
-        if (st.reps == null || !st.weightKg) continue;
+        // A substituted entry was back-calculated, never lifted: not a baseline.
+        if (ex.substituted || st.reps == null || !st.weightKg) continue;
         const e = e1rm(st.weightKg, st.reps);
         if (e > (bestE1[ex.exerciseId] || 0)) bestE1[ex.exerciseId] = e;
       }
@@ -420,8 +422,10 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     // keep the current sets/range/rest, and carry the target load across
     const e = await makeEntry(exId, exercises[exIndex],
       { fromId, load: fromRec.load, reps: fromRec.reps });
+    commitCurrent();                // sets already done on the old lift are kept…
     exercises[exIndex] = e.rx; prevs[exIndex] = e.prev; recs[exIndex] = e.rec; stalls[exIndex] = e.stall;
     flags[exIndex] = { logged: false, visited: false };   // a new lift in this slot starts fresh
+    detachSlot(results, exIndex);   // sets already done stay logged, under the lift they were done on
     swapped.push({ fromId, toId: exId });
     renderExercise();
   }
@@ -434,6 +438,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     if (!exId) return;
     const e = await makeEntry(exId, { prescribedSets: 3, repRange: "8-12", restSeconds: 90 });
     const at = exIndex + 1;   // log it right after the current one
+    remapResults(results, insertMap(at));
     exercises.splice(at, 0, e.rx); prevs.splice(at, 0, e.prev); recs.splice(at, 0, e.rec); stalls.splice(at, 0, e.stall);
     flags.splice(at, 0, { logged: false, visited: false });
     addedIds.push(exId);
@@ -450,6 +455,10 @@ export async function runStrength(container, program, day, weekday, iso, locatio
   function doLater() {
     if (exIndex >= exercises.length - 1) return;   // already last, nothing to defer past
     const i = exIndex;
+    // Commit first, as goToExercise does. Without it, sets already logged on a
+    // straight lift were dropped the moment you tapped Later.
+    commitCurrent();
+    remapResults(results, laterMap(i, exercises.length));
     exercises.push(exercises.splice(i, 1)[0]);
     prevs.push(prevs.splice(i, 1)[0]);
     recs.push(recs.splice(i, 1)[0]);
@@ -543,7 +552,8 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       return el("button.item", { style: "text-align:left", onclick: () => goToExercise(i) }, [
         el("div.ico", {}, [illustration(e.exerciseId)]),
         el("div.meta", {}, [el("div.t", { text: lib.name || e.exerciseId }),
-          el("div.s", { text: exStatus(i) === "skipped" ? "skipped" : "not started" })]),
+          el("div.s", { text: flags[i].logged ? `${setsLoggedAt(i)} of ${exercises[i].prescribedSets} sets`
+            : exStatus(i) === "skipped" ? "skipped" : "not started" })]),
         el("span.badge", { style: "color:var(--accent)", text: "Do it ›" }),
       ]);
     })));
@@ -1148,7 +1158,12 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       let n = -1;
       for (let i = exIndex + 1; i < exercises.length; i++) if (!flags[i].logged) { n = i; break; }
       if (n >= 0) { exIndex = n; renderExercise(); return; }
-      const remaining = exercises.map((_, i) => i).filter((i) => !flags[i].logged);
+      // A lift with SOME sets logged used to count as done, so walking away after
+      // one of three never came back up here — despite this screen promising the
+      // ones you "didn't finish". "− Set" lowers prescribedSets, so a set you
+      // dropped on purpose does not count against you.
+      const unfinished = (i) => flags[i].logged && setsLoggedAt(i) < (exercises[i].prescribedSets || 0);
+      const remaining = exercises.map((_, i) => i).filter((i) => !flags[i].logged || unfinished(i));
       if (remaining.length) { renderReview(remaining); return; }
       restTicker.stop(); onComplete && onComplete(results, deviationSummary());
     }

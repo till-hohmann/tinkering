@@ -2,7 +2,7 @@
 // sessions, and the comparison queries from requirements §9.
 
 import * as db from "./db.js";
-import { rowDecision, mergeLogEntries, mergeTombstoneSets, pruneTombstones, addTombstone,
+import { rowDecision, mergeLogEntries, restoreLogEntries, mergeTombstoneSets, pruneTombstones, addTombstone,
   stampRow, LOG_PREFS } from "./sync.js";
 import { weekdayOf, weekNumberFor, previousOccurrence, todayISO } from "./model.js";
 import { cloudPushDebounced } from "./cloudsync.js";
@@ -39,8 +39,11 @@ async function restorePrefs(prefs, { overwrite = false } = {}) {
     // where it meant the device that already had one kept its whole copy and
     // pushed it, dropping every entry only the other device had. Logs merge
     // entry by entry (sync.js), newest wins.
-    if (!overwrite && LOG_PREFS[k] && mine && typeof mine === "object") {
-      await db.setPref(k, mergeLogEntries(mine, prefs[k], LOG_PREFS[k]));
+    if (LOG_PREFS[k] && mine && typeof mine === "object") {
+      // An explicit restore lets the file win entry by entry, but never deletes
+      // what only this device has (sync.js restoreLogEntries).
+      await db.setPref(k, overwrite ? restoreLogEntries(mine, prefs[k], LOG_PREFS[k])
+        : mergeLogEntries(mine, prefs[k], LOG_PREFS[k]));
       continue;
     }
     // Tombstones are merged in mergeRestore and written there; a second,

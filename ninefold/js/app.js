@@ -2,7 +2,7 @@
 
 import { seedIfNeeded, mergeRestore, snapshot, getActiveProgram, initMobilityRoutine, initAudioPrefs,
   repairStretchTargetsOnce, repairHoldRatchetOnce } from "./store.js";
-import { cloudPull, cloudPush } from "./cloudsync.js";
+import { cloudPull, cloudPush, setCloudMerge } from "./cloudsync.js";
 import { migrateIfNeeded, getProfile } from "./profile.js";
 import { loadPhotoManifest } from "./exercise-photo.js";
 import { applyTheme, DEFAULT_THEME } from "./theme.js";
@@ -159,6 +159,8 @@ async function boot() {
   // Durable cloud restore: pull the off-device backup and merge in anything
   // missing locally (non-destructive) — this is what brings a wiped device back.
   // A no-op when no backup endpoint is configured (the local-only default).
+  // The same merge runs before any push whose last pull has gone stale (cloudsync).
+  setCloudMerge((data) => mergeRestore(data));
   try {
     const cloud = await cloudPull();
     if (cloud) await mergeRestore(cloud);
@@ -213,7 +215,7 @@ async function boot() {
   // without the user retyping what their watch already knows. Never awaited —
   // it must not hold up the first paint, and it fails silently offline.
   import("./health/index.js").then((h) => h.syncTrackerVO2max()).catch(() => {});
-  cloudPush(snapshot);   // reflect local state up to the cloud
+  cloudPush(snapshot);   // reflect local state up to the cloud — only if the pull above reached it
 }
 
 /**
@@ -234,9 +236,13 @@ export async function applyTabVisibility() {
 
 function registerSW() {
   if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js").catch((e) => console.warn("SW failed", e));
-    });
+    const register = () => navigator.serviceWorker.register("./sw.js").catch((e) => console.warn("SW failed", e));
+    // registerSW runs at the END of an async boot, usually after `load` has
+    // already fired — and a listener added then never runs, so a fast or cached
+    // load registered no service worker at all (a fresh install could go
+    // without offline support until a slow visit happened to win the race).
+    if (document.readyState === "complete") register();
+    else window.addEventListener("load", register);
   }
 }
 

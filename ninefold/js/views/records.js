@@ -10,7 +10,8 @@ import { e1rm } from "../progression.js";
 import { weightLabel, weightValue, distanceLabel, distanceValue } from "../units.js";
 
 const workSets = (ex) => (ex.sets || []).filter((s) => s.reps != null);
-const bestE1 = (ex) => { const w = workSets(ex); return w.length ? Math.max(...w.map((s) => e1rm(s.weightKg, s.reps))) : 0; };
+// A substituted entry is back-calculated from another lift, so it can never be a record.
+const bestE1 = (ex) => { if (ex.substituted) return 0; const w = workSets(ex); return w.length ? Math.max(...w.map((s) => e1rm(s.weightKg, s.reps))) : 0; };
 const topSet = (ex) => {
   const w = workSets(ex); if (!w.length) return null;
   return w.reduce((b, s) => (s.weightKg > b.weightKg || (s.weightKg === b.weightKg && s.reps > b.reps)) ? s : b);

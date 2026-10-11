@@ -125,7 +125,13 @@ const exName = (program, id) =>
   || id;
 // Best estimated-1RM across a logged exercise's working sets (normalises strength
 // across changing rep ranges — a heavier/fewer-reps week is comparable).
+//
+// A substituted entry scores 0: its sets were back-calculated from another lift
+// (a hotel goblet day written onto the back squat), which is right for the
+// progression engine and wrong for anything that claims you LIFTED it — a hard
+// goblet day could otherwise set an all-time back-squat best never lifted.
 const bestE1 = (ex) => {
+  if (ex.substituted) return 0;
   const ws = (ex.sets || []).filter((s) => s.reps != null);
   return ws.length ? Math.max(...ws.map((s) => e1rm(s.weightKg, s.reps))) : 0;
 };
@@ -708,6 +714,7 @@ export async function renderProgress() {
   const byKey = new Map(), daysPerEx = {};
   for (const s of strength) {
     for (const ex of s.strengthResult || []) {
+      if (ex.substituted) continue;   // back-calculated, not lifted (see bestE1)
       const key = ex.exerciseId + "|" + s.weekday;
       if (!byKey.has(key)) byKey.set(key, []);
       byKey.get(key).push({ date: s.date, ex, loc: s.location, top: M.topSetWeight(ex), e1: bestE1(ex) });

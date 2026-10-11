@@ -20,10 +20,11 @@
 // flexion). That is not a criticism of the method; it is why the filter matters
 // more here than anywhere else in the app.
 
-import { byId } from "./asanas.js";
+import { byId, isContraindicated } from "./asanas.js";
 import { STYLES, holdSecondsFor } from "./styles.js";
 import { intentById, accountingFor } from "./intents.js";
 import { resolvePose, flowSeconds } from "./compose.js";
+import { normaliseLevel, poseCeiling } from "./levels.js";
 
 // Five breaths, every posture, unless the tradition says otherwise. The three
 // exceptions carried here are the ones every led class actually observes.
@@ -111,6 +112,7 @@ export const SERIES_IDS = SERIES_SECTIONS.flatMap((s) =>
 const REST_STAND_IN = {
   id: "balasana_open", name: "Rest", note: "Nothing here is safe for you — rest instead",
 };
+const REST_CANDIDATES = [REST_STAND_IN.id, "dandasana", "savasana"];
 
 function makeSeriesItem(asana, { style, breathSeconds, breaths, phase, section, linked, note, rounds }) {
   const floor = ["seated", "supine", "restorative", "hip_opener", "forward_fold"].includes(asana.family);
@@ -147,7 +149,12 @@ function makeSeriesItem(asana, { style, breathSeconds, breaths, phase, section, 
 export function primarySeries({ limits = [], level = 3, breathSeconds = 5, minutes = 90 } = {}) {
   const style = STYLES.ashtanga;
   const intent = intentById("ashtanga");
-  const ctx = { limits, level };
+  // ⚠ THE POSE FILTER NEEDS A NUMBER. Since v173 generateFlow passes a level
+  // NAME ("beginner"), and resolvePose compares `pose.level <= level`: against a
+  // string that is false for every pose, so all but one posture of every
+  // Ashtanga practice was "dropped" and replaced by the rest stand-in — 157
+  // Child's poses, for everyone. A number still means the pose ceiling itself.
+  const ctx = { limits, level: typeof level === "number" ? level : poseCeiling(normaliseLevel(level)) };
   const items = [];
   const substituted = [];
   const dropped = [];
@@ -158,7 +165,9 @@ export function primarySeries({ limits = [], level = 3, breathSeconds = 5, minut
     if (!got) {
       // Nothing in the chain is safe. Keep the slot — a rest in the right place
       // preserves the shape of the practice; a gap does not.
-      const rest = byId(REST_STAND_IN.id);
+      // The rest has to be safe too: Child's pose is itself a knee pose, so a
+      // knee limitation got the very thing it asked to avoid. First safe of three.
+      const rest = REST_CANDIDATES.map(byId).find((a) => a && !isContraindicated(a, limits)) || byId("savasana");
       dropped.push({ id, name: want ? want.name : id });
       items.push(makeSeriesItem(rest, { style, breathSeconds, breaths, phase: opts.phase || "build",
         section: opts.section, linked: opts.linked, note: REST_STAND_IN.note }));

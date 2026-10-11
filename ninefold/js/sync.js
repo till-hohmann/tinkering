@@ -108,18 +108,43 @@ export function mergeLogEntries(local, incoming, { key = "date" } = {}) {
     }
     return out;
   }
+  const keyOf = entryKey(key);
   const byKey = new Map();
-  for (const e of local || []) if (e) byKey.set(e[key], e);
+  for (const e of local || []) if (e) byKey.set(keyOf(e), e);
   for (const e of incoming || []) {
     if (!e) continue;
-    const k = e[key];
+    const k = keyOf(e);
     const mine = byKey.get(k);
     if (!mine || shouldAdoptRow(e, mine)) byKey.set(k, e);
   }
-  const out = [...byKey.values()];
-  // Ordered by the identifying field, which is a date in every log that uses
-  // this — the screens read them in order and a merge must not shuffle them.
-  return out.sort((a, b) => (String(a[key]) < String(b[key]) ? -1 : 1));
+  return sortedEntries([...byKey.values()], keyOf);
+}
+
+// ⚠ THE OLDEST mobilityLog ENTRIES ARE BARE DATE STRINGS, not { date }. Keyed by
+// e[key], every string landed under the one key `undefined`, so a merge kept a
+// single old session and dropped the rest — then pushed that. A string is its
+// own key.
+const entryKey = (key) => (e) => (typeof e === "string" ? e : e[key]);
+// Ordered by the identifying field, which is a date in every log that uses
+// this — the screens read them in order and a merge must not shuffle them.
+const sortedEntries = (list, keyOf) => list.sort((a, b) => (String(keyOf(a)) < String(keyOf(b)) ? -1 : 1));
+
+/**
+ * An EXPLICIT restore of a log: the file's entry wins wherever both sides have
+ * one, and entries only this device has are kept. Restoring an older backup file
+ * used to replace each log wholesale, deleting every weigh-in, practice and
+ * mobility session logged since that export — and the next push deleted them
+ * from the cloud too. Sessions were only ever upserted, so they survived.
+ */
+export function restoreLogEntries(local, incoming, { key = "date" } = {}) {
+  if (incoming == null) return local;
+  if (local == null) return incoming;
+  if (!Array.isArray(local) && !Array.isArray(incoming)) return { ...local, ...incoming };
+  const keyOf = entryKey(key);
+  const byKey = new Map();
+  for (const e of local || []) if (e) byKey.set(keyOf(e), e);
+  for (const e of incoming || []) if (e) byKey.set(keyOf(e), e);
+  return sortedEntries([...byKey.values()], keyOf);
 }
 
 /** Which synced prefs are logs, and what identifies one of their entries. */

@@ -17,7 +17,7 @@
 // an update and an offline open in the same short window — which is the exact
 // situation of someone who trains while travelling.
 
-const CACHE = "fittrack-v206";
+const CACHE = "fittrack-v207";
 const SHELL = [
   "./",
   "./index.html",
@@ -40,6 +40,7 @@ const SHELL = [
   "./js/progression.js",
   "./js/substitution.js",
   "./js/supersets.js",
+  "./js/slots.js",
   "./js/volume.js",
   "./js/standards.js",
   "./js/anatomy.js",
@@ -125,8 +126,6 @@ const SHELL = [
   "./js/yoga/quality.js",
   "./js/yoga/styles.js",
   "./js/yoga/transitions.js",
-  "./data/program-1.json",
-  "./data/program-2.json",
   "./icons/icon.svg",
   "./audio/position.wav",
   "./audio/stretch.wav",
@@ -136,12 +135,26 @@ const SHELL = [
   "./audio/cool-down.wav",
   "./audio/done.wav",
 ];
+// Files a build may legitimately lack: the public tree ships no data/ at all.
+// Cached when present, never allowed to fail the install.
+const OPTIONAL = [
+  "./data/program-1.json",
+  "./data/program-2.json",
+];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
     (async () => {
       const c = await caches.open(CACHE);
-      await Promise.allSettled(SHELL.map((u) => c.add(u)));
+      // ALL OR NOTHING. This used Promise.allSettled, so one fetch that failed
+      // mid-install (a train tunnel, a flaky edge) left a hole in the new cache —
+      // and `activate` then deleted the old one, so the next offline open served
+      // index.html as a module and the app was blank. addAll rejects instead: the
+      // install fails, the old version keeps running, and the browser retries.
+      // `reload` bypasses the HTTP cache, so a stale copy can't be pinned under
+      // the new version's name either.
+      await c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" })));
+      await Promise.allSettled(OPTIONAL.map((u) => c.add(new Request(u, { cache: "reload" }))));
       await self.skipWaiting();
     })()
   );
@@ -176,7 +189,11 @@ self.addEventListener("fetch", (e) => {
           }
           return res;
         })
-        .catch(() => caches.match("./index.html")); // SPA fallback
+        // SPA fallback for page loads only. Answering a module or an API call
+        // with index.html turned a network error into a "successful" response:
+        // a module parsed HTML, and the backup check reported an offline phone
+        // as "Reachable — 0 sessions stored".
+        .catch(() => (req.mode === "navigate" ? caches.match("./index.html") : Response.error()));
     })
   );
 });

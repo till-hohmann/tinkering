@@ -8,7 +8,7 @@ import { getActiveProgram, getAllPrograms, getAllSessions, importProgram, restor
   getDeficitTarget, setDeficitTarget, getMeasurementsLog, addMeasurement,
   getDexaLog, addDexaScan, getDexaBooked, setDexaBooked, setDexaReminderSeen, deleteProgram, saveProgram } from "../store.js";
 import { toCSV, fromCSV, applyPlanCSV, diffPlans } from "../plan-csv.js";
-import { todayISO } from "../model.js";
+import { todayISO, daysBetweenISO } from "../model.js";
 import * as M from "../model.js";
 import { buildBackup, buildMarkdownLog, shareOrDownload } from "../export.js";
 import { isSoundEnabled, setSoundEnabled, getAudioMode, setAudioMode, testAudio,
@@ -37,8 +37,7 @@ import { APP_VERSION } from "../version.js";
 
 function daysSince(iso) {
   if (!iso) return null;
-  const a = new Date(iso + "T00:00:00"), b = new Date(todayISO() + "T00:00:00");
-  return Math.floor((b - a) / 86400000);
+  return daysBetweenISO(iso, todayISO());   // DST-safe, see dates.js
 }
 
 // Re-render this screen in place after a control changes what it should show.
@@ -666,6 +665,12 @@ export async function renderSettings() {
     try {
       const data = JSON.parse(await f.text());
       if (data.kind === "fitness-backup" || (data.programs && data.sessions)) {
+        // A restore replaces blocks, sessions and settings with the file's copy
+        // and then backs that up; it used to start the moment a file was picked.
+        const when = data.exportedAt ? ` from ${String(data.exportedAt).slice(0, 10)}` : "";
+        if (!window.confirm(`Restore this backup${when}? ${data.programs?.length || 0} block(s) and `
+          + `${data.sessions?.length || 0} sessions. Where this device and the file both have the same item, `
+          + `the file's copy wins. Anything logged here since is kept.`)) { importInput.value = ""; return; }
         await restoreBackup(data);
         status.textContent = `Restored ${data.programs?.length || 0} program(s), ${data.sessions?.length || 0} sessions.`;
       } else {

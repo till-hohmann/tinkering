@@ -159,7 +159,7 @@ export function nearestWeekdayISO(iso, weekday) {
 // The calendar day lives in dates.js — re-exported so every caller that already
 // reaches for it here keeps working, with one implementation behind them all.
 export { todayISO, addDaysISO, prevISO, daysBetweenISO } from "./dates.js";
-import { addDaysISO } from "./dates.js";
+import { addDaysISO, daysBetweenISO } from "./dates.js";
 
 // JS getDay(): 0=Sun..6=Sat -> our Mon-first weekday code.
 export function weekdayOf(isoDate) {
@@ -168,11 +168,22 @@ export function weekdayOf(isoDate) {
   return WEEKDAYS[(idx + 6) % 7];
 }
 
+// ⚠ A CATCH-UP SESSION NEEDS ITS OWN ID. The id was date + weekday only, so
+// finishing today's Wednesday and then doing last week's missed Wednesday "now"
+// produced the same id, and the keyed put silently replaced the first session.
+// A session done for another plan day names that day. Today's own session keeps
+// the old shape, so drafts and sessions already stored still match.
+export function sessionIdFor(logDate, weekday, srcIso) {
+  return `sess-${logDate}-${weekday}` + (srcIso && srcIso !== logDate ? `-for-${srcIso}` : "");
+}
+
 // Which program week contains the given date (1-based); clamps to range.
 export function weekNumberFor(program, isoDate) {
-  const start = new Date(program.startDate + "T00:00:00");
-  const day = new Date(isoDate + "T00:00:00");
-  const diffDays = Math.floor((day - start) / 86400000);
+  // ⚠ WAS a floored millisecond span divided by a day. Across the spring clock change a
+  // seven-day gap is 6.96 days, which floored to 6: every Monday after late March
+  // resolved to the PREVIOUS week and ran its prescription (a deload Monday became
+  // a build day). daysBetweenISO compares local midnights and rounds.
+  const diffDays = daysBetweenISO(program.startDate, isoDate);
   const wk = Math.floor(diffDays / 7) + 1;
   return Math.min(Math.max(wk, 1), program.lengthWeeks);
 }

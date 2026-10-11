@@ -80,7 +80,7 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
   const stage = el("div.stage");
   mount([stage]);
 
-  const draftId = `sess-${logDate}-${weekday}`;
+  const draftId = M.sessionIdFor(logDate, weekday, srcIso);
   let draft = {
     id: draftId,
     date: logDate, programId: program.id, weekNumber, weekday,
@@ -919,7 +919,11 @@ async function substitutedStrength(stage, program, day, weekday, iso, plannedLoc
   plan.forEach((p, idx) => {
     for (const r of byIdx[idx] || []) {
       if (!r || !r.sets.length) continue;
-      if (p.kept) {
+      // No planned load means a first-ever session of the planned lift: there is
+      // nothing to convert onto, and the conversion multiplied by 0 and logged the
+      // planned barbell lift at the empty bar — which next week then progressed
+      // from. The substitute is logged as itself instead.
+      if (p.kept || (!p.plannedLoad && !isTimedSets(r))) {
         strengthResult.push({ exerciseId: r.exerciseId, implement: r.implement, sets: r.sets });
       } else if (isTimedSets(r)) {
         // timed/core substitute (e.g. bodyweight Pallof) → log straight to the

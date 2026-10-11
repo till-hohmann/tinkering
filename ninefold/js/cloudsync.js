@@ -22,23 +22,51 @@ async function backupTarget() {
 
 const authHeaders = (t) => ({ Authorization: "Bearer " + t.token });
 
-// Pull the cloud snapshot. Returns {programs, sessions, prefs} or null. Times out
-// so a slow/offline network never blocks boot for long, and returns null when no
-// backup is configured at all.
-export async function cloudPull(timeoutMs = 3500) {
+// ⚠ A PUSH IS A WHOLE-STATE OVERWRITE, SO IT MAY ONLY FOLLOW A PULL.
+// Boot used to pull, ignore a failed pull, and push anyway: a laptop on slow wifi
+// timed out, then replaced the cloud copy with its own older view, and the phone's
+// newer sessions were gone from the backup. A tab left open for days did the same
+// on every save, since pulls only happened at boot. Now a push needs a successful
+// pull in this page's lifetime, and one no older than PULL_FRESH_MS — a stale one
+// is refreshed and merged first. The merge comes from app.js (setCloudMerge) so
+// this module does not import the store.
+const PULL_FRESH_MS = 60_000;
+let lastPullOkAt = 0;
+let mergeFn = null;
+/** Register the non-destructive merge (store.mergeRestore) used before a push. */
+export function setCloudMerge(fn) { mergeFn = fn; }
+
+/**
+ * Pull the cloud snapshot and say what happened.
+ * status: "ok" (data set) | "empty" (reachable, nothing stored) | "unauthorized"
+ *       | "error" | "offline" | "unconfigured"
+ */
+export async function cloudPullResult(timeoutMs = 3500) {
   const t = await backupTarget();
-  if (!t) return null;
+  if (!t) return { status: "unconfigured", data: null };
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     const res = await fetch(t.endpoint, { headers: authHeaders(t), signal: ctrl.signal });
     clearTimeout(timer);
-    if (!res.ok) return null;
+    if (res.status === 401 || res.status === 403) return { status: "unauthorized", data: null };
+    if (!res.ok) return { status: "error", data: null, httpStatus: res.status };
     const txt = await res.text();
-    if (!txt || txt.trim() === "null") return null;
+    if (!txt || txt.trim() === "null") { lastPullOkAt = Date.now(); return { status: "empty", data: null }; }
     const data = JSON.parse(txt);
-    return data && Array.isArray(data.sessions) ? data : null;
-  } catch (_) { return null; }
+    // Anything else (an HTML page from a captive portal, a proxy's error body)
+    // is not this backup, and must not count as having heard from it.
+    if (!data || !Array.isArray(data.sessions)) return { status: "error", data: null };
+    lastPullOkAt = Date.now();
+    return { status: "ok", data };
+  } catch (_) { return { status: "offline", data: null }; }
+}
+
+// Pull the cloud snapshot. Returns {programs, sessions, prefs} or null. Times out
+// so a slow/offline network never blocks boot for long, and returns null when no
+// backup is configured at all.
+export async function cloudPull(timeoutMs = 3500) {
+  return (await cloudPullResult(timeoutMs)).data;
 }
 
 // --- push health -------------------------------------------------------------
@@ -82,6 +110,21 @@ export async function cloudPush(buildState) {
   if (inflight) { cloudPushDebounced(buildState, 1500); return; }
   inflight = true;
   try {
+    if (Date.now() - lastPullOkAt > PULL_FRESH_MS) {
+      const pulled = await cloudPullResult();
+      if (pulled.status === "ok" || pulled.status === "empty") {
+        if (pulled.data) {
+          if (!mergeFn) { await recordPush(false, "error"); return; }
+          await mergeFn(pulled.data);
+        }
+      } else {
+        // Not heard from the backup, so this device cannot know it holds the
+        // newest copy. Skip; the next change (or the next boot) tries again.
+        await recordPush(false, pulled.status === "unauthorized" ? "unauthorized"
+          : pulled.status === "offline" ? "offline" : "error", pulled.httpStatus);
+        return;
+      }
+    }
     const state = await buildState();
     if (!state || !Array.isArray(state.sessions)) return;
     const res = await fetch(t.endpoint, { method: "PUT",

@@ -13,6 +13,14 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 207, notes: [
+    "Ashtanga works again. Since August, almost every posture in an Ashtanga practice was being swapped for Child's pose, for everyone. You now get the full Primary Series, with easier versions at the beginner level. With a knee limitation set, the practice no longer uses Child's pose at all.",
+    "Tapping Later or Swap mid-exercise no longer loses the sets you had already logged on it. A lift you only partly finished now shows up under \"Before you finish\" as, say, \"1 of 3 sets\", so you can go back to it.",
+    "A day of substitutes (a hotel goblet squat in place of the back squat) now moves next week's load the same way the same effort on the real lift would. It used to push the load up too far. It also no longer counts as a personal record for a lift you didn't do.",
+    "Doing a missed day from an earlier week on the same day as today's workout no longer replaces today's session.",
+    "Restoring a backup file now asks first, and keeps anything you've logged since that file was made.",
+    "Your backup is only updated after the app has heard from it, so a device with a weak connection can't overwrite newer workouts from your other device.",
+  ] },
   { v: 206, notes: [
     "Every exercise now has its own picture. 17 new ones, including everything new in Block 4 (cable hip abduction, Nordic curl, suitcase carry) and the new mobility exercises (superman hold, tiptoe lateral steps, wall calf stretch, banded lateral walk).",
   ] },
