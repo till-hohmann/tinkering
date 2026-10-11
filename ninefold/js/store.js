@@ -3,7 +3,7 @@
 
 import * as db from "./db.js";
 import { rowDecision, mergeLogEntries, restoreLogEntries, mergeTombstoneSets, pruneTombstones, addTombstone,
-  stampRow, LOG_PREFS } from "./sync.js";
+  stampRow, nextStamp, refreshStamps, shouldAdoptSetting, hashValue, LOG_PREFS } from "./sync.js";
 import { weekdayOf, weekNumberFor, previousOccurrence, todayISO } from "./model.js";
 import { cloudPushDebounced } from "./cloudsync.js";
 import { DEFAULT_ZONE_BOUNDS, maxHRof } from "./cardio-intel.js";
@@ -19,7 +19,21 @@ import { DEFAULT_ZONE_BOUNDS, maxHRof } from "./cardio-intel.js";
 // reverted to picking by date — so someone deliberately running an older block
 // would come back from a wipe running a different one, with nothing to indicate
 // it had changed. The ids they reference are themselves in the backup.
-export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "dexaBooked", "dexaReminderSeen", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "stretchProg", "activeProgramId", "autoSelectProgram", "audioPrefs", "yogaLog", "yogaPrefs", "deletedRows", "shoes"];
+export const SYNCED_PREFS = ["profile", "zoneBounds", "vo2maxLog", "nutritionLog", "bodyweightKg", "proteinPerKg", "deficitTarget", "measurementsLog", "dexaLog", "dexaBooked", "dexaReminderSeen", "weightLog", "mobilityLog", "mobilityProg", "mobilityRoutine", "stretchProg", "activeProgramId", "autoSelectProgram", "audioPrefs", "yogaLog", "yogaPrefs", "deletedRows", "shoes", "prefStamps"];
+// The synced prefs that are SETTINGS: one whole value each, newest stamp wins.
+// (Logs merge per entry; tombstones and the stamps themselves are handled apart.)
+const SETTING_PREFS = SYNCED_PREFS.filter((k) => !LOG_PREFS[k] && k !== "deletedRows" && k !== "prefStamps");
+
+// Notice which settings changed since they were last seen, and stamp those.
+// `prefHashes` is device-local (what THIS device last saw); `prefStamps` travels.
+async function refreshPrefStamps() {
+  const values = {};
+  for (const k of SETTING_PREFS) values[k] = await db.getPref(k);
+  const r = refreshStamps(values, (await db.getPref("prefHashes")) || {}, (await db.getPref("prefStamps")) || {});
+  if (r.changed) { await db.setPref("prefHashes", r.hashes); await db.setPref("prefStamps", r.stamps); }
+  return r;
+}
+
 export async function syncedPrefs() {
   const out = {};
   for (const k of SYNCED_PREFS) { const v = await db.getPref(k); if (v !== undefined) out[k] = v; }
@@ -31,8 +45,12 @@ export async function syncedPrefs() {
 async function restorePrefs(prefs, { overwrite = false } = {}) {
   if (!prefs) return;
   let touchedProfile = false;
+  // Local edits not yet stamped are stamped first, so they compete fairly.
+  const { hashes, stamps } = await refreshPrefStamps();
+  const theirStamps = prefs.prefStamps || {};
+  let stampsChanged = false;
   for (const k of SYNCED_PREFS) {
-    if (prefs[k] === undefined) continue;
+    if (prefs[k] === undefined || k === "prefStamps") continue;
     const mine = await db.getPref(k);
     // ⚠ A LOG IS NOT A SETTING. add-if-missing is right for a preference — one
     // device must not clobber a choice made on another — and wrong for a log,
@@ -49,8 +67,21 @@ async function restorePrefs(prefs, { overwrite = false } = {}) {
     // Tombstones are merged in mergeRestore and written there; a second,
     // dumber write here would throw the other device's deletions away.
     if (k === "deletedRows" && !overwrite) continue;
-    if (overwrite || mine === undefined) { await db.setPref(k, prefs[k]); touchedProfile ||= k === "profile"; }
+    // A SETTING: missing here, an explicit restore, or a strictly newer stamp.
+    const adopt = overwrite || mine === undefined
+      || (SETTING_PREFS.includes(k) && shouldAdoptSetting(theirStamps[k], stamps[k]));
+    if (adopt) {
+      await db.setPref(k, prefs[k]);
+      touchedProfile ||= k === "profile";
+      if (SETTING_PREFS.includes(k)) {
+        // What was adopted is not a local edit: record its hash and its stamp.
+        hashes[k] = hashValue(prefs[k]);
+        if (theirStamps[k]) stamps[k] = theirStamps[k]; else delete stamps[k];
+        stampsChanged = true;
+      }
+    }
   }
+  if (stampsChanged) { await db.setPref("prefHashes", hashes); await db.setPref("prefStamps", stamps); }
   // The profile is written straight to the pref store here, behind profile.js's
   // back. Without this its in-memory copy — and the display units derived from
   // it — would keep serving the pre-restore values until the next cold start.
@@ -82,6 +113,7 @@ export async function adoptInstallId(id) {
 }
 
 export async function snapshot() {
+  await refreshPrefStamps();   // a setting changed since the last push travels as newer
   return { kind: "strong-backup", exportedAt: new Date().toISOString(),
     installId: await getInstallId(),
     programs: await db.getAll("programs"), sessions: await db.getAll("sessions"),
@@ -123,9 +155,11 @@ export function shouldAdoptProgram(incoming, stored) {
  * restores it here. The id and the moment are kept instead, travel in the
  * snapshot like everything else, and are pruned after 90 days.
  */
-async function recordDeletion(kind, id) {
+async function recordDeletion(kind, id, row = null) {
   const map = (await db.getPref("deletedRows")) || {};
-  const next = { ...map, [kind]: addTombstone(map[kind], id, new Date().toISOString()) };
+  // After the row it deletes, even if that row was stamped by a fast clock —
+  // otherwise the deletion is "older" than the row and the row comes back.
+  const next = { ...map, [kind]: addTombstone(map[kind], id, nextStamp(row && row.updatedAt)) };
   await db.setPref("deletedRows", prunedTombstones(next));
 }
 function prunedTombstones(map) {
@@ -382,7 +416,7 @@ export async function deleteProgram(programId) {
   const gone = all.find((p) => p.id === programId);
   if (!gone) throw new Error("not_found");
   await db.del("programs", programId);
-  await recordDeletion("programs", programId);
+  await recordDeletion("programs", programId, gone);
   // If it was the pinned active one, fall back to whichever block covers today.
   const activeId = await db.getPref("activeProgramId");
   if (activeId === programId) {
@@ -400,7 +434,7 @@ export async function deleteProgram(programId) {
 export async function saveProgram(program) {
   // Stamped so the change can travel. Without it a block edit is invisible to
   // every other device you own — see mergeRestore().
-  program.updatedAt = new Date().toISOString();
+  program.updatedAt = nextStamp(program.updatedAt);
   await db.put("programs", program);
   pushCloud();
   return program;
@@ -543,7 +577,9 @@ export async function updateYogaEntry(at, patch) {
   const raw = (await db.getPref("yogaLog")) || [];
   const i = raw.findIndex((e) => e.at === at);
   if (i < 0) return null;
-  raw[i] = { ...raw[i], ...patch, at: raw[i].at };
+  // Re-stamped: an edit that keeps the old stamp never beats the other
+  // device's unedited copy, so it never travelled.
+  raw[i] = stampRow({ ...raw[i], ...patch, at: raw[i].at });
   raw.sort(byDate);
   await db.setPref("yogaLog", raw); pushCloud();
   return raw.find((e) => e.at === at) || null;
@@ -1063,8 +1099,9 @@ export function resolveDay(program, isoDate) {
 // training itself.
 export const saveSession = (session) => { const p = db.put("sessions", stampRow(session)); pushCloud(); return p; };
 export async function deleteSession(id) {
+  const row = await db.get("sessions", id);
   await db.del("sessions", id);
-  await recordDeletion("sessions", id);
+  await recordDeletion("sessions", id, row);
   pushCloud();
 }
 export const getSession = (id) => db.get("sessions", id);

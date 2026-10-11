@@ -33,6 +33,12 @@ const authHeaders = (t) => ({ Authorization: "Bearer " + t.token });
 const PULL_FRESH_MS = 60_000;
 let lastPullOkAt = 0;
 let mergeFn = null;
+// The version of the backup this device last read or wrote, sent back as
+// X-Backup-Version so the Worker can refuse a push built on an older copy. Only
+// ever set from a Worker that returns one — an older Worker never sees the
+// header, which its CORS rules would reject. (Not ETag/If-Match: the edge
+// rewrites ETags to their weak form, and nothing would ever have matched.)
+let lastEtag = null;
 /** Register the non-destructive merge (store.mergeRestore) used before a push. */
 export function setCloudMerge(fn) { mergeFn = fn; }
 
@@ -52,12 +58,13 @@ export async function cloudPullResult(timeoutMs = 3500) {
     if (res.status === 401 || res.status === 403) return { status: "unauthorized", data: null };
     if (!res.ok) return { status: "error", data: null, httpStatus: res.status };
     const txt = await res.text();
-    if (!txt || txt.trim() === "null") { lastPullOkAt = Date.now(); return { status: "empty", data: null }; }
+    if (!txt || txt.trim() === "null") { lastPullOkAt = Date.now(); lastEtag = res.headers.get("X-Backup-Version") || null; return { status: "empty", data: null }; }
     const data = JSON.parse(txt);
     // Anything else (an HTML page from a captive portal, a proxy's error body)
     // is not this backup, and must not count as having heard from it.
     if (!data || !Array.isArray(data.sessions)) return { status: "error", data: null };
     lastPullOkAt = Date.now();
+    lastEtag = res.headers.get("X-Backup-Version") || null;
     return { status: "ok", data };
   } catch (_) { return { status: "offline", data: null }; }
 }
@@ -110,27 +117,40 @@ export async function cloudPush(buildState) {
   if (inflight) { cloudPushDebounced(buildState, 1500); return; }
   inflight = true;
   try {
-    if (Date.now() - lastPullOkAt > PULL_FRESH_MS) {
-      const pulled = await cloudPullResult();
-      if (pulled.status === "ok" || pulled.status === "empty") {
-        if (pulled.data) {
-          if (!mergeFn) { await recordPush(false, "error"); return; }
-          await mergeFn(pulled.data);
-        }
-      } else {
-        // Not heard from the backup, so this device cannot know it holds the
-        // newest copy. Skip; the next change (or the next boot) tries again.
-        await recordPush(false, pulled.status === "unauthorized" ? "unauthorized"
-          : pulled.status === "offline" ? "offline" : "error", pulled.httpStatus);
-        return;
-      }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const outcome = await pushOnce(t, buildState, attempt > 0);
+      if (outcome !== "stale") return;
     }
+    await recordPush(false, "refused", 412);   // still stale after a fresh merge
+  } finally { inflight = false; }
+}
+
+// One push. Returns "done" or "stale" (the Worker refused it as built on an
+// older copy, so the caller pulls, merges and tries once more).
+async function pushOnce(t, buildState, forcePull) {
+  if (forcePull || Date.now() - lastPullOkAt > PULL_FRESH_MS) {
+    const pulled = await cloudPullResult();
+    if (pulled.status === "ok" || pulled.status === "empty") {
+      if (pulled.data) {
+        if (!mergeFn) { await recordPush(false, "error"); return "done"; }
+        await mergeFn(pulled.data);
+      }
+    } else {
+      // Not heard from the backup, so this device cannot know it holds the
+      // newest copy. Skip; the next change (or the next boot) tries again.
+      await recordPush(false, pulled.status === "unauthorized" ? "unauthorized"
+        : pulled.status === "offline" ? "offline" : "error", pulled.httpStatus);
+      return "done";
+    }
+  }
+  try {
     const state = await buildState();
-    if (!state || !Array.isArray(state.sessions)) return;
+    if (!state || !Array.isArray(state.sessions)) return "done";
     const res = await fetch(t.endpoint, { method: "PUT",
-      headers: { ...authHeaders(t), "Content-Type": "application/json" },
+      headers: { ...authHeaders(t), "Content-Type": "application/json", ...(lastEtag ? { "X-Backup-Version": lastEtag } : {}) },
       body: JSON.stringify(state) });
-    if (res.ok) { await recordPush(true); return; }
+    if (res.status === 412) return "stale";
+    if (res.ok) { lastEtag = res.headers.get("X-Backup-Version") || lastEtag; await recordPush(true); return "done"; }
     // Name the failures that mean different things, because the fix differs:
     // a wrong token needs re-entering, a refusal means the Worker protected
     // something, and a size failure needs the log trimming.
@@ -139,12 +159,14 @@ export async function cloudPush(buildState) {
       : res.status === 413 ? "too_large"
       : "error";
     await recordPush(false, reason, res.status);
+    return "done";
   } catch (_) {
     // Offline is the ONE benign failure: the next change retries, and flagging it
     // would cry wolf every time a phone goes through a tunnel. Still recorded, so
     // a device that has been "offline" for a fortnight can be spotted.
     await recordPush(false, "offline");
-  } finally { inflight = false; }
+    return "done";
+  }
 }
 
 // Reachability probe for the Settings screen, so a self-hoster can verify their

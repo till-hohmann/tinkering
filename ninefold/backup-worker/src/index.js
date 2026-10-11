@@ -34,7 +34,8 @@ function cors(origin) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
     "Access-Control-Allow-Methods": CORS_METHODS,
-    "Access-Control-Allow-Headers": "Authorization,Content-Type",
+    "Access-Control-Allow-Headers": "Authorization,Content-Type,X-Backup-Version",
+    "Access-Control-Expose-Headers": "X-Backup-Version",
     "Access-Control-Max-Age": "86400",
   };
 }
@@ -43,6 +44,17 @@ async function sha256Hex(s) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+// A fingerprint of the stored state. A client sends back the one it last read
+// and a write over anything else is refused — see the PUT route.
+//
+// A CUSTOM HEADER, NOT ETag/If-Match. Cloudflare's edge compresses the response
+// and rewrites an ETag to its weak form (W/"…"), so a client echoing it back
+// never matched and every push would have been refused. Found against the live
+// Worker before any client sent it.
+const VERSION_HEADER = "X-Backup-Version";
+const etagOf = async (text) => (await sha256Hex(text || "null")).slice(0, 24);
+const sameVersion = (a, b) => String(a || "").replace(/^W\//, "").replace(/"/g, "") === String(b || "");
 
 // Constant-time-ish compare so the token can't be recovered a byte at a time.
 function safeEqual(a, b) {
@@ -84,7 +96,7 @@ export default {
     // --- the training state -------------------------------------------------
     if (path === "/" && req.method === "GET") {
       const v = await env.STRONG_BACKUP.get(STATE_KEY);
-      return new Response(v || "null", { headers: jsonHeaders });
+      return new Response(v || "null", { headers: { ...jsonHeaders, [VERSION_HEADER]: await etagOf(v) } });
     }
     if (path === "/" && req.method === "PUT") {
       const body = await req.text();
@@ -97,6 +109,23 @@ export default {
       // before its DB opens must never be able to blank the only durable copy.
       if (!parsed || !Array.isArray(parsed.sessions))
         return new Response("missing sessions array", { status: 400, headers: H });
+      // ⚠ A PUT REPLACES EVERYTHING, so it must be built on what is stored now.
+      // (Header: X-Backup-Version, see VERSION_HEADER.)
+      // A client that read the backup, then sat on a slow network (or a tab left
+      // open for days) while another device pushed, would otherwise overwrite the
+      // newer rows with its older view. The version header names the copy it read; any
+      // other version means "pull, merge, try again". A request without it — an
+      // older app, a maintenance script — is accepted as before.
+      const based = req.headers.get(VERSION_HEADER);
+      if (based) {
+        const current = await env.STRONG_BACKUP.get(STATE_KEY);
+        const tag = await etagOf(current);
+        if (!sameVersion(based, tag)) {
+          return new Response(JSON.stringify({ error: "stale",
+            detail: "The backup changed since this device last read it. Pull, merge, then push again." }),
+            { status: 412, headers: { ...jsonHeaders, [VERSION_HEADER]: tag } });
+        }
+      }
       // TWO REFUSALS, ONE IDEA: a client that has lost its memory must not be
       // able to tell this store to forget too. Both are cases where the incoming
       // snapshot is strictly poorer than the stored one in a way no user action
@@ -167,7 +196,7 @@ export default {
         }
       }
       await env.STRONG_BACKUP.put(STATE_KEY, body);
-      return new Response("ok", { headers: H });
+      return new Response("ok", { headers: { ...H, [VERSION_HEADER]: await etagOf(body) } });
     }
 
     // --- Apple Health push ingest -------------------------------------------

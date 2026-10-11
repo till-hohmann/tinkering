@@ -13,6 +13,11 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 211, notes: [
+    "Settings now travel between your devices. Change your heart-rate zones, a gym or your routine on one, and the other picks it up. Until now a change stayed on the device where you made it. Settings you haven't touched since updating stay as they are on each device.",
+    "Your backup now refuses an upload built on an out-of-date copy. The app then fetches the newer copy, merges it and tries again, so two devices can't overwrite each other's workouts.",
+    "A device whose clock is wrong can no longer undo edits or bring deleted sessions back, and deletions are now remembered for over a year instead of three months.",
+  ] },
   { v: 210, notes: [
     "The block builder is better at the edges. A block always starts on a Monday, and the builder says so if you pick another day. Six lifting days is the most it plans: pick seven and it keeps one day free instead of repeating a day of the split.",
     "Push-ups, air squats and inverted rows are now prescribed at 10-20 reps taken close to failure, not at barbell reps like 3-5. Pull-ups, chin-ups and dips keep the block's rep range.",

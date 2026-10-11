@@ -4009,12 +4009,14 @@ group("sync — a deletion travels", () => {
     assert.equal(rowDecision({ id: "s", updatedAt: NEW }, null, OLD), "adopt");
     assert.equal(rowDecision({ id: "s", updatedAt: NEW }, { id: "s", updatedAt: OLD }, OLD), "adopt");
   });
-  it("tombstones merge keeping the later moment, and prune after 90 days", () => {
+  it("tombstones merge keeping the later moment, and prune after 400 days", () => {
     const merged = mergeTombstones({ a: OLD, b: NEW }, { a: NEW, c: OLD });
     assert.deepEqual(merged, { a: NEW, b: NEW, c: OLD });
-    const pruned = pruneTombstones({ recent: "2026-09-20T00:00:00.000Z", ancient: "2026-01-01T00:00:00.000Z" },
-      "2026-09-24T00:00:00.000Z");
-    assert.deepEqual(Object.keys(pruned), ["recent"]);
+    // Nine months is no longer "every device has seen it": a phone in a drawer
+    // for that long brought deleted rows back once the tombstone was gone.
+    const pruned = pruneTombstones({ recent: "2026-09-20T00:00:00.000Z", months: "2026-01-01T00:00:00.000Z",
+      ancient: "2025-06-01T00:00:00.000Z" }, "2026-09-24T00:00:00.000Z");
+    assert.deepEqual(Object.keys(pruned), ["recent", "months"]);
   });
   it("tombstones are merged PER KIND, or one side is silently dropped", () => {
     // Sessions and programs keep separate id spaces, so the map is two levels
@@ -4589,7 +4591,7 @@ await workerTests();
 // let an out-of-date device overwrite newer rows in the only durable copy.
 async function syncTests() {
   const { installFakeIDB } = await import("./fake-idb.mjs");
-  installFakeIDB();
+  globalThis.__fakeIdb = installFakeIDB();
   const dbm = await import("../js/db.js");
   const { setRuntimeConfig } = await import("../js/config.js");
   const cs = await import("../js/cloudsync.js");
@@ -4695,6 +4697,134 @@ async function syncTests() {
   });
 }
 await syncTests();
+
+// Settings and clocks across two devices: one fake IndexedDB, reset between
+// "devices", the real store.js on top.
+async function settingsSyncTests() {
+  const idb = globalThis.__fakeIdb;
+  const dbm = await import("../js/db.js");
+  const store = await import("../js/store.js");
+  const r = {};
+  const zonesOf = async () => dbm.getPref("zoneBounds");
+
+  // Device A has run an older build: zones set, never stamped.
+  idb.reset();
+  await dbm.setPref("profile", { onboardedAt: "2026-01-01", physiology: { maxHR: 190 } });
+  await dbm.setPref("zoneBounds", [120, 140, 160, 175]);
+  const oldA = await store.snapshot();                       // first sight: recorded, not stamped
+  r.firstSightUnstamped = !(oldA.prefs.prefStamps || {}).zoneBounds;
+  await dbm.setPref("zoneBounds", [125, 145, 162, 178]);     // a real edit on A
+  const snapA = await store.snapshot();
+  r.editStamped = !!snapA.prefs.prefStamps.zoneBounds;
+
+  // Device B: its own older zones, also from the old build.
+  idb.reset();
+  await dbm.setPref("profile", { onboardedAt: "2026-01-01", physiology: { maxHR: 190 } });
+  await dbm.setPref("zoneBounds", [118, 138, 158, 172]);
+  await store.mergeRestore(oldA);                            // neither side stamped: B keeps its own
+  r.migrationKeepsLocal = JSON.stringify(await zonesOf()) === "[118,138,158,172]";
+  await store.mergeRestore(snapA);                           // A's edit is newer: it travels
+  r.editTravels = JSON.stringify(await zonesOf()) === "[125,145,162,178]";
+  await new Promise((res) => setTimeout(res, 5));
+  await dbm.setPref("zoneBounds", [130, 150, 165, 180]);     // B edits after that
+  await store.mergeRestore(snapA);                           // A's older copy must not undo it
+  r.newerLocalStays = JSON.stringify(await zonesOf()) === "[130,150,165,180]";
+  const snapB = await store.snapshot();
+  r.bTravelsBack = shouldAdoptSettingT(snapB.prefs.prefStamps.zoneBounds, snapA.prefs.prefStamps.zoneBounds);
+
+  // A clock a day fast stamped a session tomorrow. Deleting it here must stick.
+  idb.reset();
+  const future = new Date(Date.now() + 86400000).toISOString();
+  const fast = { id: "s-fast", date: "2026-10-01", updatedAt: future, strengthResult: [] };
+  await dbm.put("sessions", fast);
+  await store.deleteSession("s-fast");
+  await store.mergeRestore({ programs: [], sessions: [fast], prefs: {} });
+  r.deletionBeatsFastClock = !(await dbm.get("sessions", "s-fast"));
+
+  group("sync — settings travel when they change, and only then", () => {
+    it("a setting seen for the first time is recorded without a stamp", () => assert.ok(r.firstSightUnstamped));
+    it("a real edit is stamped", () => assert.ok(r.editStamped));
+    it("two devices updating from an old build keep their own settings", () => assert.ok(r.migrationKeepsLocal));
+    it("an edit made on one device reaches the other", () => assert.ok(r.editTravels));
+    it("an older copy never undoes a newer local edit", () => assert.ok(r.newerLocalStays));
+    it("and the newer local edit is the one that travels back", () => assert.ok(r.bTravelsBack));
+    it("a deletion beats a row stamped by a clock that runs fast", () => assert.ok(r.deletionBeatsFastClock));
+  });
+}
+// The Worker's version check, against the real handler on an in-memory KV.
+{
+  const worker = (await import("../backup-worker/src/index.js")).default;
+  const TOKEN = "t".repeat(40);
+  const kv = new Map();
+  const env = { BACKUP_TOKEN: TOKEN, STRONG_BACKUP: { get: async (k) => (kv.has(k) ? kv.get(k) : null), put: async (k, v) => { kv.set(k, v); } } };
+  const call = (method, body, extra = {}) => worker.fetch(new Request("https://x/", { method,
+    headers: { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json", ...extra },
+    ...(body ? { body: JSON.stringify(body) } : {}) }), env);
+  const state = (n) => ({ installId: "inst-a", sessions: Array.from({ length: n }, (_, i) => ({ id: "s" + i })), programs: [{ id: "p" }],
+    prefs: { profile: { onboardedAt: "2026-01-01" } } });
+  const first = await call("PUT", state(1));
+  const read = await call("GET");
+  const tag = read.headers.get("X-Backup-Version");
+  const otherDevice = await call("PUT", state(2));                 // someone else pushes in between
+  const stale = await call("PUT", state(1), { "X-Backup-Version": tag });  // built on the copy read before that
+  const fresh = await call("PUT", state(3), { "X-Backup-Version": otherDevice.headers.get("X-Backup-Version") });
+  const noHeader = await call("PUT", state(4));                    // an older app / a script
+  const pre = await worker.fetch(new Request("https://x/", { method: "OPTIONS" }), env);
+  group("backup Worker — a push built on an older copy is refused", () => {
+    it("reads and writes return a version", () => { assert.ok(tag); assert.ok(first.headers.get("X-Backup-Version")); });
+    it("a push naming an older version is refused with 412", () => assert.equal(stale.status, 412));
+    it("a push naming the current version goes through", () => assert.equal(fresh.status, 200));
+    it("a push with no version is accepted as before", () => assert.equal(noHeader.status, 200));
+    it("the browser may send and read the version header", () => {
+      assert.match(pre.headers.get("Access-Control-Allow-Headers"), /X-Backup-Version/);
+      assert.match(pre.headers.get("Access-Control-Expose-Headers"), /X-Backup-Version/);
+    });
+  });
+}
+
+// The app's side: a 412 means pull, merge, push again — once.
+{
+  const cs = await import("../js/cloudsync.js");
+  const realFetch = globalThis.fetch, realNow = Date.now;
+  let clock = 2_000_000_000_000; Date.now = () => clock;
+  const log = []; let version = 1; let refuseNext = false; let withTags = true;
+  globalThis.fetch = async (url, opts = {}) => {
+    const m = opts.method || "GET", im = (opts.headers || {})["X-Backup-Version"] || null;
+    log.push(m + (im ? " " + im : ""));
+    const h = withTags ? { "X-Backup-Version": `v${version}` } : {};
+    if (m === "GET") return new Response(JSON.stringify({ sessions: [], programs: [] }), { status: 200, headers: h });
+    if (refuseNext) { refuseNext = false; version++; return new Response("{}", { status: 412, headers: { "X-Backup-Version": `v${version}` } }); }
+    version++;
+    return new Response("ok", { status: 200, headers: withTags ? { "X-Backup-Version": `v${version}` } : {} });
+  };
+  const merges = []; cs.setCloudMerge(async () => { merges.push(1); });
+  const build = async () => ({ sessions: [{ id: "a" }], programs: [], prefs: {} });
+  let raced, oldWorker;
+  try {
+    clock += 120_000; log.length = 0; refuseNext = true;
+    await cs.cloudPush(build);                 // GET v1, PUT v1 → 412, GET v2, PUT v2 → 200
+    raced = [...log];
+    clock += 120_000; log.length = 0; withTags = false;
+    await cs.cloudPush(build);                 // an older Worker: no version, so none sent
+    oldWorker = [...log];
+  } finally { globalThis.fetch = realFetch; Date.now = realNow; }
+  group("cloud sync — a refused push pulls, merges and tries once more", () => {
+    it("sends the version it read, and after a 412 re-reads and retries with the new one", () =>
+      assert.deepEqual(raced, ['GET', 'PUT v1', 'GET', 'PUT v2']));
+    it("never sends a version to a Worker that doesn't return one", () =>
+      assert.deepEqual(oldWorker, ["GET", "PUT"]));
+  });
+}
+
+const { shouldAdoptSetting: shouldAdoptSettingT, nextStamp: nextStampT, stampRow: stampRowT } = await import("../js/sync.js");
+await settingsSyncTests();
+group("sync — a new stamp is never older than what it replaces", () => {
+  it("an edit on top of a future-stamped row is stamped after it", () => {
+    const future = "2099-01-01T00:00:00.000Z";
+    assert.ok(Date.parse(stampRowT({ updatedAt: future }).updatedAt) > Date.parse(future));
+    assert.equal(nextStampT(null, "2026-10-11T10:00:00.000Z"), "2026-10-11T10:00:00.000Z");
+  });
+});
 
 for (const [name, fn] of groups) { console.log("\n" + name); fn(); }
 console.log(`\n${passed} passed, ${failed} failed`);

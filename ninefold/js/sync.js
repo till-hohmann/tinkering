@@ -16,7 +16,10 @@
 // this change backwards-compatible: nothing is migrated, and rows stamp
 // themselves as they are next written.
 
-export const TOMBSTONE_DAYS = 90;
+// 400, not 90. A device left in a drawer for longer than the window still holds
+// the deleted rows, and once every tombstone had been pruned its next push put
+// them back — and every other device then adopted them as missing rows.
+export const TOMBSTONE_DAYS = 400;
 
 /** ms since epoch for a row's stamp; 0 when it has none. */
 export const rowAge = (row) => {
@@ -162,6 +165,63 @@ export const LOG_PREFS = {
   shoes: { key: "id" },
 };
 
+/**
+ * The stamp for a write that replaces something stamped `prevISO`: now, or just
+ * after the previous stamp if that is later. Wall clocks disagree — a phone a day
+ * fast stamps its rows tomorrow, and an honest edit made on top of one of them
+ * then lost to the very copy it was correcting. A new stamp is never older than
+ * the thing it replaces.
+ */
+export function nextStamp(prevISO, nowISO = new Date().toISOString()) {
+  const prev = prevISO ? Date.parse(prevISO) : NaN;
+  const now = Date.parse(nowISO);
+  return Number.isFinite(prev) && prev >= now ? new Date(prev + 1).toISOString() : nowISO;
+}
+
 /** Stamp an entry as written now, so the other device can tell which is newer. */
 export const stampRow = (row, nowISO = new Date().toISOString()) =>
-  ({ ...row, updatedAt: nowISO });
+  ({ ...row, updatedAt: nextStamp(row && row.updatedAt, nowISO) });
+
+// --- settings ----------------------------------------------------------------
+// ⚠ A SETTING NEVER TRAVELLED. Settings are whole values (the profile, zones,
+// the routine), merged add-if-missing so one device could not clobber another's
+// choice — which meant a change made on one device never reached the other,
+// while the cloud copy flipped to whichever device pushed last.
+//
+// Each setting now carries a stamp, and the newer one wins, like a row. The
+// stamp is taken by NOTICING a change (a hash of the value differs from the last
+// one seen) rather than at the ~40 places that write settings. A value seen for
+// the first time is recorded with NO stamp (age 0): every install that existed
+// before this would otherwise stamp all its settings "now" on first boot, and
+// whichever device updated second would overwrite the other's real settings.
+
+/** A short, stable fingerprint of a JSON-able value. */
+export function hashValue(v) {
+  const s = JSON.stringify(v === undefined ? null : v);
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36) + ":" + s.length;
+}
+
+/**
+ * Bring setting stamps up to date with the values as they are now.
+ * Returns { hashes, stamps, changed }.
+ */
+export function refreshStamps(values, hashes = {}, stamps = {}, nowISO = new Date().toISOString()) {
+  const h = { ...hashes }, st = { ...stamps };
+  let changed = false;
+  for (const [k, v] of Object.entries(values)) {
+    if (v === undefined) continue;
+    const now = hashValue(v);
+    if (h[k] === undefined) { h[k] = now; changed = true; continue; }       // first sight: no stamp
+    if (h[k] !== now) { h[k] = now; st[k] = nextStamp(st[k], nowISO); changed = true; }
+  }
+  return { hashes: h, stamps: st, changed };
+}
+
+/** Does an incoming setting replace the one here? Strictly newer stamp wins. */
+export function shouldAdoptSetting(incomingStamp, localStamp) {
+  const a = incomingStamp ? Date.parse(incomingStamp) || 0 : 0;
+  const b = localStamp ? Date.parse(localStamp) || 0 : 0;
+  return a > b;
+}
