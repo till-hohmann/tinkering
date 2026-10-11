@@ -21,7 +21,7 @@ import {
 import { strengthScore, liftScore, standardsFor, STANDARDS_BY_SEX, LEVELS } from "../js/standards.js";
 import { roundLoad, loadCeiling, nextLoadUp, rackAt, recommend } from "../js/progression.js";
 import { deviationQuestions, applyTemplateDecisions, stampEffort, YES, NO, CONSIDER } from "../js/deviations.js";
-import { toCSV, fromCSV, applyPlanCSV, diffPlans } from "../js/plan-csv.js";
+import { toCSV, fromCSV, applyPlanCSV, diffPlans, parseCSV } from "../js/plan-csv.js";
 import { BUILD_CONFIG, hasBackup, hasWhoop } from "../js/config.js";
 import { EXERCISE_LIBRARY, checkLibrary, availableAt, pickForPattern, qualityOf } from "../js/exercise-library.js";
 import { FULL_GYM, EXERCISE_NEEDS, stationsKnown, canDoHere, SURVEYED, IMPLEMENTS, STATIONS, PRESETS } from "../js/equipment.js";
@@ -4751,6 +4751,128 @@ async function settingsSyncTests() {
     it("a deletion beats a row stamped by a clock that runs fast", () => assert.ok(r.deletionBeatsFastClock));
   });
 }
+// Outside data never becomes markup or a spreadsheet formula.
+{
+  const { esc } = await import("../js/ui.js");
+  const program = { id: "p", name: "=HYPERLINK(\"http://x\",\"click\")", startDate: "2026-10-12", lengthWeeks: 1,
+    dayTemplates: { Mon: { label: "+Day" }, Tue: { label: "Run" } },
+    weeks: [{ weekNumber: 1, phaseName: "@Build", days: {
+      Mon: { type: "strength", exercises: [{ exerciseId: "back_squat", prescribedSets: 3, repRange: "5-8", restSeconds: 120, role: "compound" }] },
+      Tue: { type: "cardio", prescription: "-20 min easy" } } }],
+    exercises: { back_squat: { name: "Back squat" } } };
+  const csv = toCSV(program);
+  const rows = parseCSV(csv);
+  group("hardening — outside data stays data", () => {
+    it("esc() leaves no tag or attribute that can run", () => {
+      assert.equal(esc(`<img src=x onerror="alert(1)">`), "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
+      assert.equal(esc(null), "");
+    });
+    it("a CSV cell that looks like a formula is exported as text", () => {
+      assert.ok(csv.includes(`"'=HYPERLINK(`), "the name is prefixed");
+      assert.ok(!/(^|,)[=+@]/m.test(csv.replace(/"'[=+\-@]/g, "")), "no bare formula cell remains");
+    });
+    it("and comes back exactly as it was written", () => {
+      assert.equal(rows[1][0], program.name);
+      assert.ok(rows.some((r) => r.includes("-20 min easy")));
+      assert.ok(rows.some((r) => r.includes("@Build")));
+    });
+  });
+}
+
+// Health ingest: bounded, but unknown keys still arrive (the app reports them).
+{
+  const worker = (await import("../backup-worker/src/index.js")).default;
+  const TOKEN = "h".repeat(40);
+  const kv = new Map();
+  const env = { BACKUP_TOKEN: TOKEN, STRONG_BACKUP: { get: async (k) => (kv.has(k) ? kv.get(k) : null), put: async (k, v) => { kv.set(k, v); } } };
+  const ingest = (body) => worker.fetch(new Request("https://x/health-ingest", { method: "POST",
+    headers: { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" }, body: JSON.stringify(body) }), env);
+  const read = async () => JSON.parse(await (await worker.fetch(new Request("https://x/health", {
+    headers: { Authorization: "Bearer " + TOKEN } }), env)).text());
+  await ingest({ date: "2026-10-01", hrv: 80.5, restingHeartRate: 52, junk: { deep: { er: 1 } },
+    workouts: [{ type: "Running", durationSeconds: 1800, hrSamples: Array.from({ length: 20000 }, (_, i) => ({ t: i, bpm: 140 })) }] });
+  const one = (await read()).byDate["2026-10-01"];
+  // ~5.2 MB of days with long notes: the oldest must go, the newest must stay.
+  const big = "x".repeat(199);
+  const days = Array.from({ length: 700 }, (_, i) => {
+    const d = new Date(Date.UTC(2024, 0, 1) + i * 86400000).toISOString().slice(0, 10);
+    return { date: d, ...Object.fromEntries(Array.from({ length: 38 }, (_, k) => ["note" + k, big])) };
+  });
+  let res;   // in batches: one request is capped at 2 MB, as it should be
+  for (let i = 0; i < days.length; i += 100) res = await ingest({ days: days.slice(i, i + 100) });
+  const after = await read();
+  const kept = Object.keys(after.byDate).sort();
+  group("health ingest — bounded, so one Shortcut can't break the store", () => {
+    it("known and unknown numeric fields arrive, so a mis-keyed Shortcut can still be named", () => {
+      assert.equal(one.hrv, 80.5);
+      assert.equal(one.restingHeartRate, 52);
+    });
+    it("nested junk is dropped", () => assert.equal(one.junk, undefined));
+    it("heart-rate samples are thinned to at most 1,500 per workout", () => {
+      assert.equal(one.workouts[0].type, "Running");
+      assert.ok(one.workouts[0].hrSamples.length <= 1500 && one.workouts[0].hrSamples.length > 1000);
+    });
+    it("past the size limit the oldest days go and the newest stay", () => {
+      assert.equal(res.status, 200);
+      assert.ok(JSON.stringify(after).length <= 5_000_000);
+      assert.ok(kept.includes(days[days.length - 1].date) && kept.includes("2026-10-01"), "the newest days stay");
+      assert.ok(!kept.includes(days[0].date), "the oldest went");
+      assert.ok(kept.length < 701);
+    });
+  });
+}
+
+// WHOOP sign-in: tokens go to the device that started it, never to whoever's link
+// the sign-in was started with.
+{
+  const worker = (await import("../whoop-worker/src/index.js")).default;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => (String(url).includes("/oauth2/token")
+    ? new Response(JSON.stringify({ access_token: "acc", refresh_token: "ref", expires_in: 3600 }), { status: 200 })
+    : new Response("{}", { status: 404 }));
+  const mk = (origin) => {
+    const kv = new Map();
+    const env = { APP_ORIGIN: origin, WHOOP_CLIENT_ID: "cid", WHOOP_CLIENT_SECRET: "sec", STRONG_WHOOP: {
+      get: async (k) => (kv.has(k) ? kv.get(k) : null), put: async (k, v) => { kv.set(k, v); }, delete: async (k) => { kv.delete(k); } } };
+    const call = (path, { method = "GET", link, body } = {}) => worker.fetch(new Request("https://w.example" + path, { method,
+      headers: { ...(link ? { Authorization: "Bearer " + link } : {}), ...(body ? { "Content-Type": "application/json" } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}) }), env);
+    const signIn = async (link) => {
+      const { authorizeUrl } = await (await call("/auth/start", { method: "POST", link })).json();
+      const state = new URL(authorizeUrl).searchParams.get("state");
+      const html = await (await call(`/auth/callback?code=c&state=${state}`)).text();
+      const m = html.match(/#\/whoop-claim\/([\w-]+)/);
+      return m ? m[1] : null;
+    };
+    return { kv, call, signIn };
+  };
+  const ATT = "attacker-link-0123456789abcdef", OWN = "owner-link-0123456789abcdefgh";
+  const r = {};
+  try {
+    const a = mk("https://app.example");
+    const claim = await a.signIn(ATT);              // started with the attacker's link…
+    r.claimIssued = !!claim;
+    r.noTokensYet = ![...a.kv.keys()].some((k) => k.startsWith("link:"));
+    const stolen = await a.call("/auth/claim", { method: "POST", link: OWN, body: { claim } });   // …approved in the owner's browser
+    r.refused = stolen.status === 403 && (await stolen.json()).error === "started_elsewhere";
+    r.stillNoTokens = ![...a.kv.keys()].some((k) => k.startsWith("link:"));
+    const replay = await a.call("/auth/claim", { method: "POST", link: ATT, body: { claim } });
+    r.singleUse = replay.status === 410;
+    const own = await a.signIn(OWN);
+    const ok = await a.call("/auth/claim", { method: "POST", link: OWN, body: { claim: own } });
+    r.ownerConnects = ok.status === 200 && [...a.kv.keys()].some((k) => k.startsWith("link:"));
+    const legacy = mk("*");
+    r.noOriginNoClaim = (await legacy.signIn(OWN)) === null && [...legacy.kv.keys()].some((k) => k.startsWith("link:"));
+  } finally { globalThis.fetch = realFetch; }
+  group("WHOOP sign-in — the device that started it gets the tokens", () => {
+    it("the callback parks the tokens under a claim instead of binding them", () => { assert.ok(r.claimIssued); assert.ok(r.noTokensYet); });
+    it("a sign-in started with someone else's link is refused when claimed", () => { assert.ok(r.refused); assert.ok(r.stillNoTokens); });
+    it("a claim works once", () => assert.ok(r.singleUse));
+    it("the owner's own sign-in connects", () => assert.ok(r.ownerConnects));
+    it("without APP_ORIGIN the Worker falls back to binding directly", () => assert.ok(r.noOriginNoClaim));
+  });
+}
+
 // The Worker's version check, against the real handler on an in-memory KV.
 {
   const worker = (await import("../backup-worker/src/index.js")).default;

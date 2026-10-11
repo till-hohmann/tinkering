@@ -5,7 +5,7 @@
 //   logCardio()     — the run-details form (distance/HR/RPE/time). Shown AFTER
 //                     the cool-down, so the Whoop numbers are final.
 
-import { el, clear } from "../ui.js";
+import { el, clear, esc } from "../ui.js";
 import { icon } from "../icons.js";
 import { illustration } from "../illustrations.js";
 import { previousCardio, getZoneBounds, cardioHistory, cardioHistoryAcross, getLastCardioModality, setLastCardioModality } from "../store.js";
@@ -304,10 +304,10 @@ export async function logCardio(container, program, day, weekday, iso, { tracked
       refreshTarget();
       const z4 = m.zoneMins && m.zoneMins[4], z5 = m.zoneMins && m.zoneMins[5];
       const hardMin = (z4 || 0) + (z5 || 0);
-      whoopNote.innerHTML = `<span style="color:var(--accent)">●</span> Filled from ${tracker.label}${m.sport ? " (" + m.sport + ")" : ""}` +
-        (m.maxHR ? ` · max ${m.maxHR} bpm` : "") +
-        (hardMin ? ` · ${hardMin} min in Zone 4-5` : "") +
-        (m.strain != null ? ` · strain ${m.strain}` : "");
+      whoopNote.innerHTML = `<span style="color:var(--accent)">●</span> Filled from ${esc(tracker.label)}${m.sport ? " (" + esc(m.sport) + ")" : ""}` +
+        (m.maxHR ? ` · max ${esc(m.maxHR)} bpm` : "") +
+        (hardMin ? ` · ${esc(hardMin)} min in Zone 4-5` : "") +
+        (m.strain != null ? ` · strain ${esc(m.strain)}` : "");
       whoopNote.style.display = "";
   }
 

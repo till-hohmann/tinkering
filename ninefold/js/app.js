@@ -64,6 +64,13 @@ const routes = [
   [/^#\/welcome$/, () => renderWelcome(), null],
   [/^#\/build$/, () => renderBuilder(), null],
   [/^#\/settings$/, () => renderSettings(), "profile"],
+  // Back from WHOOP's consent screen with a single-use claim (see whoop.js).
+  [/^#\/whoop-claim\/([\w-]+)$/, async (m) => {
+    const { whoopClaim } = await import("./whoop.js");
+    const r = await whoopClaim(m[1]);
+    window.location.replace("#/settings");
+    if (!r.ok) window.alert(r.message);
+  }, null],
 ];
 
 /**
@@ -243,6 +250,23 @@ function registerSW() {
     // without offline support until a slow visit happened to win the race).
     if (document.readyState === "complete") register();
     else window.addEventListener("load", register);
+
+    // A NEW VERSION TAKING OVER AN OPEN PAGE. The worker skips waiting and claims
+    // open pages, so a page loaded from the old version kept running while its
+    // later lazy imports (profile.js, mobility.js, health/*) came from the new
+    // one — old code calling new modules, which can break a screen outright.
+    // Reload when the new worker takes over, but only somewhere a reload costs
+    // nothing: never mid-workout, where it waits for the next calm screen.
+    const hadController = !!navigator.serviceWorker.controller;   // first install: nothing stale to replace
+    let reloadPending = false;
+    // Screens with nothing in progress: no workout or practice running (#/do,
+    // #/yoga/do), no half-typed form (Settings, Nutrition, the builder).
+    const calm = () => /^#\/?$|^#\/(week|calendar|progress|body|history|records|yoga)$/.test(location.hash || "#/");
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadController) return;
+      if (calm()) location.reload(); else reloadPending = true;
+    });
+    window.addEventListener("hashchange", () => { if (reloadPending && calm()) location.reload(); });
   }
 }
 

@@ -56,6 +56,42 @@ const VERSION_HEADER = "X-Backup-Version";
 const etagOf = async (text) => (await sha256Hex(text || "null")).slice(0, 24);
 const sameVersion = (a, b) => String(a || "").replace(/^W\//, "").replace(/"/g, "") === String(b || "");
 
+// --- what a Shortcut may store ------------------------------------------------
+// Not a whitelist: the app reads unknown field names to tell you a Shortcut is
+// mis-keyed, so those have to arrive. Bounded instead — primitives only, short
+// keys and strings, a few workouts a day, heart-rate samples thinned — so one
+// misbehaving Shortcut can't grow the store past what KV will hold.
+const HEALTH_MAX_BYTES = 5_000_000;
+const MAX_KEYS = 40, MAX_KEY = 64, MAX_STR = 200, MAX_WORKOUTS = 20, MAX_SAMPLES = 1500;
+const prim = (v) => (typeof v === "number" ? (Number.isFinite(v) ? v : null)
+  : typeof v === "boolean" ? v
+  : typeof v === "string" ? v.slice(0, MAX_STR) : undefined);
+function boundedObject(o, extra) {
+  const out = {};
+  let n = 0;
+  for (const [k, v] of Object.entries(o || {})) {
+    if (n >= MAX_KEYS || k.length > MAX_KEY) continue;
+    const special = extra && extra(k, v);
+    if (special !== undefined) { out[k] = special; n++; continue; }
+    const p = prim(v);
+    if (p !== undefined) { out[k] = p; n++; }
+  }
+  return out;
+}
+function thinned(samples) {
+  if (!Array.isArray(samples)) return undefined;
+  const step = Math.max(1, Math.ceil(samples.length / MAX_SAMPLES));
+  return samples.filter((_, i) => i % step === 0).slice(0, MAX_SAMPLES)
+    .map((s) => (s && typeof s === "object" ? boundedObject(s) : prim(s))).filter((s) => s !== undefined);
+}
+function boundedDay(d) {
+  return boundedObject(d, (k, v) => {
+    if (k !== "workouts") return undefined;
+    if (!Array.isArray(v)) return [];
+    return v.slice(0, MAX_WORKOUTS).map((w) => boundedObject(w, (k2, v2) => (k2 === "hrSamples" ? thinned(v2) : undefined)));
+  });
+}
+
 // Constant-time-ish compare so the token can't be recovered a byte at a time.
 function safeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
@@ -240,16 +276,25 @@ export default {
       let written = 0;
       for (const d of days) {
         if (!d || typeof d.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(d.date)) continue;
-        byDate[d.date] = { ...(byDate[d.date] || {}), ...d };
+        byDate[d.date] = { ...(byDate[d.date] || {}), ...boundedDay(d) };
         written++;
       }
       // Bound the store so a runaway Shortcut can't grow it without limit —
       // two years of daily metrics is far more than any view reads.
       const dates = Object.keys(byDate).sort();
       if (dates.length > 800) for (const stale of dates.slice(0, dates.length - 800)) delete byDate[stale];
+      // …and by SIZE, not only by day count: days carrying per-second heart-rate
+      // samples can pass KV's 25 MB value limit long before 800 days, and from
+      // then on every put throws and every later ingest fails. Oldest go first.
+      let text = JSON.stringify({ byDate, updatedAt: new Date().toISOString(), source: "apple-health" });
+      const kept = Object.keys(byDate).sort();
+      while (text.length > HEALTH_MAX_BYTES && kept.length > 1) {
+        delete byDate[kept.shift()];
+        text = JSON.stringify({ byDate, updatedAt: new Date().toISOString(), source: "apple-health" });
+      }
 
-      store = { byDate, updatedAt: new Date().toISOString(), source: "apple-health" };
-      await env.STRONG_BACKUP.put(HEALTH_KEY, JSON.stringify(store));
+      store = JSON.parse(text);
+      await env.STRONG_BACKUP.put(HEALTH_KEY, text);
       return new Response(JSON.stringify({ ok: true, written, totalDays: Object.keys(byDate).length }),
         { headers: jsonHeaders });
     }

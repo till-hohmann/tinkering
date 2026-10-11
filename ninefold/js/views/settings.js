@@ -26,7 +26,7 @@ import { weightLabel, weightValue, weightToKg, lengthLabel, lengthValue, lengthT
   METRIC_EQUIPMENT, IMPERIAL_EQUIPMENT } from "../units.js";
 import { resolvedConfig, setRuntimeConfig, hasBackup } from "../config.js";
 import * as db from "../db.js";
-import { el, mount, go, setChildren } from "../ui.js";
+import { el, mount, go, setChildren, esc } from "../ui.js";
 import { shoesCard } from "../components/shoes-card.js";
 import { cloudPull, cloudCheck, getCloudHealth } from "../cloudsync.js";
 // Baked in rather than read at runtime: an iOS standalone PWA exposes neither
@@ -447,7 +447,7 @@ export async function renderSettings() {
       return;
     }
     if (st.connected) {
-      const who = st.who ? ` as ${st.who}` : "";
+      const who = st.who ? ` as ${esc(st.who)}` : "";
       // Apple pushes on a schedule rather than answering on demand, so a bridge
       // that stopped firing must READ as stopped — otherwise three-week-old
       // numbers quietly present themselves as today's.
@@ -455,13 +455,13 @@ export async function renderSettings() {
         // Data is arriving and none of it is readable — the Shortcut is sending
         // its own field names. Reads as broken, because it is.
         trkLine.innerHTML = `<span style="color:var(--red)">●</span> Data is arriving but none of it is readable.`
-          + ` Your Shortcut is sending ${st.unrecognised.map((k) => "<code>" + k + "</code>").join(", ")}`
+          + ` Your Shortcut is sending ${st.unrecognised.map((k) => "<code>" + esc(k) + "</code>").join(", ")}`
           + ` — the app reads the exact names in the setup steps below.`;
       } else if (st.stale) {
-        trkLine.innerHTML = `<span style="color:var(--amber)">●</span> Last push ${st.lastPush} (${st.staleDays} days ago). Check the Shortcut automation is still enabled.`;
+        trkLine.innerHTML = `<span style="color:var(--amber)">●</span> Last push ${esc(st.lastPush)} (${esc(st.staleDays)} days ago). Check the Shortcut automation is still enabled.`;
       } else {
         trkLine.innerHTML = `<span style="color:var(--accent)">●</span> Connected${who}. `
-          + (st.lastPush ? `Last push ${st.lastPush}, ${st.days} days stored.` : "Runs and readiness can auto-fill.");
+          + (st.lastPush ? `Last push ${esc(st.lastPush)}, ${esc(st.days)} days stored.` : "Runs and readiness can auto-fill.");
       }
       trkBtnRow.appendChild(el("button.btn", { onclick: loadLatest }, "Refresh data"));
       if (trk.id === "whoop") {

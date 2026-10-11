@@ -28,8 +28,16 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 // Written out rather than pulled in: the app has no dependencies and this is the
 // whole of what RFC 4180 needs. Quotes a field only when it must, because a file
 // full of unnecessary quotes is one people stop trusting themselves to edit.
+//
+// A CELL A SPREADSHEET WOULD EXECUTE is neutralised: text starting with = + - @
+// (or a tab / CR) is a formula to Excel and LibreOffice, so a block name or a
+// prescription typed as "=HYPERLINK(...)" would run when the export was opened.
+// A leading apostrophe makes it text; parseCSV takes it off again, so a plan
+// still round-trips exactly.
+const FORMULA_START = /^[=+\-@\t\r]/;
 function csvCell(v) {
-  const s = v == null ? "" : String(v);
+  let s = v == null ? "" : String(v);
+  if (FORMULA_START.test(s)) s = "'" + s;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
@@ -55,7 +63,9 @@ export function parseCSV(text) {
   }
   if (field !== "" || row.length) { row.push(field); rows.push(row); }
   // A trailing newline yields one empty row; so does a blank line mid-file.
-  return rows.filter((r) => r.some((c) => c !== ""));
+  // The apostrophe csvCell puts in front of a formula-looking cell comes off.
+  return rows.filter((r) => r.some((c) => c !== ""))
+    .map((r) => r.map((c) => (/^'[=+\-@\t\r]/.test(c) ? c.slice(1) : c)));
 }
 
 // --- export ------------------------------------------------------------------

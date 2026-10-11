@@ -29,6 +29,15 @@ function appendChildren(node, children) {
   }
 }
 
+/**
+ * Escape text for an HTML template. Anything that came from OUTSIDE the app — a
+ * Shortcut's field names, a tracker's workout type, a value in an imported file —
+ * goes through this before it reaches innerHTML, or a crafted payload runs as
+ * script in the app's origin, where the backup token lives.
+ */
+export const esc = (v) => String(v == null ? "" : v)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
 export function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
 /**

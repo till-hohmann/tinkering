@@ -13,6 +13,11 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 212, notes: [
+    "Connecting WHOOP is safer. The connection now goes to the device that started it: someone who knew your WHOOP connection address can no longer send you a sign-in link that would connect your WHOOP to them. After approving on WHOOP's page you land back in the app, which finishes the connection.",
+    "The app now reloads itself after an update, but only on a screen where nothing is in progress, never in the middle of a workout.",
+    "Plan spreadsheets you export can no longer contain cells that run as formulas when opened, and text that arrives from a Health Shortcut or a tracker is always shown as plain text.",
+  ] },
   { v: 211, notes: [
     "Settings now travel between your devices. Change your heart-rate zones, a gym or your routine on one, and the other picks it up. Until now a change stayed on the device where you made it. Settings you haven't touched since updating stay as they are on each device.",
     "Your backup now refuses an upload built on an out-of-date copy. The app then fetches the newer copy, merges it and tries again, so two devices can't overwrite each other's workouts.",

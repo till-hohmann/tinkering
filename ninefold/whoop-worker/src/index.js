@@ -12,6 +12,11 @@
 //    WHOOP tokens in KV keyed by sha256(linkId), so a KV dump never reveals a
 //    usable credential.
 //  - OAuth CSRF is covered by a random, single-use, short-TTL `state`.
+//  - The DEVICE THAT STARTED a sign-in is the one that gets the tokens: the
+//    callback parks them under a single-use claim and sends the browser back to
+//    the app, which redeems it with its own linkId. Without that, anyone who
+//    knew this URL could start a sign-in bound to THEIR link, send the consent
+//    page to the owner, and read the owner's data once it was approved.
 //  - The Worker stores ONLY OAuth tokens — never the health data itself, which
 //    streams straight through to the app on demand.
 //  - CORS is locked to the app origin; every data endpoint requires the bearer
@@ -58,6 +63,7 @@ export default {
     try {
       if (path === "/auth/start" && req.method === "POST") return authStart(req, env, url, origin);
       if (path === "/auth/callback" && req.method === "GET") return authCallback(env, url, origin);
+      if (path === "/auth/claim" && req.method === "POST") return authClaim(req, env, origin);
       if (path === "/status" && req.method === "GET") return status(req, env, origin);
       if (path === "/disconnect" && req.method === "POST") return disconnect(req, env, origin);
       if (path === "/workouts" && req.method === "GET") return proxy(req, env, url, origin, "/activity/workout");
@@ -101,8 +107,30 @@ async function authCallback(env, url, origin) {
   const tok = await tokenRequest(env, { grant_type: "authorization_code", code,
     redirect_uri: `${url.origin}/auth/callback` });
   if (!tok || !tok.access_token) return page("Could not complete WHOOP sign-in. Please try again.", origin, false);
-  await storeTokens(env, linkHash, tok);
-  return page("WHOOP connected. You can return to Ninefold.", origin, true);
+  // Without APP_ORIGIN there is no app to hand the claim back to, so the old
+  // direct binding remains. Set APP_ORIGIN (wrangler.toml) to close the gap.
+  if (!origin || origin === "*") {
+    await storeTokens(env, linkHash, tok);
+    return page("WHOOP connected. You can return to Ninefold.", origin, true);
+  }
+  const claim = randUrlSafe(24);
+  await env.STRONG_WHOOP.put("claim:" + claim, JSON.stringify({ linkHash, tok }), { expirationTtl: STATE_TTL });
+  return page("WHOOP approved. Finishing in Ninefold…", origin, true, `${origin}/#/whoop-claim/${claim}`);
+}
+
+async function authClaim(req, env, origin) {
+  const linkId = bearer(req);
+  if (!linkId) return json({ error: "missing_link_id" }, 400, origin);
+  let claim = null;
+  try { claim = (await req.json()).claim; } catch (_) { /* fall through */ }
+  if (!claim || typeof claim !== "string") return json({ error: "missing_claim" }, 400, origin);
+  const raw = await env.STRONG_WHOOP.get("claim:" + claim);
+  if (!raw) return json({ error: "expired" }, 410, origin);
+  await env.STRONG_WHOOP.delete("claim:" + claim);   // single use, whoever presents it
+  const rec = JSON.parse(raw);
+  if (rec.linkHash !== (await sha256Hex(linkId))) return json({ error: "started_elsewhere" }, 403, origin);
+  await storeTokens(env, rec.linkHash, rec.tok);
+  return json({ connected: true }, 200, origin);
 }
 
 async function tokenRequest(env, params) {
@@ -172,7 +200,7 @@ async function proxy(req, env, url, origin, apiPath) {
 }
 
 // --- the post-auth landing page (shown in the browser tab WHOOP redirects to) ---
-function page(msg, origin, ok) {
+function page(msg, origin, ok, next) {
   const html = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ninefold · WHOOP</title><style>
@@ -183,6 +211,7 @@ h2{font-weight:700;font-size:1.15rem;line-height:1.4}
 a{display:inline-block;margin-top:22px;background:#2fe6a6;color:#042016;font-weight:800;
 padding:14px 24px;border-radius:13px;text-decoration:none}</style></head>
 <body><div class="c"><div class="t">${ok ? "✓" : "⚠"}</div><h2>${msg}</h2>
-<a href="${origin}/#/settings">Return to Ninefold</a></div></body></html>`;
+<a href="${next || origin + "/#/settings"}">Return to Ninefold</a></div>
+${next ? `<script>location.replace(${JSON.stringify(next)})</script>` : ""}</body></html>`;
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }

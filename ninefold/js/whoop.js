@@ -60,6 +60,27 @@ export async function whoopConnect() {
   window.location.href = authorizeUrl;   // → WHOOP consent → worker callback → back to the app
 }
 
+// ⚠ THE SIGN-IN IS CLAIMED BY THE DEVICE THAT STARTED IT. The Worker used to
+// store the tokens under whatever link the sign-in was started with, so anyone
+// who knew the broker URL could start one with THEIR link, send the real WHOOP
+// consent page to you, and read your data once you approved it. A Worker with
+// this fix parks the tokens under a single-use claim and sends you back here;
+// this device redeems it with its own link, and a claim started elsewhere is
+// refused. An older Worker still stores directly and never sends a claim.
+export async function whoopClaim(claim) {
+  const base = await endpoint();
+  if (!base) return { ok: false, message: "WHOOP isn't set up on this device." };
+  try {
+    const r = await fetch(base + "/auth/claim", { method: "POST",
+      headers: { ...(await authHeader()), "Content-Type": "application/json" }, body: JSON.stringify({ claim }) });
+    if (r.ok) return { ok: true };
+    const body = await r.json().catch(() => ({}));
+    return { ok: false, message: body.error === "started_elsewhere"
+      ? "That WHOOP sign-in was started from a different device or browser, so it wasn't connected here. Start it again from this app."
+      : "That WHOOP sign-in expired or was already used. Start it again from Settings." };
+  } catch { return { ok: false, message: "Couldn't reach the WHOOP connection. Check your network and try again." }; }
+}
+
 export async function whoopDisconnect() {
   try { await req("/disconnect", { method: "POST" }); } catch { /* offline */ }
 }
