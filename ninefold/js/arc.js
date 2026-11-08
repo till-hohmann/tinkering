@@ -83,6 +83,25 @@ export function latestWeight(weightLog, iso) {
   return { kg: last.kg, date: last.date, sameSince: since, sinceChangeDays: daysBetweenISO(since, iso) };
 }
 
+/**
+ * What to do with the tracker's bodyweight (WHOOP keeps ONE profile value, not a
+ * dated log, so a weigh-in there is visible only as that value changing).
+ *
+ *   "skip"     the tracker shows what it showed last time: nothing new happened.
+ *              Crucially this protects a weight typed into the app today from
+ *              being overwritten by a stale tracker value.
+ *   "remember" the tracker value moved but already matches the app's latest
+ *              weigh-in (entered in both places): note it, log nothing.
+ *   "log"      a new weigh-in made on the tracker: log it as today's.
+ */
+export function trackerWeightAction(lastSeenKg, latestLoggedKg, readingKg) {
+  if (!(readingKg > 0)) return "skip";
+  const r = round1(readingKg);
+  if (lastSeenKg != null && round1(lastSeenKg) === r) return "skip";
+  if (latestLoggedKg != null && round1(latestLoggedKg) === r) return "remember";
+  return "log";
+}
+
 /** The straight line from the start weight to the goal: where you "should" be today. */
 export function expectedWeight(arc, iso) {
   const g = (arc && arc.goals) || {};

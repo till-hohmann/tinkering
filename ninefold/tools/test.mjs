@@ -4975,6 +4975,15 @@ group("arc — countdown, goals and turning up", () => {
     assert.ok(w.stale && w.sinceChangeDays === 10);
     assert.ok(!A.weightStatus(arc, [...log, { date: "2026-11-13", kg: 98.9 }], "2026-11-13").stale);
   });
+  it("a tracker weight is logged only when it changed on the tracker", () => {
+    assert.equal(A.trackerWeightAction(99.2, 99.2, 99.2), "skip");    // nothing new
+    assert.equal(A.trackerWeightAction(99.2, 98.5, 99.2), "skip");    // typed in the app today: stale tracker never overwrites it
+    assert.equal(A.trackerWeightAction(99.2, 99.2, 98.7), "log");     // weighed on WHOOP
+    assert.equal(A.trackerWeightAction(99.2, 98.7, 98.7), "remember"); // entered in both places
+    assert.equal(A.trackerWeightAction(null, 99.2, 99.2), "remember"); // first look: already logged
+    assert.equal(A.trackerWeightAction(null, 99.2, 98.9), "log");
+    assert.equal(A.trackerWeightAction(null, null, null), "skip");
+  });
   it("VO2max progress runs from the start value to the goal", () => {
     const v = A.vo2Status(arc, [{ date: "2026-11-08", value: 51 }]);
     assert.equal(v.toGo, 1); assert.equal(v.pct, 0);

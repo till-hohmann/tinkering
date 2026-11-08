@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 214, notes: [
+    "Weigh in on your tracker and the app picks it up. With WHOOP or Apple Health connected, a new weight there is logged as that day's weigh-in when you open Today, so you only enter it in one place. A weight you type into the app is never overwritten by an older tracker value.",
+  ] },
   { v: 213, notes: [
     "Arcs: a dated push toward a few goals. While one runs, Today opens on a night-sky countdown to its end date, with a gauge for each goal (weight against the line to your target, VO₂max, average recovery since the arc began, days protein was hit) and how many planned sessions you've done. Set one up under Profile → Arc.",
     "Tap the weight gauge to weigh in. It asks when the number hasn't moved for a week, because a weight copied forward from your last session looks like a plateau.",

@@ -19,7 +19,7 @@ import { el, mount, go, countUp, setChildren } from "../ui.js";
 import { illustration, workoutFigure } from "../illustrations.js";
 import { ringStat } from "../components/charts.js";
 import { orbEl } from "../components/orb.js";
-import { recoveryToday, sleepFor, burnFor, provider, has, CAP } from "../health/index.js";
+import { recoveryToday, sleepFor, burnFor, provider, has, CAP, syncTrackerWeight } from "../health/index.js";
 import { getProfile } from "../profile.js";
 import { isLegDay, isLegSession } from "../volume.js";
 import { arcShowing } from "../arc.js";
@@ -699,6 +699,12 @@ export async function renderHome() {
   if (!done) fillReadinessHero(orbHero, kicker, weekFallback, makeMini);   // pending workout → load WHOOP recovery (fall back to week progress if unavailable)
   // "Food & energy" switched off meant nothing here: the card filled anyway.
   if (!homeProfile || homeProfile.features.nutrition !== false) fillFuelToday(fuelToday, iso);
+  // A weigh-in made on the tracker (WHOOP keeps the weight, so nobody has to
+  // type it twice). Only a NEW value is logged; when one arrives, Today redraws
+  // once so the arc and the protein target use it.
+  syncTrackerWeight().then((r) => {
+    if (r && (location.hash === "" || location.hash === "#/")) renderHome();
+  });
 }
 
 // A dead backup, said out loud. Deliberately narrow: only when a backup is

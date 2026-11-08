@@ -143,6 +143,36 @@ export async function syncTrackerVO2max() {
   } catch (_) { return null; }        // a tracker being offline is not an error
 }
 
+// --- pulling a tracker's bodyweight into the weight log ------------------------
+// So a weigh-in only has to happen in ONE place. WHOOP holds a single current
+// weight, not a history, so a new weigh-in is recognised by the value changing
+// since this device last looked (device-local pref `trackerWeightSeen`), and is
+// logged under the day the app first sees it. See arc.js trackerWeightAction.
+// Throttled: Today calls this on every render.
+let weightCheckedAt = 0;
+export async function syncTrackerWeight({ force = false } = {}) {
+  try {
+    if (!force && Date.now() - weightCheckedAt < 10 * 60 * 1000) return null;
+    weightCheckedAt = Date.now();
+    const prof = await getProfile();
+    if (!prof || (prof.features && prof.features.weight === false)) return null;
+    if (!(await has(CAP.body))) return null;
+    const b = await body();
+    if (!b || !(b.weightKg > 0)) return null;
+    const { getWeightLog, setBodyweight } = await import("../store.js");
+    const { trackerWeightAction } = await import("../arc.js");
+    const log = await getWeightLog();
+    const latest = log.length ? log[log.length - 1].kg : null;
+    const seen = await db.getPref("trackerWeightSeen");
+    const action = trackerWeightAction(Number.isFinite(seen) ? seen : null, latest, b.weightKg);
+    if (action === "skip") return null;
+    await db.setPref("trackerWeightSeen", b.weightKg);
+    if (action === "remember") return null;
+    await setBodyweight(b.weightKg);
+    return { kg: b.weightKg, date: todayISO() };
+  } catch (_) { return null; }        // offline / not linked: nothing to do
+}
+
 // --- shared load maths -------------------------------------------------------
 // ACWR from ANY daily series. Acute = last 7 days' mean, chronic = last 28 days'
 // mean, ratio in ~0.8-1.3 is the usual "sweet spot", >1.5 a risky ramp, <0.8
