@@ -430,7 +430,8 @@ export function generateProgram(input) {
   }
   for (const c of analysis.conflicting) {
     const a = adaptationById(c.a), b = adaptationById(c.b);
-    warnings.push(`${a.short} and ${b.short} pull in opposite directions. ${c.advice}`);
+    // The advice already opens with "These pull in opposite directions."
+    warnings.push(`${a.short} and ${b.short}: ${c.advice}`);
   }
 
   // Step 4: frequency from real availability.

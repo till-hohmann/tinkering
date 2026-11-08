@@ -20,6 +20,11 @@ compatibility_date = "2024-11-01"
 #                   [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
 #                   [Convert]::ToBase64String($b)
 #
+# Sharing this Worker with someone else? Give them their own token instead:
+#   wrangler secret put BACKUP_TOKENS
+#     -> one or more further tokens, comma-separated. Each gets its own backup
+#        and Apple Health store; nobody can read anybody else's.
+#
 # Then put the same URL + token into the app: Settings -> Data & backup ->
 # Cloud backup, or bake them into your private config overlay.
 #

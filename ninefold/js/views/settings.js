@@ -263,6 +263,10 @@ export async function renderSettings() {
   const arcCard = await (async () => {
     const prof = await getProfile();
     const a = prof.arc || null, g = (a && a.goals) || {};
+    // Recovery needs a tracker that scores it; protein needs food logging.
+    // Offering either without its source left a gauge reading "no data" forever.
+    const canRecover = (await has(CAP.recovery)) || g.recoveryPct > 0;
+    const eatsLogged = !!(prof.features && prof.features.nutrition);
     const dateIn = (v, label) => el("input", { type: "date", value: v || "", "aria-label": label,
       style: "flex:1;min-width:0;padding:8px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)" });
     const numIn = (v, label, ph) => el("input", { type: "text", inputmode: "decimal", value: v != null ? String(v) : "",
@@ -296,12 +300,13 @@ export async function renderSettings() {
     return el("div.card", {}, [
       el("div.label", { text: "Arc" }),
       el("p.note", { style: "margin-top:4px", text:
-        "A dated push toward a few goals. While it runs, Today opens on a countdown with one gauge per goal and how many planned sessions you've done. Protein uses your nutrition target." }),
+        "A dated push toward a few goals — losing or gaining weight both work. While it runs, Today opens on a countdown with one gauge per goal and how many planned sessions you've done. Leave a start blank to use your reading from the start date, and any goal blank to leave it out."
+        + (eatsLogged ? " Protein uses your nutrition target." : "") }),
       el("div", { style: "margin-top:10px" }, [nameIn]),
       el("div.row", { style: "margin-top:10px;align-items:center;gap:6px" }, [startIn, el("span.dim", { text: "→" }), endIn]),
       row("Weight", "start → goal", wStart, el("span.dim", { text: "→" }), wGoal),
       row("VO₂max", "start → goal", vStart, el("span.dim", { text: "→" }), vGoal),
-      row("Recovery", "average %, from your tracker", rGoal),
+      canRecover ? row("Recovery", "average %, from your tracker", rGoal) : null,
       el("div.btn-row", { style: "margin-top:12px" }, [
         el("button.btn.primary", { onclick: save }, a ? "Save" : "Start arc"),
         a ? el("button.btn", { onclick: end }, "Remove") : null,
@@ -1383,9 +1388,11 @@ function appleSetup() {
   } }, "Copy ingest URL");
   (async () => {
     const cfg = await resolvedConfig(db);
-    endpointLine.textContent = hasBackup(cfg)
+    const ok = hasBackup(cfg);
+    endpointLine.textContent = ok
       ? cfg.backup.endpoint.replace(/\/+$/, "") + "/health-ingest"
       : "Set up Cloud backup first — the Shortcut posts into it.";
+    copyBtn.disabled = !ok;            // never copy the hint text as if it were a URL
   })();
   const step = (n, title, body) => el("div", { style: "margin-top:12px" }, [
     el("div", { style: "font-weight:700;font-size:.85rem" }, [
@@ -1399,7 +1406,7 @@ function appleSetup() {
       "A web app can't read Apple Health directly — Apple provides no web API. Instead your phone pushes a small daily summary to your own Worker on a schedule, which means you decide exactly what gets sent and can stop it at any time." }),
     step(1, "Copy your ingest URL", "This is your own backup Worker. Nobody else can write to it without your token."),
     endpointLine, copyBtn,
-    step(2, "Create the Shortcut", "Shortcuts app → new shortcut → Find Health Samples for each metric → Get Contents of URL, method POST, JSON body, pasting the URL above and your token as an Authorization header."),
+    step(2, "Create the Shortcut", "Shortcuts app → new shortcut → one Find Health Samples action per metric → Get Contents of URL: method POST, Request Body JSON, one flat field per metric named exactly as below. Add a header: key Authorization, value Bearer, a space, then your backup token. Tap Done after each field, or Shortcuts silently drops it."),
     // THE EXACT KEYS, not a description of them. The Worker stores any JSON it is
     // given, so a Shortcut using its own names pushes "successfully" and delivers
     // nothing readable — the setup used to name the metrics in prose and leave the
@@ -1407,19 +1414,19 @@ function appleSetup() {
     el("pre", { style: "margin:8px 0 0;padding:11px 13px;background:var(--bg-elev2);border:1px solid var(--line);"
       + "border-radius:10px;overflow-x:auto;font-size:.72rem;line-height:1.5" },
       [el("code", { text:
-`{ "days": [ {
-    "date":        "2026-08-09",
-    "restingHR":   50,
-    "hrv":         116,
-    "sleepHours":  7.4,
-    "weightKg":    72.5,
-    "activeKcal":  780,
-    "basalKcal":   1500,
-    "vo2max":      44.2
-} ] }` })]),
+`{
+  "date":        "2026-08-09",
+  "restingHR":   "50",
+  "hrv":         "116",
+  "sleepHours":  "7.4",
+  "weightKg":    "72.5",
+  "activeKcal":  "780",
+  "basalKcal":   "1500",
+  "vo2max":      "44.2"
+}` })]),
     el("p.note", { style: "margin-top:6px", text:
-      "Spelling matters — these are read exactly as written. Send only the ones you have; anything missing is simply not shown." }),
-    step(3, "Automate it", "Shortcuts → Automation → Time of Day, every morning, run it without asking. Once a day is enough; the app reads whatever was last pushed."),
+      "Spelling matters — these are read exactly as written. Use the Text field type for every value: Shortcuts' Number type cuts off decimals (7.4 hours arrives as 7). \"date\" is the day the numbers belong to (Format Date, yyyy-MM-dd). Send only the ones you have; anything missing is simply not shown." }),
+    step(3, "Automate it", "Shortcuts → Automation → Time of Day, late evening (say 21:30), Run Immediately, so the day's energy and workouts are complete. Run it by hand after a workout to see it straight away. Re-running is safe: the same day is overwritten."),
     step(4, "Run it once by hand", "Then come back here — the card above should show the last push date."),
     el("p.note", { style: "margin-top:12px;font-size:.73rem", text:
       "Prefer not to build it yourself? The Health Auto Export app does the same thing with a REST destination and no scripting." }),

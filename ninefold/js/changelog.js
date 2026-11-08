@@ -13,6 +13,13 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 216, notes: [
+    "Import from MyFitnessPal: on the Fuel screen, open the export MyFitnessPal emails you (the zip, or the Nutrition Summary .csv inside it). Days in it are added or updated, nothing else is touched, and it says what it will do first.",
+    "Arcs work for gaining weight as well as losing it, and a start left blank now uses your reading from the day the arc began, so the gauge moves from day one.",
+    "The Recovery and Protein gauges only appear when there's something to fill them: a tracker that scores recovery, and food logging switched on.",
+    "Apple Health: the setup steps now describe the Shortcut that actually works (flat fields, values as Text, \"Bearer\" before the token, run in the evening). Weigh-ins are logged on the day they were made, max HR is read from your workouts, and runs pulled from Apple show their time in each zone.",
+    "The Recomp card on Progress shows your average energy balance again.",
+  ] },
   { v: 214, notes: [
     "Weigh in on your tracker and the app picks it up. With WHOOP or Apple Health connected, a new weight there is logged as that day's weigh-in when you open Today, so you only enter it in one place. A weight you type into the app is never overwritten by an older tracker value.",
   ] },

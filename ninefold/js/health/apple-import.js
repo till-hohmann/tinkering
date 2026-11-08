@@ -227,7 +227,8 @@ function finalise(acc) {
 // Minimal reader: locate the End Of Central Directory record in the last 64 KB,
 // walk the central directory for the entry we want, then read its local header
 // to find where the compressed bytes actually start. Only that slice is streamed.
-async function zipEntryStream(file, wantName) {
+export async function zipEntryStream(file, wantName) {
+  const wants = typeof wantName === "function" ? wantName : (n) => n.endsWith(wantName);
   const tailLen = Math.min(file.size, 65536 + 22);
   const tail = new DataView(await file.slice(file.size - tailLen).arrayBuffer());
   let eocd = -1;
@@ -251,10 +252,10 @@ async function zipEntryStream(file, wantName) {
     const localOff = cd.getUint32(p + 42, true);
     const name = dec.decode(new Uint8Array(cd.buffer, cd.byteOffset + p + 46, nameLen));
     // Entries are usually "apple_health_export/export.xml".
-    if (name.endsWith(wantName)) { found = { method, compSize, localOff, name }; break; }
+    if (wants(name)) { found = { method, compSize, localOff, name }; break; }
     p += 46 + nameLen + extraLen + commentLen;
   }
-  if (!found) throw new Error(`${wantName} not found inside the zip.`);
+  if (!found) throw new Error(`${typeof wantName === "string" ? wantName : "The file"} not found inside the zip.`);
 
   // The local header repeats the name/extra lengths, and they can differ from
   // the central directory's — the data offset must come from the local header.

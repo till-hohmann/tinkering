@@ -237,12 +237,13 @@ export async function renderSummary(sessionId) {
           miniStat("Avg HR", `${c.avgHR || "–"}`),
         ]),
       ]));
-      // WHOOP detail: max HR, strain, and time-in-zone (when the run was pulled in)
-      if (c.source === "whoop" && (c.maxHR != null || c.strain != null || (c.zoneMins && c.zoneMins.some((m) => m)))) {
+      // Tracker detail: max HR, strain, and time-in-zone (when the run was pulled in
+      // from WHOOP or Apple Health — Apple runs carry zone minutes too).
+      if ((c.source === "whoop" || c.source === "apple") && (c.maxHR != null || c.strain != null || (c.zoneMins && c.zoneMins.some((m) => m)))) {
         const zoneChips = (c.zoneMins || []).map((m, z) => (m ? el("span.zchip.z" + z, { style: "margin:0 6px 6px 0", text: `Z${z} ${m}m` }) : null)).filter(Boolean);
         children.push(el("div.card", {}, [
-          el("div.row", {}, [el("div.label", { text: "From WHOOP" }), el("span.spacer"),
-            c.maxHR != null ? el("span.dim", { text: `max ${c.maxHR} · strain ${c.strain != null ? c.strain : "–"}` }) : null]),
+          el("div.row", {}, [el("div.label", { text: c.source === "apple" ? "From Apple Health" : "From WHOOP" }), el("span.spacer"),
+            c.maxHR != null ? el("span.dim", { text: `max ${c.maxHR}` + (c.strain != null ? ` · strain ${c.strain}` : "") }) : null]),
           zoneChips.length ? el("div", { style: "margin-top:12px;display:flex;flex-wrap:wrap" }, zoneChips) : null,
         ]));
       }

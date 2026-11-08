@@ -285,16 +285,21 @@ function summaryLine(day) {
 // Cardio/strength sequencing guidance (programming audit Gap B: interference).
 // Lift before cardio same-day; don't run hard right before legs; prefer low-impact
 // (bike/elliptical) on a cardio day that abuts a leg day. Returns one tip or null.
-// Final-week nudge (programming audit): refresh the Whoop VO₂max reading at the
+// Final-week nudge (programming audit): refresh the VO₂max reading at the
 // block boundary so every block gets a clean before/after. Shows through the
 // program's last week until a reading dated inside that week exists.
 async function vo2RetestTip(program, week) {
   if (!week || !program.lengthWeeks || week.weekNumber !== program.lengthWeeks) return null;
   try {
+    // Only for someone tracking VO2max, and not on Apple Health, which pushes a
+    // fresh reading by itself (syncTrackerVO2max).
+    const prof = await getProfile();
+    if (!(prof && prof.features && prof.features.vo2max)) return null;
+    if (await has(CAP.vo2max)) return null;
     const log = await getVO2maxLog();
     const latest = log.length ? log[log.length - 1].date : null;
     if (latest && week.startDate && latest >= week.startDate) return null;   // already refreshed
-    return "Final week of the block — when Whoop refreshes your VO₂max, log it in Profile so the block's before/after stays clean.";
+    return "Final week of the block — when your watch shows a fresh VO₂max, log it in Profile so the block's before/after stays clean.";
   } catch { return null; }
 }
 

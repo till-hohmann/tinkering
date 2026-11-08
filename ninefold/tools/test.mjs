@@ -4779,6 +4779,45 @@ async function settingsSyncTests() {
   });
 }
 
+// Several people on one Worker: each extra token gets its own backup and health
+// store, and BACKUP_KEY stays with the primary token.
+{
+  const worker = (await import("../backup-worker/src/index.js")).default;
+  const A = "a".repeat(40), B = "b".repeat(40), C = "c".repeat(40);
+  const kv = new Map();
+  const env = { BACKUP_TOKEN: A, BACKUP_TOKENS: B + ",\n" + C, BACKUP_KEY: "owner",
+    STRONG_BACKUP: { get: async (k) => (kv.has(k) ? kv.get(k) : null), put: async (k, v) => { kv.set(k, v); } } };
+  const req = (tok, path, init = {}) => worker.fetch(new Request("https://x" + path, { ...init,
+    headers: { Authorization: "Bearer " + tok, "Content-Type": "application/json" } }), env);
+  const snap = (id) => JSON.stringify({ installId: id, sessions: [{ id: "s" }], programs: [{ id: "p" }],
+    prefs: { profile: { onboardedAt: "2026-11-01" } } });
+  const putA = (await req(A, "/", { method: "PUT", body: snap("inst-a") })).status;
+  const putB = (await req(B, "/", { method: "PUT", body: snap("inst-b") })).status;
+  const putC = (await req(C, "/", { method: "PUT", body: snap("inst-c") })).status;
+  const readA = JSON.parse(await (await req(A, "/")).text());
+  const readB = JSON.parse(await (await req(B, "/")).text());
+  await req(B, "/health-ingest", { method: "POST", body: JSON.stringify({ date: "2026-11-01", hrv: 70 }) });
+  const healthA = await (await req(A, "/health")).text();
+  const healthB = JSON.parse(await (await req(B, "/health")).text());
+  const wrong = (await req("d".repeat(40), "/")).status;
+  const short = (await worker.fetch(new Request("https://x/", { headers: { Authorization: "Bearer x" } }),
+    { ...env, BACKUP_TOKENS: "x" })).status;
+  group("backup Worker — several people on one Worker", () => {
+    it("accepts every listed token", () => assert.deepEqual([putA, putB, putC], [200, 200, 200]));
+    it("keeps each backup to its own token", () => {
+      assert.equal(readA.installId, "inst-a");
+      assert.equal(readB.installId, "inst-b");
+    });
+    it("keeps BACKUP_KEY on the primary token", () => assert.ok(kv.has("owner")));
+    it("keeps health data apart", () => {
+      assert.equal(healthA, "null");
+      assert.equal(healthB.byDate["2026-11-01"].hrv, 70);
+    });
+    it("refuses an unknown token", () => assert.equal(wrong, 401));
+    it("ignores a too-short extra token", () => assert.equal(short, 401));
+  });
+}
+
 // Health ingest: bounded, but unknown keys still arrive (the app reports them).
 {
   const worker = (await import("../backup-worker/src/index.js")).default;
@@ -4948,6 +4987,27 @@ group("sync — a new stamp is never older than what it replaces", () => {
   });
 });
 
+const MFP = await import("../js/mfp-import.js");
+group("MyFitnessPal import — meals summed per day, re-import only touches its own days", () => {
+  const head = "Date,Meal,Calories,Fat (g),Saturated Fat,Carbohydrates (g),Protein (g),Note";
+  const csv = [head,
+    "2026-11-01,Breakfast,500.4,20.2,5,40.1,30.3,",
+    '2026-11-01,Dinner,1200.2,40.4,10,100.2,90.4,"rice, chicken"',
+    "2026-11-02,Lunch,800,30,0,60,70,"].join("\r\n");
+  const r = MFP.parseMfpCsv("﻿" + csv);
+  it("sums the meals of a day and rounds", () =>
+    assert.deepEqual(r.days["2026-11-01"], { kcal: 1701, protein: 121, carbs: 140, fat: 61 }));
+  it("reads a quoted note with a comma in it", () =>
+    assert.deepEqual(MFP.csvFields('a,"b, c",d'), ["a", "b, c", "d"]));
+  it("refuses a file that isn't a nutrition summary", () =>
+    assert.ok(MFP.parseMfpCsv("Date,Steps\n2026-11-01,9000").error));
+  it("adds new days, updates changed ones, leaves matching ones", () => {
+    const log = { "2026-11-01": { kcal: 1701, protein: 121, carbs: 140, fat: 61 }, "2026-11-02": { kcal: 300, protein: 20 } };
+    const p = MFP.planMfpImport({ ...r.days, "2026-11-03": { kcal: 1, protein: 1, carbs: 1, fat: 1 } }, log);
+    assert.deepEqual(p, { add: ["2026-11-03"], update: ["2026-11-02"], same: ["2026-11-01"] });
+  });
+});
+
 const A = await import("../js/arc.js");
 group("arc — countdown, goals and turning up", () => {
   const arc = { name: "Test Arc", startDate: "2026-11-08", endDate: "2027-02-10",
@@ -4983,6 +5043,23 @@ group("arc — countdown, goals and turning up", () => {
     assert.equal(A.trackerWeightAction(null, 99.2, 99.2), "remember"); // first look: already logged
     assert.equal(A.trackerWeightAction(null, 99.2, 98.9), "log");
     assert.equal(A.trackerWeightAction(null, null, null), "skip");
+  });
+  it("a bulk counts up, and being under the line is behind", () => {
+    const bulk = { ...arc, goals: { weightKg: 80, startWeightKg: 70 } };
+    const w = A.weightStatus(bulk, [{ date: "2026-12-26", kg: 73 }], "2026-12-26");
+    assert.equal(w.dir, 1); assert.equal(w.toGo, 7);
+    assert.equal(w.expected, 75.1); assert.equal(w.delta, 2.1);      // ~2 kg light = behind
+    assert.ok(w.pct > 0.25 && w.pct < 0.35, JSON.stringify(w));
+  });
+  it("a blank start uses the weight logged when the arc began, not today's", () => {
+    const open = { ...arc, goals: { weightKg: 90, vo2max: 52 } };
+    const log = [{ date: "2026-11-01", kg: 100 }, { date: "2026-12-26", kg: 95 }];
+    const w = A.weightStatus(open, log, "2026-12-26");
+    assert.equal(w.pct, 0.5);
+    assert.ok(w.expected > 94 && w.expected < 96, JSON.stringify(w));
+    const v = A.vo2Status(open, [{ date: "2026-11-20", value: 48 }, { date: "2027-01-08", value: 50 }]);
+    assert.equal(v.pct, 0.5);
+    assert.equal(A.vo2Status(open, []).toGo, null);
   });
   it("VO2max progress runs from the start value to the goal", () => {
     const v = A.vo2Status(arc, [{ date: "2026-11-08", value: 51 }]);

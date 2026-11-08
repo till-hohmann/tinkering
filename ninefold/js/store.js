@@ -1012,6 +1012,18 @@ export async function setNutrition(date, entry) {
   pushCloud();
 }
 
+// Many days at once (a MyFitnessPal import): one write and one push, not one
+// per day. `days` is { date: {kcal, protein, carbs, fat} }, already rounded.
+export async function importNutritionDays(days) {
+  const log = await getNutritionLog();
+  for (const [date, t] of Object.entries(days || {})) {
+    if (!/^d{4}-d{2}-d{2}$/.test(date)) continue;
+    log[date] = stampRow({ kcal: t.kcal, protein: t.protein, carbs: t.carbs, fat: t.fat });
+  }
+  await db.setPref("nutritionLog", log);
+  pushCloud();
+}
+
 // Current bodyweight (kg) for the protein target — explicit pref first, else the
 // most recent session note, else null. Updated whenever bodyweight is logged.
 export async function getBodyweight() {
@@ -1021,13 +1033,13 @@ export async function getBodyweight() {
     .sort((a, b) => (a.date < b.date ? 1 : -1));
   return sessions.length ? Number(sessions[0].sessionNotes.bodyweightKg) : null;
 }
-export async function setBodyweight(kg) {
+export async function setBodyweight(kg, date) {
   if (!Number.isFinite(kg) || kg <= 0) return;
   const val = Math.round(kg * 10) / 10;
   await db.setPref("bodyweightKg", val);
   // Keep the dated weight series in step, so a weigh-in entered in Settings
   // shows up on the Body chart instead of only moving the protein target.
-  await addWeight(todayISO(), val);
+  await addWeight(date || todayISO(), val);
   pushCloud();
 }
 // Protein target multiplier. The PROFILE owns this now; the legacy top-level

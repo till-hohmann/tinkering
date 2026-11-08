@@ -106,7 +106,7 @@ Finally, in the app: **Settings → Cloud backup**, paste that URL and the same 
 
 **Apple Watch / iPhone.** A web app can't read Apple Health directly — Apple provides no way. Instead your phone *sends* a small daily summary to your own backup service (step 3 is required first).
 
-In the app: **Settings → Tracker → Apple Health → Set up the Health bridge**. It gives you a URL and the exact steps for building a Shortcut that runs each morning. If you'd rather not build one, the **Health Auto Export** app (a few pounds on the App Store) does the same thing with no scripting.
+In the app: **Settings → Tracker → Apple Health → Set up the Health bridge**. It gives you a URL and the exact steps for building a Shortcut that runs each evening. The full guide, including the three mistakes that account for almost every failed setup, is [docs/apple-health.md](./docs/apple-health.md). If you'd rather not build one, the **Health Auto Export** app (a few pounds on the App Store) does the same thing with no scripting.
 
 **WHOOP.** Needs your own free developer app at [developer.whoop.com](https://developer.whoop.com) plus deploying `whoop-worker/`. See [whoop-worker/README.md](./whoop-worker/README.md). WHOOP limits unapproved apps to a small number of users, which is why there's no shared service to join.
 
@@ -143,6 +143,9 @@ Yes — chosen during setup, changeable in Settings. Weights are stored in one i
 
 **I have no equipment at all.**
 It works. Say so during setup and you'll get a bodyweight program — squats, push-ups, inverted rows, pull-ups if you have a bar, hinges, lunges and core. The builder will tell you which patterns it can't cover.
+
+**I log food in MyFitnessPal.**
+Two ways. Copy each day's totals (calories, protein, carbs, fat) into **Today → Fuel**, which takes ten seconds. Or, with MyFitnessPal Premium, request a data export now and then and open the zip it emails you on the Fuel screen (**Import from MyFitnessPal**): every day in it is added or updated, and nothing else is touched, so overlapping exports are fine.
 
 **How do I delete everything?**
 Settings → **Delete all data**. It asks you to type DELETE, then removes everything from the device. If you set up cloud backup, clear that separately — it's your service and the app deliberately won't touch it.

@@ -114,15 +114,24 @@ export default {
 
     const auth = req.headers.get("Authorization") || "";
     const presented = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-    if (!safeEqual(presented, env.BACKUP_TOKEN))
+    // BACKUP_TOKENS (optional secret): more people on the same Worker, one
+    // token each, separated by commas or newlines. Every token is checked so the
+    // time taken doesn't say which one matched.
+    const extra = String(env.BACKUP_TOKENS || "").split(/[\s,]+/).filter((t) => t.length >= 16);
+    const primary = safeEqual(presented, env.BACKUP_TOKEN);
+    let other = false;
+    for (const t of extra) other = safeEqual(presented, t) || other;
+    if (!primary && !other)
       return new Response("unauthorized", { status: 401, headers: H });
 
     // Per-token namespace: two installs on one Worker never collide or leak.
-    // BACKUP_KEY overrides the derived namespace — set it (as a plain [vars]
-    // entry, it is not a secret) when you already have data under a key of your
-    // own choosing, so rotating the token doesn't orphan the existing backup.
-    const ns = env.BACKUP_KEY || (await sha256Hex(env.BACKUP_TOKEN)).slice(0, 16);
-    const STATE_KEY = env.BACKUP_KEY ? env.BACKUP_KEY : "state:" + ns;
+    // BACKUP_KEY overrides the derived namespace of the PRIMARY token only — set
+    // it (as a plain [vars] entry, it is not a secret) when you already have data
+    // under a key of your own choosing, so rotating the token doesn't orphan the
+    // existing backup. Tokens from BACKUP_TOKENS always get their own namespace.
+    const fixedKey = primary ? env.BACKUP_KEY : "";
+    const ns = fixedKey || (await sha256Hex(presented)).slice(0, 16);
+    const STATE_KEY = fixedKey ? fixedKey : "state:" + ns;
     const HEALTH_KEY = "health:" + ns;
 
     const url = new URL(req.url);

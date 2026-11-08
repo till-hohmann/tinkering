@@ -4,7 +4,7 @@
 // target by choice — the balance is shown raw. Any day (today or past) can be
 // edited via the date stepper.
 
-import { getNutrition, setNutrition, getBodyweight, getProteinPerKg, getDeficitTarget } from "../store.js";
+import { getNutrition, setNutrition, getBodyweight, getProteinPerKg, getDeficitTarget, getNutritionLog, importNutritionDays } from "../store.js";
 import { addDaysISO as addDays } from "../dates.js";
 import { todayISO } from "../model.js";
 import * as M from "../model.js";
@@ -61,7 +61,7 @@ export async function renderNutrition(dateParam) {
 
   // Tracked burn for this day — fetched ONCE (cached); the summary recomputes from
   // the cached value on every keystroke. Paginates enough to cover past days.
-  let burn = null, burnLoaded = false;
+  let burn = null, burnLoaded = false, canBurn = true;
   const summary = el("div.card", { style: "margin-top:4px" }, [el("p.note", { style: "margin:0", text: "Loading your burn…" })]);
   function refreshSummary() {
     const kcalIn = M.parseNum(fields.kcal.value);
@@ -90,7 +90,8 @@ export async function renderNutrition(dateParam) {
         : el("div.note", { style: "margin-top:12px", text: "Set your bodyweight in Profile to get a protein target." }),
       el("p.note", { style: "margin-top:6px;font-size:.74rem", text: burn != null
         ? `Out = your tracker's day burn (BMR + activity). Recomp target: ~${deficitTarget} kcal/day deficit.`
-        : (burnLoaded ? "No burn recorded for this day." : "Connect a tracker for the burn side.") }),
+        : !canBurn ? "Calories out need a tracker (WHOOP or Apple Health) — without one, compare intake against your own maintenance estimate."
+        : (burnLoaded ? "No burn recorded for this day yet — it fills in once your tracker has the full day." : "Loading your burn…") }),
     );
   }
 
@@ -101,7 +102,7 @@ export async function renderNutrition(dateParam) {
       backBtn("Today", "#/"),
       el("div.label", { style: "margin-top:8px", text: "Fuel" }),
       stepper,
-      el("p.dim", { style: "margin-top:8px", text: "Copy your totals from MyFitnessPal." }),
+      el("p.dim", { style: "margin-top:8px", text: "Copy your day's totals from your food tracker." }),
     ]),
     summary,
     el("div.card", { style: "margin-top:14px" }, [
@@ -112,13 +113,14 @@ export async function renderNutrition(dateParam) {
       row("Calories", fields.kcal, "kcal"),
     ]),
     status,
+    mfpImportCard(),
   ]);
 
   Object.values(fields).forEach((i) => i.addEventListener("input", refreshSummary));
   refreshSummary();
   // load the burn once, then refresh the summary
   (async () => {
-    try { burn = await burnFor(iso); } catch { burn = null; }
+    try { canBurn = await has(CAP.burn); burn = canBurn ? await burnFor(iso) : null; } catch { burn = null; }
     burnLoaded = true; refreshSummary();
   })();
 
@@ -129,4 +131,47 @@ export async function renderNutrition(dateParam) {
     });
     status.textContent = `Saved ${isToday ? "today" : prettyDate(iso).replace(/,.*/, "")} ✓`;
   } }, "Save"));
+}
+
+// Load a MyFitnessPal export (the emailed .zip, or the Nutrition Summary .csv
+// inside it). Re-importing an overlapping range is the normal use: the export is
+// the record for the days it covers, so those days are added or brought up to
+// date and every other day is left alone. Says what it will do before doing it.
+function mfpImportCard() {
+  const note = el("p.note", { style: "margin-top:8px;min-height:1.1em" });
+  const actions = el("div.btn-row", { style: "margin-top:8px" });
+  const input = el("input", { type: "file", accept: ".zip,.csv,text/csv,application/zip", style: "display:none",
+    "aria-label": "Choose a MyFitnessPal export" });
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0];
+    input.value = "";
+    if (!file) return;
+    setChildren(actions, []);
+    note.textContent = "Reading " + file.name + "…";
+    try {
+      const { readMfpFile, planMfpImport } = await import("../mfp-import.js");
+      const r = await readMfpFile(file);
+      if (r.error) { note.textContent = r.error; return; }
+      const plan = planMfpImport(r.days, await getNutritionLog());
+      const dates = Object.keys(r.days).sort();
+      const todo = plan.add.length + plan.update.length;
+      const span = dates[0] === dates[dates.length - 1] ? dates[0] : dates[0] + " to " + dates[dates.length - 1];
+      if (!todo) { note.textContent = `${span}: every day already matches — nothing to import.`; return; }
+      note.textContent = `${span}: ${plan.add.length} new day(s), ${plan.update.length} updated, ${plan.same.length} unchanged.`;
+      setChildren(actions, [el("button.btn.primary", { onclick: async () => {
+        const pick = {};
+        for (const d of [...plan.add, ...plan.update]) pick[d] = r.days[d];
+        await importNutritionDays(pick);
+        setChildren(actions, []);
+        note.textContent = `Imported ${todo} day(s) ✓`;
+      } }, `Import ${todo} day(s)`)]);
+    } catch (e) { note.textContent = "Couldn't read that file: " + (e.message || e); }
+  });
+  return el("div.card", { style: "margin-top:14px" }, [
+    el("div.label", { text: "Import from MyFitnessPal" }),
+    el("p.note", { style: "margin-top:4px", text:
+      "Request a data export in MyFitnessPal (a Premium feature) for the dates you want, then open the zip it emails you here, or the Nutrition Summary .csv inside it. Days in the export are added or updated; nothing else is touched." }),
+    el("button.btn.block", { style: "margin-top:10px", onclick: () => input.click() }, "Choose export…"),
+    input, note, actions,
+  ]);
 }

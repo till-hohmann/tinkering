@@ -26,7 +26,7 @@ import { resolvedConfig, hasBackup } from "../config.js";
 import * as db from "../db.js";
 import { CAP, acwr, zoneMinutesFromSamples } from "./index.js";
 import { todayISO } from "../model.js";
-import { prevISO } from "../dates.js";
+import { prevISO, addDaysISO } from "../dates.js";
 import { getProfile, resolveZoneBounds } from "../profile.js";
 
 // NUMBERS MAY ARRIVE AS STRINGS, and must still count.
@@ -293,20 +293,31 @@ const provider = {
   async body() {
     const store = await fetchStore();
     if (!store) return null;
-    const dates = Object.keys(daysOf(store)).sort().reverse();
+    const days = daysOf(store);
+    const dates = Object.keys(days).sort().reverse();
+    // Apple records observed max HR per workout, not a stored profile value, so
+    // this is the highest seen in the last 180 days of pushes (a day-level
+    // maxHR, or any workout's) rather than a true max. Read across ALL days: it
+    // used to come only from the day carrying the latest weight, so it was
+    // almost always missing.
+    const floor = dates.length ? addDaysISO(dates[0], -180) : null;
+    let maxHR = null;
     for (const d of dates) {
-      const day = daysOf(store)[d];
-      if (num(day.weightKg) != null) {
-        return {
-          weightKg: Math.round(day.weightKg * 10) / 10,
-          heightM: num(day.heightM),
-          // Apple records observed max HR per workout, not a stored profile
-          // value, so this is the highest seen recently rather than a true max.
-          maxHR: num(day.maxHR) != null ? Math.round(num(day.maxHR)) : null,
-        };
+      if (floor && d < floor) break;
+      const day = days[d] || {};
+      const ws = Array.isArray(day.workouts) ? day.workouts : [];
+      for (const c of [num(day.maxHR), ...ws.map((w) => num(w && (w.maxHR ?? w.maxHeartRate)))]) {
+        if (c != null && c > 100 && c < 230 && (maxHR == null || c > maxHR)) maxHR = Math.round(c);
       }
     }
-    return null;
+    for (const d of dates) {
+      const day = days[d];
+      if (num(day.weightKg) != null) {
+        // date: Apple readings are dated, so a weigh-in is logged on its own day.
+        return { weightKg: Math.round(day.weightKg * 10) / 10, date: d, heightM: num(day.heightM), maxHR };
+      }
+    }
+    return maxHR != null ? { weightKg: null, date: null, heightM: null, maxHR } : null;
   },
 
   // The one thing Apple has and WHOOP doesn't.

@@ -107,14 +107,19 @@ distance, duration and average HR.
 
 1. **Shortcuts → new shortcut.**
 2. Add a **Find Health Samples** action per metric — resting heart rate, HRV,
-   sleep, weight, active energy, basal energy, VO₂max. Take the average or the
-   most recent, whichever suits the metric.
-3. Build a **Dictionary** matching the shape above, then a **Text** action holding
-   the JSON.
-4. **Get Contents of URL** — method `POST`, request body `File`/`Text` with the
-   JSON, and a header `Authorization` set to `Bearer YOUR_TOKEN`.
-5. **Automation → Time of Day**, every morning, *Run Without Asking*. Once a day
-   is plenty.
+   sleep, weight, active energy, basal energy, VO₂max. Take the average, the sum
+   (energy) or the most recent (weight, VO₂max), whichever suits the metric.
+3. Add **Format Date** on *Current Date* with the custom format `yyyy-MM-dd`.
+4. **Get Contents of URL** — method `POST`, **Request Body: JSON**, one flat
+   field per metric using the key names in the table above, each of type
+   **Text** (see "Send decimals as Text"). Add the header `Authorization` with
+   the value `Bearer YOUR_TOKEN` — the word *Bearer*, a space, then the token.
+   Tap *Done* after every key and value (see below).
+5. **Automation → Time of Day**, late evening (say 21:30), *Run Immediately*.
+   The `date` is the day the numbers belong to, so a run late in the day sends a
+   complete day of energy and workouts; a morning run would send a near-empty
+   "today". Run it by hand after a workout if you want it in the app straight
+   away — re-running just overwrites the same day.
 
 Run it once by hand, then open **Profile → Tracker**. It should show the last push
 date. If it shows a red line naming unrecognised keys, your dictionary keys don't
@@ -167,5 +172,6 @@ you care about that history surviving a wipe.
 
 A recovery score. Apple exposes the inputs but no verdict, so the app derives one
 from your HRV, resting HR and sleep against **your own 28-day baseline** and labels
-it as an estimate. It needs about five days of history before it says anything —
-that quiet first week is by design, not a fault.
+it as an estimate. Until about five days of HRV and resting HR exist it leans on
+sleep alone and says so ("from sleep only") — treat the first week's number as a
+rough guide.

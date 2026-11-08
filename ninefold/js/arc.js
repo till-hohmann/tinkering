@@ -102,28 +102,50 @@ export function trackerWeightAction(lastSeenKg, latestLoggedKg, readingKg) {
   return "log";
 }
 
-/** The straight line from the start weight to the goal: where you "should" be today. */
-export function expectedWeight(arc, iso) {
-  const g = (arc && arc.goals) || {};
-  const w = arcWindow(arc, iso);
-  if (!w || !(g.startWeightKg > 0) || !(g.weightKg > 0)) return null;
-  return round1(g.startWeightKg + (g.weightKg - g.startWeightKg) * w.pct);
+// A start left blank in the form means "where I was when the arc began": the
+// last reading on or before the start date, else the first one after it. Using
+// the CURRENT reading instead pinned progress at 0% for the whole arc.
+function startingValue(log, startDate, pick) {
+  const xs = (log || []).filter((e) => e && e.date && pick(e) > 0).sort((a, b) => (a.date < b.date ? -1 : 1));
+  let before = null;
+  for (const e of xs) { if (e.date <= startDate) before = e; else return pick(before || e); }
+  return before ? pick(before) : null;
 }
 
+function startWeight(arc, weightLog) {
+  const g = (arc && arc.goals) || {};
+  return g.startWeightKg > 0 ? g.startWeightKg : startingValue(weightLog, arc && arc.startDate, (e) => e && e.kg);
+}
+
+/** The straight line from the start weight to the goal: where you "should" be today. */
+export function expectedWeight(arc, iso, weightLog) {
+  const g = (arc && arc.goals) || {};
+  const w = arcWindow(arc, iso);
+  const start = startWeight(arc, weightLog);
+  if (!w || !(start > 0) || !(g.weightKg > 0)) return null;
+  return round1(start + (g.weightKg - start) * w.pct);
+}
+
+// Works for a cut and a bulk alike: the direction is the sign of goal − start.
 export function weightStatus(arc, weightLog, iso) {
   const g = (arc && arc.goals) || {};
   if (!(g.weightKg > 0)) return null;
   const cur = latestWeight(weightLog, iso);
-  const expected = expectedWeight(arc, iso);
-  const start = g.startWeightKg > 0 ? g.startWeightKg : cur ? cur.kg : null;
-  if (!cur) return { goal: g.weightKg, current: null, expected, pct: 0, stale: true, delta: null };
-  const span = start - g.weightKg;
+  const expected = expectedWeight(arc, iso, weightLog);
+  const start = startWeight(arc, weightLog) || (cur ? cur.kg : null);
+  if (!cur) return { goal: g.weightKg, current: null, expected, pct: 0, stale: true, delta: null, dir: 0 };
+  const dir = Math.sign(round1(g.weightKg - start));          // -1 cut, +1 bulk, 0 hold
+  const span = Math.abs(g.weightKg - start);
+  const toGo = dir < 0 ? Math.max(0, cur.kg - g.weightKg) : dir > 0 ? Math.max(0, g.weightKg - cur.kg)
+    : Math.abs(cur.kg - g.weightKg);
+  const raw = expected != null ? round1(cur.kg - expected) : null;
   return {
-    goal: g.weightKg, current: cur.kg, date: cur.date, expected,
-    toGo: round1(Math.max(0, cur.kg - g.weightKg)),
-    // + = heavier than the line says you should be today.
-    delta: expected != null ? round1(cur.kg - expected) : null,
-    pct: span > 0 ? clamp01((start - cur.kg) / span) : (cur.kg <= g.weightKg ? 1 : 0),
+    goal: g.weightKg, current: cur.kg, date: cur.date, expected, dir,
+    toGo: round1(toGo),
+    // + = BEHIND the line (too heavy on a cut, too light on a bulk); for a hold,
+    // any distance from the goal counts.
+    delta: raw == null ? null : dir === 0 ? round1(Math.abs(raw)) : round1(dir < 0 ? raw : -raw),
+    pct: span > 0 ? clamp01((dir < 0 ? start - cur.kg : cur.kg - start) / span) : (toGo <= 0.3 ? 1 : 0),
     stale: cur.sinceChangeDays >= 7,
     sinceChangeDays: cur.sinceChangeDays,
   };
@@ -135,8 +157,8 @@ export function vo2Status(arc, vo2Log) {
   if (!(g.vo2max > 0)) return null;
   const log = (vo2Log || []).filter((e) => e && e.value > 0).sort((a, b) => (a.date < b.date ? -1 : 1));
   const cur = log.length ? log[log.length - 1] : null;
-  const start = g.startVo2max > 0 ? g.startVo2max : cur ? cur.value : null;
-  if (!cur) return { goal: g.vo2max, current: null, pct: 0 };
+  if (!cur) return { goal: g.vo2max, current: null, pct: 0, toGo: null };
+  const start = g.startVo2max > 0 ? g.startVo2max : startingValue(log, arc.startDate, (e) => e && e.value) || cur.value;
   const span = g.vo2max - start;
   return {
     goal: g.vo2max, current: cur.value, date: cur.date,

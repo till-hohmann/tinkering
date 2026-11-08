@@ -10,6 +10,7 @@ import { getWeightLog, getVO2maxLog, getNutritionLog, getProteinPerKg, getBodywe
   getAllSessions, resolveDay, getDexaBooked, setBodyweight, getRecoveryCache, setRecoveryCache } from "../store.js";
 import { recoveryHistory, has, CAP } from "../health/index.js";
 import { arcWindow, arcMonths, weightStatus, vo2Status, recoveryStatus, proteinStatus, arcAdherence } from "../arc.js";
+import { getProfile } from "../profile.js";
 import { addDaysISO, daysBetweenISO } from "../dates.js";
 import { weightValue, weightLabel, weightToKg } from "../units.js";
 import * as M from "../model.js";
@@ -108,14 +109,17 @@ export function arcHero(arc, iso) {
   async function fill() {
     const win = arcWindow(arc, iso);
     if (!win) return;
-    const [weights, vo2, nut, perKg, bw, programs, sessions, dexa, cache] = await Promise.all([
+    const [weights, vo2, nut, perKg, bw, programs, sessions, dexa, cache, prof, canRecover] = await Promise.all([
       getWeightLog(), getVO2maxLog(), getNutritionLog(), getProteinPerKg(), getBodyweight(),
-      getAllPrograms(), getAllSessions(), getDexaBooked().catch(() => null), getRecoveryCache()]);
+      getAllPrograms(), getAllSessions(), getDexaBooked().catch(() => null), getRecoveryCache(),
+      getProfile(), has(CAP.recovery).catch(() => false)]);
     const hist = state.history || Object.entries(cache).map(([date, pct]) => ({ date, pct }));
     const w = weightStatus(arc, weights, iso);
     const v = vo2Status(arc, vo2);
-    const r = recoveryStatus(arc, hist, iso);
-    const p = proteinStatus(arc, nut, weights, perKg, iso, bw);
+    // No recovery source (no tracker) or no food logging: no gauge, rather than
+    // one that reads "no data yet" for the whole arc.
+    const r = canRecover ? recoveryStatus(arc, hist, iso) : null;
+    const p = prof && prof.features && prof.features.nutrition ? proteinStatus(arc, nut, weights, perKg, iso, bw) : null;
     const ad = arcAdherence(arc, programs, sessions, iso, resolveDay);
     const dexaISO = typeof dexa === "string" ? dexa : dexa && dexa.date;
 
@@ -130,7 +134,7 @@ export function arcHero(arc, iso) {
         () => { state.weighing = !state.weighing; fill(); }));
     }
     if (v) gauges.push(gauge("VO₂max", v.current != null ? String(v.current) : "–", "", `→ ${v.goal}`, v.pct,
-      v.current == null ? "log it" : v.toGo > 0 ? `${v.toGo} to go` : "reached ✓", v.toGo > 0 ? "" : "good"));
+      v.current == null ? "log it" : v.toGo > 0 ? `${v.toGo} to go` : "reached ✓", v.current != null && !(v.toGo > 0) ? "good" : ""));
     if (r) gauges.push(gauge("Recovery", r.avg != null ? String(r.avg) : "–", r.avg != null ? "%" : "", `avg → ${r.goal}%`, r.pct,
       r.avg == null ? "no data yet" : r.last7 != null ? `last 7d ${r.last7}%` : `${r.days} days`,
       r.avg == null ? "" : r.avg >= r.goal ? "good" : "amber"));

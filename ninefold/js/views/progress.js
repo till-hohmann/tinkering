@@ -231,7 +231,7 @@ async function fillRecomp(card, inRange, cutoff) {
     let avgBal = null;
     try {
       const log = await getNutritionLog();
-      let burn = {}; try { burn = burnByDate((await whoopCyclesAll(95)).map(mapCycle)); } catch {}
+      let burn = {}; try { burn = (await burnByDate(95)) || {}; } catch {}   // was a WHOOP-only call that was never imported
       const bals = Object.keys(log).filter((d) => !cutoff || d >= cutoff)
         .map((d) => (burn[d] != null && log[d].kcal != null) ? log[d].kcal - burn[d] : null).filter((b) => b != null);
       if (bals.length) avgBal = Math.round(bals.reduce((a, b) => a + b, 0) / bals.length);
@@ -931,7 +931,7 @@ export async function renderComposition() {
     if (vals.length > 1) vInner.push(sparkline({ values: vals, color: "cyan", height: 70, dots: true,
       gridIdx: weekBoundaries(vo2log.map((e) => e.date)),
       tipText: (i) => `${prettyShort(vo2log[i].date)}: ${vals[i].toFixed(1)}` }));
-    vInner.push(el("div.note", { style: "margin-top:10px", text: `From Whoop · updated ${latest.date}.` }));
+    vInner.push(el("div.note", { style: "margin-top:10px", text: `Updated ${latest.date}.` }));
     children.push(el("div.card.flush", {}, vInner));
   }
 

@@ -620,7 +620,13 @@ function stepReview(body) {
   if (audit) {
     const rows = [];
     for (const c of audit.errors) rows.push(["var(--red)", "✕", c.message]);
-    for (const c of audit.warnings) rows.push(["var(--amber)", "!", c.message]);
+    // The health-floor card above already names the cardio gaps (from week 1);
+    // repeating them here from the peak week showed two different Zone 2 numbers.
+    const floorShown = r.floorGaps.length > 0;
+    for (const c of audit.warnings) {
+      if (floorShown && /^cardio\.(zone2_floor|vo2)$/.test(c.id)) continue;
+      rows.push(["var(--amber)", "!", c.message]);
+    }
     if (!rows.length) {
       body.append(el("div.card", { style: "margin-top:12px;border-color:rgba(47,230,166,.35)" }, [
         el("div.row", { style: "align-items:center;gap:8px" }, [

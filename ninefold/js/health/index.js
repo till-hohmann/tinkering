@@ -61,7 +61,7 @@ const LOADERS = {
 export const PROVIDERS = [
   { id: "none", label: "None", blurb: "Log everything by hand. Every feature still works." },
   { id: "whoop", label: "WHOOP", blurb: "Recovery, sleep, strain and workouts pull in automatically. Needs your own WHOOP developer app." },
-  { id: "apple", label: "Apple Health", blurb: "An iPhone Shortcut pushes your metrics on a schedule. Works with Apple Watch, no developer account." },
+  { id: "apple", label: "Apple Health", blurb: "An iPhone Shortcut pushes your metrics on a schedule. Works with Apple Watch, no developer account — but it needs a Cloud backup to post into." },
 ];
 
 let active = null;
@@ -168,8 +168,11 @@ export async function syncTrackerWeight({ force = false } = {}) {
     if (action === "skip") return null;
     await db.setPref("trackerWeightSeen", b.weightKg);
     if (action === "remember") return null;
-    await setBodyweight(b.weightKg);
-    return { kg: b.weightKg, date: todayISO() };
+    // Apple keeps dated readings: log the weigh-in on the day it was made, not
+    // the day the app happened to look. WHOOP has no date, so today it is.
+    const date = b.date && b.date <= todayISO() ? b.date : todayISO();
+    await setBodyweight(b.weightKg, date);
+    return { kg: b.weightKg, date };
   } catch (_) { return null; }        // offline / not linked: nothing to do
 }
 
