@@ -9,7 +9,8 @@
 import { getWeightLog, getVO2maxLog, getNutritionLog, getProteinPerKg, getBodyweight, getAllPrograms,
   getAllSessions, resolveDay, getDexaBooked, setBodyweight, getRecoveryCache, setRecoveryCache } from "../store.js";
 import { recoveryHistory, has, CAP } from "../health/index.js";
-import { arcWindow, arcMonths, weightStatus, vo2Status, recoveryStatus, proteinStatus, arcAdherence } from "../arc.js";
+import { arcWindow, arcMonths, weightStatus, vo2Status, recoveryStatus, proteinStatus, arcAdherence,
+  arcCheckIns, checkInDue, nextCheckIn, checkInReport } from "../arc.js";
 import { getProfile } from "../profile.js";
 import { addDaysISO, daysBetweenISO } from "../dates.js";
 import { weightValue, weightLabel, weightToKg } from "../units.js";
@@ -73,6 +74,13 @@ function curve(arc, win, dexaISO) {
     const [x, y] = at(p), [lx, ly] = at(p, R + 12);
     svg.appendChild(S("circle", { cx: x, cy: y, r: 3.2, class: "arc-dexa" }));
     svg.appendChild(T("DEXA", { x: lx.toFixed(1), y: (ly - 2).toFixed(1), class: "arc-mark" }));
+  }
+  // check-ins: a ring and the days-left it stands for
+  for (const c of arcCheckIns(arc)) {
+    const p = daysBetweenISO(arc.startDate, c.date) / win.total;
+    const [x, y] = at(p), [lx, ly] = at(p, R + 12);
+    svg.appendChild(S("circle", { cx: x, cy: y, r: 3, class: "arc-ci" + (c.date <= arc.endDate && p <= win.pct ? " past" : "") }));
+    svg.appendChild(T(String(c.left), { x: lx.toFixed(1), y: (ly - 2).toFixed(1), class: "arc-mark ci" }));
   }
   // the end: a star on the last day
   const [ex, ey] = at(1);
@@ -174,16 +182,43 @@ export function arcHero(arc, iso) {
       ]),
     ]) : null;
 
+    // On a check-in day (and the two after): each goal against where the line
+    // says it should be by now, and what the rest needs.
+    const due = checkInDue(arc, iso);
+    const rep = due ? checkInReport(arc, iso, { w, v, r, p, ad, weightLog: weights, vo2Log: vo2,
+      fmtW: (kg) => `${Number(weightValue(kg)).toFixed(1)} ${weightLabel()}` }) : null;
+    const checkIn = rep && rep.rows.length ? el("div.arc-ci-panel", { role: "region", "aria-label": `Check-in, ${due.left} days to go` }, [
+      el("div.row", { style: "align-items:baseline" }, [
+        el("div.arc-ci-title", { text: `Check-in · ${due.left} days to go` }), el("span.spacer"),
+        el("span.arc-ci-score" + (rep.onPace === rep.of ? ".good" : ""), { text: `${rep.onPace}/${rep.of} on pace` }),
+      ]),
+      el("div.arc-ci-sub", { text: "Where you are against where the straight line to each goal says you should be today." }),
+      el("div.arc-ci-head", {}, [el("span", { text: "" }), el("span", { text: "Now" }), el("span", { text: "Should be" })]),
+      ...rep.rows.map((x) => el("div.arc-ci-row", {}, [
+        el("div.arc-ci-line", {}, [
+          el("span.arc-ci-k", { text: x.label }),
+          el("span.arc-ci-v", { text: x.now }),
+          el("span.arc-ci-s", { text: x.should }),
+        ]),
+        el("div.arc-ci-verdict." + x.tone, { text: x.verdict }),
+        x.note ? el("div.arc-ci-note", { text: x.note }) : null,
+      ])),
+    ]) : null;
+    const next = nextCheckIn(arc, iso);
+    const soon = next ? daysBetweenISO(iso, next.date) : null;
+
     setChildren(host,
       el("div.arc-aurora", { "aria-hidden": "true" }),
       // Goals first, in one straight row, then the sky: the curve and the count
       // read as the payoff underneath the numbers that decide it.
       gauges.length ? el("div.arc-gauges", {}, gauges) : null,
       weigh,
+      checkIn,
       curve(arc, win, dexaISO),
       el("div.arc-title", { text: (arc.name || "Arc").toUpperCase() }),
       el("div.arc-sub", { text: win.final ? "The day it was all for."
-        : `Day ${win.day} of ${win.total + 1} · until ${new Date(arc.endDate + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "long" })}` }),
+        : `Day ${win.day} of ${win.total + 1} · until ${new Date(arc.endDate + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`
+          + (soon != null && soon <= 7 ? ` · check-in ${soon === 1 ? "tomorrow" : "in " + soon + " days"}` : "") }),
       adh,
     );
   }

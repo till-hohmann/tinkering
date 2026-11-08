@@ -280,6 +280,8 @@ export async function renderSettings() {
     const vGoal = numIn(g.vo2max, "Goal VO2max", "–");
     const vStart = numIn(g.startVo2max, "Starting VO2max", "–");
     const rGoal = numIn(g.recoveryPct, "Goal average recovery", "%");
+    const ciIn = el("input", { type: "text", inputmode: "numeric", value: a && Array.isArray(a.checkIns) ? a.checkIns.join(", ") : "",
+      placeholder: "60, 30", "aria-label": "Check-ins, in days left", style: numStyle });
     const st = el("p.note", { style: "margin-top:8px;min-height:1em" });
     const row = (label, hint, ...inputs) => el("div.row", { style: "margin-top:10px;align-items:center;gap:6px" }, [
       el("div", { style: "flex:1" }, [el("div", { text: label }), hint ? el("div.faint", { style: "font-size:.78rem", text: hint }) : null]),
@@ -290,7 +292,9 @@ export async function renderSettings() {
       if (!startIn.value || !endIn.value || endIn.value <= startIn.value) { st.textContent = "Give it a start and an end date after it."; return; }
       const goals = { weightKg: kgOf(wGoal), startWeightKg: kgOf(wStart), vo2max: numOf(vGoal), startVo2max: numOf(vStart), recoveryPct: numOf(rGoal) };
       for (const k of Object.keys(goals)) if (!(goals[k] > 0)) delete goals[k];
-      await patchProfile({ arc: { name: nameIn.value.trim() || "Arc", startDate: startIn.value, endDate: endIn.value, goals } });
+      const checkIns = [...new Set(ciIn.value.split(/[^\d]+/).map(Number).filter((n) => n > 0))].sort((x, y) => y - x);
+      await patchProfile({ arc: { name: nameIn.value.trim() || "Arc", startDate: startIn.value, endDate: endIn.value, goals,
+        ...(checkIns.length ? { checkIns } : {}) } });
       st.textContent = "Saved. It shows on Today from its start date.";
     }
     async function end() {
@@ -307,6 +311,7 @@ export async function renderSettings() {
       row("Weight", "start → goal", wStart, el("span.dim", { text: "→" }), wGoal),
       row("VO₂max", "start → goal", vStart, el("span.dim", { text: "→" }), vGoal),
       canRecover ? row("Recovery", "average %, from your tracker", rGoal) : null,
+      row("Check-ins", "days left, e.g. 60, 30 · each opens on Today the day before", ciIn),
       el("div.btn-row", { style: "margin-top:12px" }, [
         el("button.btn.primary", { onclick: save }, a ? "Save" : "Start arc"),
         a ? el("button.btn", { onclick: end }, "Remove") : null,

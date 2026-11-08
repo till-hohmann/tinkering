@@ -1328,6 +1328,28 @@ button.arc-g:active { transform: scale(.97); }
 .arc-adhv { font: 800 1rem var(--font-display); font-variant-numeric: tabular-nums; color: #fff; }
 .arc-adhk { font-size: .7rem; color: rgba(214,232,255,.66); }
 .arc-adhk.hot { color: #fff3c4; font-weight: 700; }
+.arc-ci { fill: #050810; stroke: #fff3c4; stroke-width: 1.5; }
+.arc-ci.past { fill: #fff3c4; }
+.arc-mark.ci { fill: #fff3c4; }
+.arc-ci-panel { margin-top: 10px; padding: 11px 11px 6px; border-radius: 13px; background: rgba(13,26,51,.82);
+  border: 1px solid rgba(255,243,196,.35); box-shadow: 0 0 22px rgba(255,236,170,.08); }
+.arc-ci-title { white-space: nowrap; font: 800 .64rem var(--font-display); letter-spacing: .12em; text-transform: uppercase; color: #fff3c4; }
+.arc-ci-score { white-space: nowrap; font-size: .7rem; font-weight: 700; color: var(--amber); }
+.arc-ci-score.good { color: var(--ice-2); }
+.arc-ci-sub { margin-top: 3px; font-size: .7rem; color: rgba(214,232,255,.62); }
+.arc-ci-row { position: relative; }
+.arc-ci-head, .arc-ci-line { display: grid; grid-template-columns: 4.3rem 4.5rem 1fr; gap: 6px; align-items: baseline; }
+.arc-ci-head { margin-top: 9px; font: 700 .54rem var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: rgba(191,234,255,.5); }
+.arc-ci-row { padding: 7px 0; border-top: 1px solid rgba(191,234,255,.1); }
+.arc-ci-head + .arc-ci-row { border-top: none; }
+.arc-ci-k { font: 700 .62rem var(--font-display); letter-spacing: .06em; text-transform: uppercase; color: rgba(191,234,255,.7); }
+.arc-ci-v { font: 800 .86rem var(--font-display); font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; }
+.arc-ci-s { font-size: .78rem; font-variant-numeric: tabular-nums; color: rgba(214,232,255,.7); white-space: nowrap; }
+.arc-ci-verdict { position: absolute; right: 0; top: 8px; white-space: nowrap; font-size: .7rem; font-weight: 700; }
+.arc-ci-verdict.good { color: var(--ice-2); }
+.arc-ci-verdict.amber { color: var(--amber); }
+.arc-ci-note { margin-top: 3px; font-size: .66rem; color: rgba(214,232,255,.55); }
+@media (max-width: 360px) { .arc-ci-head, .arc-ci-line { grid-template-columns: 4rem 4.3rem 1fr; gap: 4px; } }
 @media (max-width: 360px) { .arc-gauges { gap: 5px; } .arc-g { padding: 8px 6px 7px; } .arc-gv { font-size: 1rem; } }
 @media (prefers-reduced-motion: reduce) {
   .arc-aurora, .arc-stars circle.tw, .arc-now-halo { animation: none; }

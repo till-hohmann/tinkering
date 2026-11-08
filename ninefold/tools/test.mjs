@@ -5094,6 +5094,47 @@ group("arc — countdown, goals and turning up", () => {
   });
 });
 
+group("arc — check-ins at days-left milestones", () => {
+  const arc = { name: "Test Arc", startDate: "2026-11-08", endDate: "2027-02-10", checkIns: [30, 60, 60, 0, "x"],
+    goals: { weightKg: 90, startWeightKg: 99.2, vo2max: 52, startVo2max: 51, recoveryPct: 70 } };
+  it("each lands the day before its mark, in date order, duplicates and junk dropped", () => {
+    assert.deepEqual(A.arcCheckIns(arc), [{ left: 60, date: "2026-12-11" }, { left: 30, date: "2027-01-10" }]);
+    assert.equal(A.arcWindow(arc, "2026-12-11").left, 61);
+  });
+  it("shows for the day and the two after, not before or later", () => {
+    assert.equal(A.checkInDue(arc, "2026-12-10"), null);
+    assert.equal(A.checkInDue(arc, "2026-12-11").left, 60);
+    assert.equal(A.checkInDue(arc, "2026-12-13").left, 60);
+    assert.equal(A.checkInDue(arc, "2026-12-14"), null);
+    assert.equal(A.nextCheckIn(arc, "2026-12-11").left, 30);
+  });
+  it("no check-ins set, or one before the arc starts: nothing", () => {
+    assert.deepEqual(A.arcCheckIns({ ...arc, checkIns: undefined }), []);
+    assert.deepEqual(A.arcCheckIns({ ...arc, checkIns: [200] }), []);
+  });
+  it("compares each goal with the line and says what the rest needs", () => {
+    const iso = "2026-12-11";
+    const weights = [{ date: "2026-11-08", kg: 99.2 }, { date: "2026-12-11", kg: 96.8 }];
+    const vo2 = [{ date: "2026-12-01", value: 51 }];
+    const w = A.weightStatus(arc, weights, iso), v = A.vo2Status(arc, vo2);
+    const r = A.recoveryStatus(arc, [{ date: "2026-12-10", pct: 72 }, { date: "2026-12-11", pct: 60 }], iso);
+    const ad = { planned: 20, done: 19, missed: 1, pct: 0.95, weekStreak: 2 };
+    const rep = A.checkInReport(arc, iso, { w, v, r, ad, weightLog: weights, vo2Log: vo2 });
+    const row = (k) => rep.rows.find((x) => x.key === k);
+    // 33 of 94 days in: the line is at 99.2 - 9.2 * 33/94 = 96.0, so 96.8 is 0.8 behind
+    assert.equal(row("weight").should, "96.0 kg");
+    assert.equal(row("weight").verdict, "0.8 kg behind");
+    assert.equal(row("weight").tone, "amber");
+    assert.match(row("weight").note, /needs −0\.8 kg\/week from here/);
+    assert.match(row("weight").note, /so far −0\.5 kg\/week/);
+    assert.equal(A.expectedVo2(arc, iso, vo2), 51.4);
+    assert.equal(row("vo2").tone, "good");                // 0.4 under the line is within half a point
+    assert.equal(row("recovery").verdict, "4 pts under");
+    assert.equal(row("sessions").verdict, "95%");
+    assert.equal(rep.onPace, 2); assert.equal(rep.of, 4);
+  });
+});
+
 for (const [name, fn] of groups) { console.log("\n" + name); fn(); }
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

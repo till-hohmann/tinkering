@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 217, notes: [
+    "Arc check-ins: in Settings › Arc, list milestones as days left (say 60, 30). Each opens on Today the day before its mark and stays for three days: every goal against where the straight line says it should be by now, how far ahead or behind, and the weekly weight change the rest of the arc needs. The milestones are marked on the arc's curve, and Today tells you when one is a week away.",
+  ] },
   { v: 216, notes: [
     "Import from MyFitnessPal: on the Fuel screen, open the export MyFitnessPal emails you (the zip, or the Nutrition Summary .csv inside it). Days in it are added or updated, nothing else is touched, and it says what it will do first.",
     "Arcs work for gaining weight as well as losing it, and a start left blank now uses your reading from the day the arc began, so the gauge moves from day one.",

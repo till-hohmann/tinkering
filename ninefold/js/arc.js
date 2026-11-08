@@ -281,3 +281,116 @@ export function arcAdherence(arc, programs, sessions, iso, resolveDay) {
     thisWeek: { done: tw.done, planned: tw.planned + tw.pending + restOfWeek },
   };
 }
+
+// --- check-ins ------------------------------------------------------------------
+// Milestones on the way, set as "days left" (arc.checkIns, e.g. [60, 30]). Each
+// lands the DAY BEFORE its mark, so the check-in at 60 is read with 61 days still
+// in hand and there is a full day to act on it before the mark itself. It shows
+// on Today for that day and the two after, so a missed morning doesn't lose it.
+export const CHECKIN_SHOW_DAYS = 3;
+
+export function arcCheckIns(arc) {
+  if (!arcValid(arc) || !Array.isArray(arc.checkIns)) return [];
+  const seen = new Set();
+  return arc.checkIns
+    .map((n) => Math.round(Number(n)))
+    .filter((n) => n > 0 && !seen.has(n) && seen.add(n))
+    .map((left) => ({ left, date: addDaysISO(arc.endDate, -(left + 1)) }))
+    .filter((c) => c.date > arc.startDate)
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/** The check-in to show on `iso`, or null. */
+export function checkInDue(arc, iso) {
+  return arcCheckIns(arc).find((c) => iso >= c.date && iso < addDaysISO(c.date, CHECKIN_SHOW_DAYS)) || null;
+}
+
+/** The next check-in still ahead of `iso` (not today's), or null. */
+export function nextCheckIn(arc, iso) {
+  return arcCheckIns(arc).find((c) => c.date > iso) || null;
+}
+
+/** The straight line from the start VO2max to the goal, like the weight line. */
+export function expectedVo2(arc, iso, vo2Log) {
+  const g = (arc && arc.goals) || {};
+  const w = arcWindow(arc, iso);
+  if (!w || !(g.vo2max > 0)) return null;
+  const start = g.startVo2max > 0 ? g.startVo2max : startingValue(vo2Log, arc.startDate, (e) => e && e.value);
+  if (!(start > 0)) return null;
+  return round1(start + (g.vo2max - start) * w.pct);
+}
+
+/**
+ * Each goal against where it should be on `iso`. Takes the statuses the Today
+ * screen already has (weightStatus, vo2Status, recoveryStatus, proteinStatus,
+ * arcAdherence), so the numbers on the check-in are the gauges' numbers.
+ *
+ *   rows: [{ key, label, now, should, verdict, note, tone: "good" | "amber" }]
+ *   onPace / of: how many goals are where they should be
+ */
+// fmtW turns kilograms into the user's unit and label (default "96.8 kg").
+export function checkInReport(arc, iso, { w, v, r, p, ad, weightLog, vo2Log, fmtW } = {}) {
+  const win = arcWindow(arc, iso);
+  if (!win) return null;
+  const rows = [];
+  const fmt = (x) => (Math.round(x * 10) / 10).toFixed(1);
+  const kg = fmtW || ((x) => `${fmt(x)} kg`);
+  const signed = (x) => (x > 0 ? "+" : x < 0 ? "−" : "±") + kg(Math.abs(x));
+
+  if (w && w.current != null) {
+    const start = startWeight(arc, weightLog) || w.current;
+    const ok = w.delta == null || w.delta <= 0.3;
+    const perWk = win.elapsed > 0 ? ((w.current - start) / win.elapsed) * 7 : null;
+    const needWk = win.left > 0 ? ((w.goal - w.current) / win.left) * 7 : null;
+    const projected = perWk != null ? round1(w.current + (perWk / 7) * win.left) : null;
+    const bits = [];
+    if (needWk != null && w.toGo > 0) bits.push(`needs ${signed(needWk)}/week from here`);
+    if (perWk != null) bits.push(`so far ${signed(perWk)}/week`);
+    if (projected != null && w.dir !== 0) bits.push(`at this pace ${kg(projected)} on the day`);
+    rows.push({ key: "weight", label: "Weight", now: kg(w.current),
+      should: kg(w.expected != null ? w.expected : w.goal),
+      verdict: w.delta == null ? "" : w.toGo <= 0 && w.dir !== 0 ? "goal reached" : ok ? (w.delta < -0.3 ? `${kg(-w.delta)} ahead` : "on the line") : `${kg(w.delta)} behind`,
+      note: bits.join(" · "), tone: ok ? "good" : "amber" });
+  } else if (w) {
+    rows.push({ key: "weight", label: "Weight", now: "–", should: w.expected != null ? kg(w.expected) : "–",
+      verdict: "weigh in", note: "No weigh-in to compare.", tone: "amber" });
+  }
+
+  if (v) {
+    const exp = expectedVo2(arc, iso, vo2Log);
+    const diff = v.current != null && exp != null ? round1(v.current - exp) : null;
+    const ok = v.current != null && (v.toGo <= 0 || (diff != null && diff >= -0.5));
+    rows.push({ key: "vo2", label: "VO₂max", now: v.current != null ? String(v.current) : "–",
+      should: exp != null ? fmt(exp) : String(v.goal),
+      verdict: v.current == null ? "no reading" : v.toGo <= 0 ? "goal reached" : diff == null ? `${v.toGo} to go` : diff >= -0.5 ? (diff > 0.5 ? `${fmt(diff)} ahead` : "on the line") : `${fmt(-diff)} behind`,
+      note: v.current != null ? `${v.toGo > 0 ? v.toGo + " to go to " + v.goal : "at or past " + v.goal}${v.date ? " · last reading " + v.date : ""}` : "Log a VO₂max reading.",
+      tone: ok ? "good" : "amber" });
+  }
+
+  if (r) {
+    const ok = r.avg != null && r.avg >= r.goal;
+    rows.push({ key: "recovery", label: "Recovery", now: r.avg != null ? `${r.avg}%` : "–", should: `${r.goal}% avg`,
+      verdict: r.avg == null ? "no data" : ok ? "at target" : `${r.goal - r.avg} pts under`,
+      note: r.avg != null ? `${r.days} days in the arc` + (r.last7 != null ? ` · last 7 days ${r.last7}%` : "") : "",
+      tone: ok ? "good" : "amber" });
+  }
+
+  if (p) {
+    const ok = p.logged > 0 && p.avgPerKg != null && p.avgPerKg >= p.perKg - 0.05;
+    rows.push({ key: "protein", label: "Protein", now: p.avgPerKg != null ? `${p.avgPerKg.toFixed(1)} g/kg` : "–",
+      should: `${p.perKg.toFixed(1)} g/kg`,
+      verdict: !p.logged ? "nothing logged" : ok ? "at target" : `${(p.perKg - p.avgPerKg).toFixed(1)} g/kg short`,
+      note: p.logged ? `target hit ${p.hit} of ${p.logged} logged days · ${p.days - p.logged} of ${p.days} days not logged` : "Log food to track it.",
+      tone: ok ? "good" : "amber" });
+  }
+
+  if (ad && ad.planned > 0) {
+    const pct = Math.round(ad.pct * 100);
+    const ok = pct >= 90;
+    rows.push({ key: "sessions", label: "Sessions", now: `${ad.done}/${ad.planned}`, should: "every one",
+      verdict: `${pct}%`, note: ad.missed ? `${ad.missed} missed` + (ad.weekStreak ? ` · ${ad.weekStreak} full week${ad.weekStreak === 1 ? "" : "s"} in a row` : "") : "none missed",
+      tone: ok ? "good" : "amber" });
+  }
+
+  return { left: win.left, rows, onPace: rows.filter((x) => x.tone === "good").length, of: rows.length };
+}
