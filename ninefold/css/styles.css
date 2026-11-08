@@ -1304,7 +1304,8 @@ body.yoga-dawn #aurora-cv, body.yoga-night #aurora-cv { display: none; }
 .arc-title { text-align: center; margin-top: 4px; font: 800 .82rem var(--font-display); letter-spacing: .5em; padding-left: .5em;
   background: linear-gradient(90deg, #a9b8ff, #e6f7ff 50%, #8fd8ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .arc-sub { text-align: center; margin-top: 3px; font-size: .74rem; color: rgba(214,232,255,.68); }
-.arc-gauges { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-top: 14px; }
+.arc-gauges { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin: 4px 0 6px; }
+.arc-weigh + .arc-svg, .arc-gauges + .arc-svg { margin-top: 6px; }
 .arc-g { display: block; text-align: left; min-width: 0; padding: 9px 8px 8px; border-radius: 13px;
   background: rgba(13,26,51,.72); border: 1px solid var(--night-line); color: inherit; font: inherit; }
 button.arc-g { cursor: pointer; }

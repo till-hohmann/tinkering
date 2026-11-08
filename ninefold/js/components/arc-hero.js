@@ -172,12 +172,14 @@ export function arcHero(arc, iso) {
 
     setChildren(host,
       el("div.arc-aurora", { "aria-hidden": "true" }),
+      // Goals first, in one straight row, then the sky: the curve and the count
+      // read as the payoff underneath the numbers that decide it.
+      gauges.length ? el("div.arc-gauges", {}, gauges) : null,
+      weigh,
       curve(arc, win, dexaISO),
       el("div.arc-title", { text: (arc.name || "Arc").toUpperCase() }),
       el("div.arc-sub", { text: win.final ? "The day it was all for."
         : `Day ${win.day} of ${win.total + 1} · until ${new Date(arc.endDate + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "long" })}` }),
-      gauges.length ? el("div.arc-gauges", {}, gauges) : null,
-      weigh,
       adh,
     );
   }
