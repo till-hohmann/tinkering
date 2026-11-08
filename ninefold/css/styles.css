@@ -1257,3 +1257,77 @@ body.yoga-dawn #aurora-cv, body.yoga-night #aurora-cv { display: none; }
   color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
+
+/* ===== Arc (arc-hero.js): a polar-night card on Today =====
+   Its own fixed palette rather than the theme's: the arc is one occasion, and
+   it should look the same whichever theme is on. Status colours stay the data
+   ones (amber = behind, ice = on track). */
+.arccard {
+  --ice: #bfeaff; --ice-2: #8fd8ff; --night-line: rgba(143,216,255,.16);
+  position: relative; overflow: hidden; isolation: isolate;
+  margin: 4px 0 14px; padding: 12px 14px 15px; border-radius: var(--radius-lg);
+  border: 1px solid var(--night-line);
+  background: radial-gradient(120% 95% at 50% 0%, #142a52 0%, #0a1426 52%, #050810 100%);
+  box-shadow: 0 18px 50px rgba(5,10,25,.55), inset 0 1px 0 rgba(191,234,255,.08);
+  color: #eef6ff;
+}
+.arc-aurora {
+  position: absolute; z-index: -1; inset: -30% -20% auto -20%; height: 75%; pointer-events: none;
+  background:
+    radial-gradient(40% 55% at 30% 55%, rgba(124,147,232,.30), transparent 70%),
+    radial-gradient(38% 50% at 72% 45%, rgba(76,201,255,.22), transparent 70%),
+    radial-gradient(30% 40% at 52% 70%, rgba(184,157,255,.16), transparent 70%);
+  filter: blur(8px);
+  animation: arcDrift 18s ease-in-out infinite alternate;
+}
+@keyframes arcDrift { from { transform: translateX(-4%) scaleY(1); } to { transform: translateX(4%) scaleY(1.12); } }
+.arc-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.arc-stars circle { fill: #dff3ff; opacity: .55; }
+.arc-stars circle.tw { animation: arcTwinkle 4.5s ease-in-out infinite; }
+@keyframes arcTwinkle { 0%, 100% { opacity: .15; } 50% { opacity: .9; } }
+.arc-track { fill: none; stroke: rgba(191,234,255,.14); stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: 1 6.5; }
+.arc-done { fill: none; stroke: url(#arcGrad); stroke-width: 3.5; stroke-linecap: round; }
+.arc-done-glow { fill: none; stroke: #8fd8ff; stroke-width: 7; opacity: .45; }
+.arc-tick { stroke: rgba(191,234,255,.32); stroke-width: 1; }
+.arc-month { fill: rgba(191,234,255,.55); font: 700 7.5px var(--font-display); letter-spacing: .12em; text-anchor: middle; }
+.arc-mark { fill: #c9b8ff; font: 700 7px var(--font-display); letter-spacing: .1em; text-anchor: middle; }
+.arc-dexa { fill: #050810; stroke: #c9b8ff; stroke-width: 1.6; }
+.arc-end { fill: #fff3c4; font-size: 13px; text-anchor: middle; filter: drop-shadow(0 0 4px rgba(255,236,170,.9)); }
+.arc-now { fill: #ffffff; }
+.arc-now-halo { fill: rgba(143,216,255,.35); animation: arcPulse 2.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes arcPulse { 0%, 100% { transform: scale(.75); opacity: .9; } 50% { transform: scale(1.25); opacity: .35; } }
+.arc-count { fill: #ffffff; font: 800 58px var(--font-display); letter-spacing: -.04em; text-anchor: middle;
+  font-variant-numeric: tabular-nums; filter: drop-shadow(0 0 14px rgba(143,216,255,.45)); }
+.arc-count.small { font-size: 34px; letter-spacing: .12em; }
+.arc-countk { fill: rgba(191,234,255,.75); font: 700 8.5px var(--font-display); letter-spacing: .32em; text-anchor: middle; }
+.arc-endl { fill: rgba(191,234,255,.5); font: 700 7.5px var(--font-display); letter-spacing: .1em; }
+.arc-title { text-align: center; margin-top: 4px; font: 800 .82rem var(--font-display); letter-spacing: .5em; padding-left: .5em;
+  background: linear-gradient(90deg, #a9b8ff, #e6f7ff 50%, #8fd8ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.arc-sub { text-align: center; margin-top: 3px; font-size: .74rem; color: rgba(214,232,255,.68); }
+.arc-gauges { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-top: 14px; }
+.arc-g { display: block; text-align: left; min-width: 0; padding: 9px 8px 8px; border-radius: 13px;
+  background: rgba(13,26,51,.72); border: 1px solid var(--night-line); color: inherit; font: inherit; }
+button.arc-g { cursor: pointer; }
+button.arc-g:active { transform: scale(.97); }
+.arc-gk { font: 700 .56rem var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: rgba(191,234,255,.62); }
+.arc-gv { margin-top: 4px; font: 800 1.12rem var(--font-display); font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; }
+.arc-gv span { font-size: .7rem; font-weight: 700; color: rgba(214,232,255,.7); margin-left: 1px; }
+.arc-gt { font-size: .64rem; color: rgba(214,232,255,.58); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arc-gbar { height: 3px; margin-top: 7px; border-radius: 3px; background: rgba(191,234,255,.12); overflow: hidden; }
+.arc-gbar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #7c93e8, #bfeaff); box-shadow: 0 0 8px rgba(143,216,255,.6); }
+.arc-gs { margin-top: 6px; font-size: .6rem; font-weight: 700; color: rgba(214,232,255,.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arc-gs.good { color: var(--ice-2); }
+.arc-gs.amber { color: var(--amber); }
+.arc-weigh { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 9px 10px; border-radius: 13px;
+  background: rgba(13,26,51,.8); border: 1px solid var(--night-line); font-size: .8rem; color: rgba(214,232,255,.8); }
+.arc-weigh span { flex: 1; min-width: 0; }
+.arc-in { width: 76px; text-align: center; font-size: 1rem; font-weight: 700; padding: 7px; border-radius: 10px;
+  background: #0a1426; border: 1px solid rgba(143,216,255,.35); color: #fff; }
+.arc-adh { margin-top: 10px; padding: 10px 11px; border-radius: 13px; background: rgba(13,26,51,.55); border: 1px solid var(--night-line); }
+.arc-adhv { font: 800 1rem var(--font-display); font-variant-numeric: tabular-nums; color: #fff; }
+.arc-adhk { font-size: .7rem; color: rgba(214,232,255,.66); }
+.arc-adhk.hot { color: #fff3c4; font-weight: 700; }
+@media (max-width: 360px) { .arc-gauges { gap: 5px; } .arc-g { padding: 8px 6px 7px; } .arc-gv { font-size: 1rem; } }
+@media (prefers-reduced-motion: reduce) {
+  .arc-aurora, .arc-stars circle.tw, .arc-now-halo { animation: none; }
+}

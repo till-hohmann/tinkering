@@ -22,6 +22,8 @@ The interference model is the part worth stealing. Galpin orders the nine adapta
 
 **Reads your body, if you want.** Optional WHOOP or Apple Health integration for recovery, sleep, workouts and daily burn; a readiness check that eases loads on a bad day; weekly volume per muscle against MEV/MAV landmarks; strength standards; body composition.
 
+**Counts down to a date that matters, if you set one.** An arc is a dated push toward a few goals: a target weight, VO₂max, average recovery, protein. While it runs, Today opens on a countdown to the end date, with a gauge for each goal (weight is shown against a straight line from start to target) and how many planned sessions you've actually done.
+
 Everything optional is off by default.
 
 ## What it isn't

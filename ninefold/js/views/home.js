@@ -22,6 +22,8 @@ import { orbEl } from "../components/orb.js";
 import { recoveryToday, sleepFor, burnFor, provider, has, CAP } from "../health/index.js";
 import { getProfile } from "../profile.js";
 import { isLegDay, isLegSession } from "../volume.js";
+import { arcShowing } from "../arc.js";
+import { arcHero } from "../components/arc-hero.js";
 
 const recoveryColor = (p) => (p == null ? "var(--text-dim)" : p >= 67 ? "var(--accent)" : p >= 34 ? "var(--amber)" : "var(--coral)");
 
@@ -477,7 +479,12 @@ export async function renderHome() {
     buildOrbHero(orbHero, kicker, { pct: 0, value: "—", unit: "", label: "RECOVERY",   // pending → recovery (placeholder)
       verdict: "Readiness", vsub: "Checking your recovery…" });
   }
-  const children = [orbHero];
+  // ===== the arc, above everything while one is running =====
+  // A dated push toward a few goals (profile.arc). It owns the top of the screen
+  // for its whole run, because the countdown is the point: you see it before
+  // anything else every time you open the app.
+  const arc = homeProfile && homeProfile.arc;
+  const children = arcShowing(arc, iso) ? [arcHero(arc, iso), orbHero] : [orbHero];
 
   // ===== backup is broken =====
   // FIRST, above everything, and the only card here that isn't about training.

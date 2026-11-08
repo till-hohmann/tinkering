@@ -116,6 +116,24 @@ export async function whoopCyclesAll(max = 60) {
   return out.slice(0, max);
 }
 
+// Recovery scores since `startISO` (a date), newest first, page by page. Same
+// 25-per-page cap as cycles; six pages is ~150 days, more than any arc needs.
+export async function whoopRecoveryAll(startISO, maxPages = 6) {
+  let out = [], token = null;
+  for (let i = 0; i < maxPages; i++) {
+    const params = { limit: 25, start: new Date(startISO + "T00:00:00").toISOString() };
+    if (token) params.nextToken = token;
+    const r = await req("/recovery", { params });
+    if (!r.ok) break;
+    const data = await r.json().catch(() => ({}));
+    const recs = data.records || [];
+    out = out.concat(recs);
+    token = data.next_token;
+    if (!token || !recs.length) break;
+  }
+  return out;
+}
+
 // Body measurement is a single object (not a collection): height/weight/max HR.
 export async function whoopBody() {
   const r = await req("/body");

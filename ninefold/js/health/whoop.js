@@ -7,7 +7,7 @@
 
 import {
   whoopStatus, whoopConnect, whoopDisconnect,
-  whoopRecovery, whoopSleep, whoopWorkouts, whoopCyclesAll, whoopBody, whoopBurnFor,
+  whoopRecovery, whoopRecoveryAll, whoopSleep, whoopWorkouts, whoopCyclesAll, whoopBody, whoopBurnFor,
   mapRecovery, mapSleep, mapWorkout, mapCycle, mapBody,
   bestWorkoutFor as pickWorkout,
 } from "../whoop.js";
@@ -45,6 +45,19 @@ const provider = {
     const recs = await whoopRecovery({ limit: 1 });
     const r = recs[0] && mapRecovery(recs[0]);
     return r ? { ...r, derived: false, source: "WHOOP" } : null;
+  },
+
+  // [{ date, pct }] since `fromISO`. A recovery is scored when you wake, so the
+  // local calendar day of its creation is the day it belongs to.
+  async recoveryHistory(fromISO) {
+    const recs = await whoopRecoveryAll(fromISO);
+    const out = [];
+    for (const rec of recs) {
+      const m = mapRecovery(rec);
+      if (!m || m.recoveryPct == null || !rec.created_at) continue;
+      out.push({ date: todayISO(new Date(rec.created_at)), pct: m.recoveryPct });
+    }
+    return out;
   },
 
   async sleepFor(_iso) {

@@ -259,6 +259,57 @@ export async function renderSettings() {
     nutStatus,
   ]);
 
+  // --- Arc: a dated push toward a few goals, shown on Today while it runs -----
+  const arcCard = await (async () => {
+    const prof = await getProfile();
+    const a = prof.arc || null, g = (a && a.goals) || {};
+    const dateIn = (v, label) => el("input", { type: "date", value: v || "", "aria-label": label,
+      style: "flex:1;min-width:0;padding:8px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)" });
+    const numIn = (v, label, ph) => el("input", { type: "text", inputmode: "decimal", value: v != null ? String(v) : "",
+      placeholder: ph, "aria-label": label, style: numStyle.replace("width:96px", "width:70px") });
+    const nameIn = el("input", { type: "text", value: a ? a.name || "" : "", placeholder: "Winter Arc", "aria-label": "Arc name",
+      style: "width:100%;padding:10px;font-size:1rem;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text)" });
+    const startIn = dateIn(a ? a.startDate : todayISO(), "Arc start date");
+    const endIn = dateIn(a ? a.endDate : "", "Arc end date");
+    const wGoal = numIn(g.weightKg != null ? weightValue(g.weightKg) : null, "Goal weight", weightLabel());
+    const wStart = numIn(g.startWeightKg != null ? weightValue(g.startWeightKg) : null, "Starting weight", weightLabel());
+    const vGoal = numIn(g.vo2max, "Goal VO2max", "–");
+    const vStart = numIn(g.startVo2max, "Starting VO2max", "–");
+    const rGoal = numIn(g.recoveryPct, "Goal average recovery", "%");
+    const st = el("p.note", { style: "margin-top:8px;min-height:1em" });
+    const row = (label, hint, ...inputs) => el("div.row", { style: "margin-top:10px;align-items:center;gap:6px" }, [
+      el("div", { style: "flex:1" }, [el("div", { text: label }), hint ? el("div.faint", { style: "font-size:.78rem", text: hint }) : null]),
+      ...inputs]);
+    const kgOf = (inp) => (inp.value.trim() ? weightToKg(M.parseNum(inp.value)) : null);
+    const numOf = (inp) => (inp.value.trim() ? M.parseNum(inp.value) : null);
+    async function save() {
+      if (!startIn.value || !endIn.value || endIn.value <= startIn.value) { st.textContent = "Give it a start and an end date after it."; return; }
+      const goals = { weightKg: kgOf(wGoal), startWeightKg: kgOf(wStart), vo2max: numOf(vGoal), startVo2max: numOf(vStart), recoveryPct: numOf(rGoal) };
+      for (const k of Object.keys(goals)) if (!(goals[k] > 0)) delete goals[k];
+      await patchProfile({ arc: { name: nameIn.value.trim() || "Arc", startDate: startIn.value, endDate: endIn.value, goals } });
+      st.textContent = "Saved. It shows on Today from its start date.";
+    }
+    async function end() {
+      await patchProfile({ arc: null });
+      st.textContent = "Arc removed.";
+    }
+    return el("div.card", {}, [
+      el("div.label", { text: "Arc" }),
+      el("p.note", { style: "margin-top:4px", text:
+        "A dated push toward a few goals. While it runs, Today opens on a countdown with one gauge per goal and how many planned sessions you've done. Protein uses your nutrition target." }),
+      el("div", { style: "margin-top:10px" }, [nameIn]),
+      el("div.row", { style: "margin-top:10px;align-items:center;gap:6px" }, [startIn, el("span.dim", { text: "→" }), endIn]),
+      row("Weight", "start → goal", wStart, el("span.dim", { text: "→" }), wGoal),
+      row("VO₂max", "start → goal", vStart, el("span.dim", { text: "→" }), vGoal),
+      row("Recovery", "average %, from your tracker", rGoal),
+      el("div.btn-row", { style: "margin-top:12px" }, [
+        el("button.btn.primary", { onclick: save }, a ? "Save" : "Start arc"),
+        a ? el("button.btn", { onclick: end }, "Remove") : null,
+      ].filter(Boolean)),
+      st,
+    ]);
+  })();
+
   // --- Body measurements — waist is the recomp fat signal --------------------
   const mlog = await getMeasurementsLog();
   const latestM = mlog.length ? mlog[mlog.length - 1] : null;
@@ -1248,6 +1299,7 @@ export async function renderSettings() {
     ]),
 
     sectionH("Program"),
+    arcCard,
     buildCard,
     ...(programCard ? [programCard] : []),
     placesCard,

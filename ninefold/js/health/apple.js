@@ -223,6 +223,20 @@ const provider = {
     };
   },
 
+  // The same derived score, day by day since `fromISO`, each against the
+  // baseline that existed on that day.
+  async recoveryHistory(fromISO) {
+    const store = await fetchStore();
+    if (!store) return [];
+    const out = [];
+    for (const [d, day] of Object.entries(daysOf(store))) {
+      if (d < fromISO || !day) continue;
+      const pct = deriveRecovery(day, { hrv: baseline(store, d, "hrv"), rhr: baseline(store, d, "restingHR") });
+      if (pct != null) out.push({ date: d, pct });
+    }
+    return out;
+  },
+
   async sleepFor(iso) {
     const store = await fetchStore();
     const day = store && (dayOf(store, iso || todayISO()) || dayOf(store, prevISO(iso || todayISO())));

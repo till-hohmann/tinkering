@@ -108,6 +108,7 @@ const safe = (fn, empty) => async (...args) => {
 
 export const status = safe("status", { connected: false });
 export const recoveryToday = safe("recoveryToday", null);
+export const recoveryHistory = safe("recoveryHistory", []);   // [{ date, pct }] since a date
 export const sleepFor = safe("sleepFor", null);
 export const burnFor = safe("burnFor", null);
 export const burnByDate = safe("burnByDate", {});

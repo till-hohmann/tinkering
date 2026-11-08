@@ -960,6 +960,12 @@ export async function getExtraDraft() { return (await db.getPref("extraRunDraft"
 export async function setExtraDraft(d) { await db.setPref("extraRunDraft", d || null); }
 export async function clearExtraDraft() { await db.setPref("extraRunDraft", null); }
 
+// Recovery scores already fetched for the arc, { date: pct }. DEVICE-LOCAL: it
+// is a cache of the tracker, which stays the record, so the arc can show its
+// average offline and only asks the tracker for the days it hasn't seen.
+export async function getRecoveryCache() { const v = await db.getPref("recoveryCache"); return v && typeof v === "object" ? v : {}; }
+export async function setRecoveryCache(v) { await db.setPref("recoveryCache", v || {}); }
+
 export async function getDexaReminderSeen() {
   const v = await db.getPref("dexaReminderSeen");
   return v && typeof v.due === "string" ? v : null;

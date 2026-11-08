@@ -110,6 +110,10 @@ export function defaultProfile() {
     // It lives on the PROFILE rather than in the build so the public tree can
     // carry the vocabulary without carrying anyone's answers.
     limitations: [],
+
+    // A dated push toward a few goals, shown as its own view on Today while it
+    // runs. null = none. Shape and maths in arc.js.
+    arc: null,
   };
 }
 

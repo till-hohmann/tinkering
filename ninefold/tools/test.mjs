@@ -4948,6 +4948,66 @@ group("sync — a new stamp is never older than what it replaces", () => {
   });
 });
 
+const A = await import("../js/arc.js");
+group("arc — countdown, goals and turning up", () => {
+  const arc = { name: "Test Arc", startDate: "2026-11-08", endDate: "2027-02-10",
+    goals: { weightKg: 90, startWeightKg: 99.2, vo2max: 52, startVo2max: 51, recoveryPct: 70 } };
+  it("counts the days left, 0 on the last day, and hides after it", () => {
+    assert.equal(A.arcWindow(arc, "2026-11-08").left, 94);
+    assert.equal(A.arcWindow(arc, "2027-02-10").left, 0);
+    assert.ok(A.arcWindow(arc, "2027-02-10").final);
+    assert.ok(A.arcShowing(arc, "2026-11-08") && A.arcShowing(arc, "2027-02-10"));
+    assert.ok(!A.arcShowing(arc, "2027-02-11") && !A.arcShowing(arc, "2026-11-07"));
+    assert.ok(!A.arcShowing(null, "2026-11-08") && !A.arcShowing({ startDate: "2027-01-01", endDate: "2026-01-01" }, "2026-11-08"));
+  });
+  it("puts a tick on each month boundary inside the arc", () =>
+    assert.deepEqual(A.arcMonths(arc).map((m) => m.iso), ["2026-12-01", "2027-01-01", "2027-02-01"]));
+  it("draws the weight line from start to goal and says which side of it you are", () => {
+    assert.equal(A.expectedWeight(arc, "2026-11-08"), 99.2);
+    assert.equal(A.expectedWeight(arc, "2027-02-10"), 90);
+    const w = A.weightStatus(arc, [{ date: "2026-12-26", kg: 95.5 }], "2026-12-26");
+    assert.equal(w.expected, 94.5); assert.equal(w.delta, 1);          // 1 kg above the line, halfway in
+    assert.ok(w.pct > 0.35 && !w.stale, JSON.stringify(w));
+  });
+  it("treats a number copied forward for a week as no weigh-in", () => {
+    const log = ["2026-11-02", "2026-11-05", "2026-11-09", "2026-11-12"].map((date) => ({ date, kg: 99.2 }));
+    const w = A.weightStatus(arc, log, "2026-11-12");
+    assert.ok(w.stale && w.sinceChangeDays === 10);
+    assert.ok(!A.weightStatus(arc, [...log, { date: "2026-11-13", kg: 98.9 }], "2026-11-13").stale);
+  });
+  it("VO2max progress runs from the start value to the goal", () => {
+    const v = A.vo2Status(arc, [{ date: "2026-11-08", value: 51 }]);
+    assert.equal(v.toGo, 1); assert.equal(v.pct, 0);
+    assert.equal(A.vo2Status(arc, [{ date: "2027-01-08", value: 52 }]).pct, 1);
+  });
+  it("averages recovery only inside the arc", () => {
+    const r = A.recoveryStatus(arc, [{ date: "2026-11-01", pct: 10 }, { date: "2026-11-09", pct: 60 }, { date: "2026-11-10", pct: 80 }], "2026-11-10");
+    assert.equal(r.avg, 70); assert.equal(r.days, 2);
+  });
+  it("counts protein days against the weight of the day; unlogged days are neither", () => {
+    const p = A.proteinStatus(arc, { "2026-11-08": { protein: 200 }, "2026-11-09": { protein: 150 } },
+      [{ date: "2026-11-01", kg: 99.2 }], 2, "2026-11-10");
+    assert.equal(p.logged, 2); assert.equal(p.hit, 1); assert.equal(p.days, 3);
+  });
+  it("adherence counts planned days by the day they were planned for, never today's pending one", () => {
+    const days = { Mon: { type: "strength" }, Tue: { type: "cardio" }, Wed: { type: "rest" }, Thu: { type: "strength" },
+      Fri: { type: "rest" }, Sat: { type: "rest" }, Sun: { type: "rest" } };
+    const prog = { id: "b", startDate: "2026-11-09", lengthWeeks: 2,
+      weeks: [{ weekNumber: 1, startDate: "2026-11-09", days }, { weekNumber: 2, startDate: "2026-11-16", days }] };
+    const rd = (p, d) => { const i = Math.floor(A.programOn([p], d) ? (Date.parse(d) - Date.parse(p.startDate)) / 864e5 : -1);
+      const wk = p.weeks[Math.floor(i / 7)]; return { day: wk ? wk.days[["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i % 7]] : null }; };
+    const s = (date, weekNumber, weekday, extra) => ({ date, programId: "b", weekNumber, weekday, extra, cardioResult: {} });
+    const sessions = [s("2026-11-09", 1, "Mon"), s("2026-11-11", 1, "Tue"), s("2026-11-13", 1, "Thu"), s("2026-11-14", null, null, true),
+      s("2026-11-16", 2, "Mon")];
+    const ad = A.arcAdherence(arc, [prog], sessions, "2026-11-17", rd);
+    assert.equal(ad.planned, 4); assert.equal(ad.done, 4);           // Tue done late on Wed still counts; today (Tue 17) pending
+    assert.equal(ad.weekStreak, 1);
+    assert.deepEqual(ad.thisWeek, { done: 1, planned: 3 });
+    const missed = A.arcAdherence(arc, [prog], sessions.filter((x) => x.weekday !== "Thu"), "2026-11-17", rd);
+    assert.equal(missed.missed, 1); assert.equal(missed.weekStreak, 0);
+  });
+});
+
 for (const [name, fn] of groups) { console.log("\n" + name); fn(); }
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
