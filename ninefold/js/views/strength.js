@@ -3,18 +3,18 @@
 // pre-filled sets, ghosted previous values, per-set tap-to-adjust, live volume,
 // dismissible rest timer. Calls onComplete(strengthResult[]) when all exercises done.
 
-import { el, clear, haptic, go, registerCleanup } from "../ui.js";
+import { el, clear, haptic, go, registerCleanup, toast, holdRepeat, presentSheet } from "../ui.js";
 import { arrangeWithSupersets, supersetsAllowed,
   groupLabel, nextInGroup, leadForRound, groupRest } from "../supersets.js";
 import { interruptSheet } from "../components/interrupt.js";
 import { illustration } from "../illustrations.js";
-import { photoURL, loadPhotoManifest } from "../exercise-photo.js";
+import { photoURL, thumbURL, loadPhotoManifest } from "../exercise-photo.js";
 import { exerciseHistory, exerciseHistoryAcross, getAllPrograms, getAllSessions, equipmentForProgram } from "../store.js";
 import { getProfile, withPlace } from "../profile.js";
 import { PlateCalc } from "../components/plate-calc.js";
 import { WeightStepper } from "../components/db-scroller.js";
 import { Ticker } from "../components/timer.js";
-import { cueItemStart, cueItemEnd, cueTick } from "../components/sound.js";
+import { cueItemStart, cueItemEnd, cueTick, cueSetLogged } from "../components/sound.js";
 import { celebrate } from "../components/confetti.js";
 import { recommend, detectStall, roundLoad, isDeloadWeek, e1rm, warmupPlan, replanSets, loadCeiling, rackAt } from "../progression.js";
 import { availableAt, holdsPerSide } from "../exercise-library.js";
@@ -104,13 +104,6 @@ const DIR_CHIP = {
   deload:["▽", "Deload"],
   cap:  ["⤒", "At DB max"],
 };
-
-// brief, self-dismissing confirmation toast
-function toast(msg) {
-  const t = el("div.toast", { text: msg });
-  document.body.appendChild(t);
-  setTimeout(() => { t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 1900);
-}
 
 // Bottom-sheet exercise picker. Resolves the chosen exerciseId, or null if
 // cancelled.
@@ -208,7 +201,7 @@ function pickExercise(program, { excludeId = null, matchFor = null, equip, locat
     function close(val) { ov.remove(); res(val); }
     search.addEventListener("input", () => draw(search.value));
     draw("");
-    document.body.appendChild(ov);
+    presentSheet(ov);
   });
 }
 
@@ -535,12 +528,12 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       el("div.sheet-list", {}, rows),
     ]));
     ov.addEventListener("click", (ev) => { if (ev.target === ov) ov.remove(); });
-    document.body.appendChild(ov);
+    presentSheet(ov);
   }
   // End-of-session gate: any skipped / unfinished lifts get a last chance before
   // the workout closes out.
   function renderReview(remaining) {
-    clearRest(); clear(container);
+    clearRest(true); clear(container);
     const finish = () => { restTicker.stop(); onComplete && onComplete(results); };
     container.appendChild(el("div.routine-head", {}, [
       el("button.btn.ghost", { style: "padding:0", "aria-label": "Finish workout", onclick: finish }, "✕"),
@@ -625,10 +618,16 @@ export async function runStrength(container, program, day, weekday, iso, locatio
   // Rest earned by a superset round, started on the NEXT member's screen —
   // renderExercise clears the timer as it opens, so it cannot be started before.
   let pendingRest = 0;
+  // A superset hands you to its partner after every set. That is the same
+  // workout continuing, not a new screen, so it cross-fades instead of
+  // replaying the full slide-in the phases use.
+  let handover = false;
 
   function renderExercise() {
-    clearRest();
+    clearRest(true);
     clear(container);
+    container.classList.toggle("handover", handover);
+    handover = false;
     const rx = exercises[exIndex];
     // metaFor, not program.exercises: swap and add now reach the whole library,
     // and a lift this block never programmed has no entry here — which used to
@@ -680,31 +679,32 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       el("button.exact", { "aria-label": "Add an exercise", onclick: () => addExercise() }, "+ Add"),
     ].filter(Boolean) : [];
     container.appendChild(el("div.routine-head", {}, [
-      el("button.btn.ghost", { style: "padding:0", "aria-label": "Exit logging", onclick: () => maybeExit() }, "✕"),
+      el("button.icbtn", { "aria-label": "Exit logging", onclick: () => maybeExit() }, "✕"),
       el("span.spacer"),
       ...headActions,
       el("button.badge.navbadge", { "aria-label": "Jump to another exercise", onclick: () => openNav() }, `≡  ${exIndex + 1}/${exercises.length}`),
     ]));
     container.appendChild(el("div.progress", {}, [el("div.progress-fill", { style: `width:${(exIndex / exercises.length) * 100}%` })]));
 
-    // THE WHOLE IMAGE, not the demo crop. Lists get the cropped photograph
-    // because a muscle panel is unreadable at 44px, but this is the screen you
-    // stand in front of between sets — the activation half is the half that
-    // answers "am I meant to feel this here?", and cropping it away was the
-    // wrong trade at this size. Full width, whole composite, tap to enlarge.
+    // A THUMBNAIL THAT OPENS THE WHOLE IMAGE, not the whole image inline.
+    // The full composite (demo + activation map) took about half the screen, so
+    // the thing this screen is for — the weight, the reps and the Log button —
+    // started below the fold on every single exercise. The picture answers a
+    // question you ask once per lift; the logger is used four times per lift.
+    // One tap on the thumbnail still opens the full composite.
     const demoURL = photoURL(rx.exerciseId);
+    const thumb = thumbURL(rx.exerciseId) || demoURL;
     const heroNode = demoURL
-      ? el("button.exhero-btn", { "aria-label": `Enlarge ${lib.name} demonstration`,
+      ? el("button.exthumb", { "aria-label": `Enlarge ${lib.name} demonstration`,
           onclick: () => showDemo(demoURL, lib.name) },
-          [el("img.exhero-img", { src: demoURL, alt: `${lib.name} — demonstration and muscles worked`,
-            decoding: "async" })])
-      : el("div", { style: "width:74px;height:74px;color:var(--accent);flex:none" }, [illustration(rx.exerciseId)]);
+          [el("img", { src: thumb, alt: "", width: 76, height: 76, decoding: "async" })])
+      : el("div.exthumb.drawn", {}, [illustration(rx.exerciseId)]);
     container.appendChild(el("div.ex-head", {}, [
-      demoURL
-        ? el("div", {}, [el("h2", { style: "margin:0 0 10px" }, lib.name), heroNode])
-        : el("div.row", {}, [heroNode, el("h2", { style: "margin:0", text: lib.name })]),
-      el("div.cue", { text: lib.cue || "" }),
-      rxLine,
+      el("div.exhead-row", {}, [heroNode, el("div.exhead-meta", {}, [
+        el("h2", { text: lib.name }),
+        rxLine,
+      ])]),
+      lib.cue ? el("div.cue", { text: lib.cue }) : null,
       prevEx ? el("div.rx", { text: "Last time: " + prevEx.sets.map((s) => M.setDisplay(implement, s)).join("  ") })
         : anchorWeight(program, rx.exerciseId) != null ? el("div.rx", { text: "Week-1 anchor: " + program.loadAnchors[rx.exerciseId] }) : null,
     ]));
@@ -774,7 +774,8 @@ export async function runStrength(container, program, day, weekday, iso, locatio
 
     // --- reps / seconds stepper ---
     const repsLabel = state.timed ? "sec" : "reps";
-    const repsVal = el("input", { type: "number", inputmode: "numeric", value: String(curRep()) });
+    const repsVal = el("input", { type: "number", inputmode: "numeric", value: String(curRep()),
+      "aria-label": state.timed ? "Seconds" : "Reps" });
     function curRep() { return state.timed ? state.sets[active].seconds : state.sets[active].reps; }
     function setRep(v) {
       v = Math.max(0, Math.round(v));
@@ -786,9 +787,9 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     const repsRow = el("div.reps-row", {}, [
       el("div.dim", { text: repsLabel }),
       el("div.numfield", {}, [
-        el("button.stepbtn", { style: "width:46px;height:46px;font-size:1.3rem", "aria-label": state.timed ? "Less time" : "Fewer reps", onclick: () => setRep(curRep() - (state.timed ? 5 : 1)) }, "−"),
+        holdRepeat(el("button.stepbtn", { "aria-label": state.timed ? "Less time" : "Fewer reps", onclick: () => setRep(curRep() - (state.timed ? 5 : 1)) }, "−"), () => setRep(curRep() - (state.timed ? 5 : 1))),
         repsVal,
-        el("button.stepbtn", { style: "width:46px;height:46px;font-size:1.3rem", "aria-label": state.timed ? "More time" : "More reps", onclick: () => setRep(curRep() + (state.timed ? 5 : 1)) }, "+"),
+        holdRepeat(el("button.stepbtn", { "aria-label": state.timed ? "More time" : "More reps", onclick: () => setRep(curRep() + (state.timed ? 5 : 1)) }, "+"), () => setRep(curRep() + (state.timed ? 5 : 1))),
       ]),
     ]);
 
@@ -832,6 +833,10 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       else wt = M.fmtWeight(src.weightKg);
       return [wt, reps];
     }
+    // The row logged by THIS tap, so only its tick animates. Every tick used to
+    // carry the pop, and the list is rebuilt on each log — logging set three
+    // replayed sets one and two.
+    let justLogged = -1;
     function drawSets() {
       clear(setlist);
       state.sets.forEach((s, i) => {
@@ -843,11 +848,15 @@ export async function runStrength(container, program, day, weekday, iso, locatio
         const [wt, reps] = cells(s);
         const cls = s.done ? ".done" : isActive ? ".active" : "";
         const tick = s.done
-          ? el("span.tick" + (s.pr ? ".pr" : ""), { html: s.pr ? "🏆" : "✓" })
+          ? el("span.tick" + (s.pr ? ".pr" : "") + (i === justLogged ? ".just" : ""), { html: s.pr ? "🏆" : "✓" })
           : isActive
           ? el("button.tick.commit", { "aria-label": "Complete set", onclick: (e) => { e.stopPropagation(); logSet(); } }, "✓")
           : el("span.tick.pending", {});
-        const row = el("div.setrow" + cls, { onclick: () => { if (!isActive) setActive(i); } }, [
+        // A row you can tap is a button: reachable by keyboard and announced as one.
+        const open = () => { if (!isActive) setActive(i); };
+        const row = el("div.setrow" + cls, isActive ? {} : { role: "button", tabindex: "0",
+          "aria-label": `Set ${i + 1}, ${[wt, reps].filter(Boolean).join(" ")}${s.done ? ", logged. Edit" : ". Edit"}`,
+          onclick: open, onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } } }, [
           el("span.n", { text: "S" + (i + 1) }),
           el("div.cells" + (ghost ? ".ghost" : ""), {}, [
             wt != null ? el("span.cell.w", { text: wt }) : el("span.cell.w.faint", { text: "—" }),
@@ -858,6 +867,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
         setlist.appendChild(row);
         if (isActive && editor) setlist.appendChild(editor);   // accordion: editor under the active row
       });
+      justLogged = -1;
     }
 
     function setActive(i) {
@@ -915,8 +925,9 @@ export async function runStrength(container, program, day, weekday, iso, locatio
         if (prevBest !== undefined && e > prevBest + 0.05) { s.pr = true; bestE1[rx.exerciseId] = e; prHit = true; }
         else if (prevBest === undefined || e > prevBest) bestE1[rx.exerciseId] = e;
       }
+      justLogged = active;
       if (prHit) { haptic(25); celebrate(1400); toast("🏆 New best · " + lib.name); }
-      else haptic(15);
+      else { haptic(15); try { cueSetLogged(); } catch (_) {} }
       // --- SUPERSET: GO TO THE PARTNER, AND REST AFTER THE PAIR, NOT INSIDE IT.
       // That ordering IS the superset. Resting between the two halves would make
       // it two exercises done in a row, which is what the app did for every
@@ -927,6 +938,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
         commit();
         exIndex = partner;
         toast(`${metaFor(program, exercises[partner].exerciseId).name} now — rest after the pair.`);
+        handover = true;
         renderExercise();
         return;
       }
@@ -938,6 +950,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
         if (lead >= 0 && lead !== exIndex) {
           pendingRest = groupRest(exercises, rx.supersetId, exercises[exIndex].restSeconds);
           exIndex = lead;
+          handover = true;
           renderExercise();
           return;
         }
@@ -1099,9 +1112,9 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       const canRemove = state.sets.length > 1 && pendingCount() > 0;
       clear(setBar);
       setBar.append(
-        el("button.btn.ghost", { style: "flex:1;min-height:38px;font-size:.8rem", disabled: !canRemove,
+        el("button.btn.ghost", { style: "flex:1;min-height:44px;font-size:.85rem", disabled: !canRemove,
           "aria-label": "One fewer set", onclick: () => removeSet() }, "− Set"),
-        el("button.btn.ghost", { style: "flex:1;min-height:38px;font-size:.8rem",
+        el("button.btn.ghost", { style: "flex:1;min-height:44px;font-size:.85rem",
           "aria-label": "One more set", onclick: () => addSet() }, "+ Set"),
       );
     }
@@ -1155,7 +1168,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     const supersetPartnerFor = (round) => nextInGroup(exercises, exIndex, round, setsLoggedAt);
 
     function finishExercise() {
-      clearRest();
+      clearRest(true);
       commit();
       // advance to the next UNLOGGED lift; if none ahead, review any skipped /
       // unfinished ones before closing the session out.
@@ -1182,7 +1195,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       const hasLogged = results.length > 0 || state.sets.some((s) => s.done);
       const kind = await interruptSheet({ canComplete: hasLogged });
       if (kind === "continue") return;
-      clearRest();
+      clearRest(true);
       if (kind !== "discard") commit();   // capture the current lift's logged sets
       opts.onExit(kind, kind === "discard" ? null : results.slice());
     }
@@ -1190,7 +1203,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
 
   // --- rest timer pill (§8: dismissible) ---
   function startRest(seconds) {
-    clearRest();
+    clearRest(true);
     if (!seconds) return;
     restTotal = seconds;
     const ring = el("span.rest-ring");
@@ -1203,7 +1216,7 @@ export async function runStrength(container, program, day, weekday, iso, locatio
       ring, el("span.lab", { text: "Rest" }), t, el("span.spacer"),
       el("button.rbtn", { "aria-label": "Subtract 15 seconds", onclick: () => restTicker.addSeconds(-15) }, "−15"),
       el("button.rbtn", { "aria-label": "Add 15 seconds", onclick: () => { restTotal += 15; restTicker.addSeconds(15); } }, "+15"),
-      el("button.btn", { style: "min-height:36px;padding:0 14px", onclick: () => clearRest() }, "Skip"),
+      el("button.rbtn", { onclick: () => clearRest() }, "Skip"),
     ]);
     document.body.appendChild(restPill);
     restTicker.onTick = (rem) => {
@@ -1213,9 +1226,16 @@ export async function runStrength(container, program, day, weekday, iso, locatio
     restTicker.onDone = () => { cueItemEnd(); haptic(25); clearRest(); };
     restTicker.start(seconds);
   }
-  function clearRest() {
+  // `now` skips the fade: a new pill is about to take this one's place, or the
+  // screen under it is being rebuilt.
+  function clearRest(now = false) {
     restTicker.stop();
-    if (restPill) { restPill.remove(); restPill = null; }
+    const p = restPill;
+    restPill = null;
+    if (!p) return;
+    if (now) { p.remove(); return; }
+    p.classList.add("out");
+    setTimeout(() => p.remove(), 160);
   }
 
   if (exIndex >= exercises.length) { onComplete && onComplete(results); return; }   // resumed past the end

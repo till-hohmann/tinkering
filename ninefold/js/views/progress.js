@@ -9,7 +9,7 @@ import { strengthScore } from "../standards.js";
 import { getProfile } from "../profile.js";
 import { weightLabel, weightValue, lengthLabel, lengthValue, distanceLabel, distanceValue, paceLabel, paceValue } from "../units.js";
 import * as M from "../model.js";
-import { el, mount, go, countUp, locationBadge } from "../ui.js";
+import { el, mount, go, countUp, locationBadge, quietNextMount } from "../ui.js";
 import { illustration } from "../illustrations.js";
 import { barChart, sparkline, dualAreaChart } from "../components/charts.js";
 import { e1rm, detectStall, loadCeiling } from "../progression.js";
@@ -175,6 +175,7 @@ const RANGES = [
   { key: "all", label: "All", days: null },
 ];
 let rangeKey = "all";   // persists while the module stays loaded (across tab visits)
+let sectionKey = null;  // which Progress section is showing; same lifetime
 
 function cutoffISO(days) {
   if (!days) return null;
@@ -501,7 +502,7 @@ async function fillDexa(card) {
     inner.push(el("div.note", { style: "margin-top:16px", text: prev
       ? `Latest ${latest.date} vs ${prev.date}. Green = the healthy direction — fat & central fat down, lean, bone & metabolism up.`
       : `Baseline ${latest.date}. ${sched.booked ? "Next scan booked for" : "Retest around"} ${sched.dueISO} to track fat vs lean change — the real recomp signal.` }));
-    inner.push(el("button.btn.block", { style: "margin-top:12px", onclick: () => go("#/settings") },
+    inner.push(el("button.btn.block", { style: "margin-top:12px", onclick: () => go("#/settings/body") },
       prev ? "Log a new scan →" : "Add / edit scan →"));
 
     card.replaceChildren(...inner.filter(Boolean));
@@ -515,7 +516,8 @@ async function fillDexa(card) {
 function rangeSeg(rerender) {
   const seg = el("div.segmented", { style: "margin-top:12px" });
   for (const r of RANGES) seg.appendChild(el("button" + (rangeKey === r.key ? ".on" : ""),
-    { onclick: () => { rangeKey = r.key; rerender(); } }, r.label));
+    { "aria-pressed": rangeKey === r.key ? "true" : "false",
+      onclick: () => { rangeKey = r.key; quietNextMount(); rerender(); } }, r.label));
   return seg;
 }
 async function scopedSessions() {
@@ -546,10 +548,10 @@ export async function renderProgress() {
   const showCardio = !progProfile || progProfile.features.cardio !== false;
 
   const children = [el("h1", { text: "Progress" }), rangeSeg(renderProgress)];
-  // section anchors for the sticky jump-chip navigator (built just before mount,
-  // so only sections that actually rendered get a chip)
+  // Section markers. Everything pushed after one belongs to that section, and
+  // only one section is mounted at a time (see the end of this function).
   const secs = [];
-  const anchor = (id, label) => { secs.push({ id, label }); return el("div", { id, style: "scroll-margin-top:60px" }); };
+  const anchor = (id, label) => { secs.push({ id, label, at: children.length }); return null; };
   const cutoff = cutoffISO((RANGES.find((r) => r.key === rangeKey) || RANGES[3]).days);
   const inWindow = (iso) => !cutoff || iso >= cutoff;
   const inRange = logged.filter((s) => inWindow(s.date));
@@ -585,7 +587,7 @@ export async function renderProgress() {
       ]));
       children.push(el("div.card.flush", {}, [
         el("div.volwrap", {}, rows),
-        el("p.note", { style: "margin:12px 2px 2px", text: "Bar = sets logged, tick = the week's planned target, green band = productive range (MEV–MAV). The chip rates your program's planned dose: light (below MEV) · productive · high (above MAV)." }),
+        el("p.note", { style: "margin:12px 2px 2px", text: "Bar = sets logged, tick = the week's planned target, green band = productive range (MEV–MAV). The chip rates the plan, not your week: light (below MEV) · productive · high (above MAV)." }),
         // A deload or taper is SUPPOSED to read light. Saying so stops the
         // reader adding back the sets the week exists to remove — the builder's
         // own audit excludes these weeks for the same reason.
@@ -791,15 +793,22 @@ export async function renderProgress() {
     children.push(el("button.btn.block", { style: "margin-top:10px", onclick: () => go("#/history") }, "All sessions →"));
   children.push(el("button.btn.block", { style: "margin-top:8px", onclick: () => go("#/records") }, "🏆 Personal records →"));
 
-  // sticky jump-chips under the range selector — one per section that rendered
+  // ONE SECTION AT A TIME. This page was about seven screens long and the chips
+  // only scrolled you to a point in it, so every visit was a long scroll past
+  // charts you had not come for. The chips are now tabs: each shows its own
+  // section and nothing else. The choice is kept while the app stays open.
   if (secs.length > 1) {
-    children.splice(2, 0, el("div.jumpchips", {}, secs.map((sec) =>
-      el("button.jchip", { onclick: () => {
-        const t = document.getElementById(sec.id);
-        if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
-      } }, sec.label))));
+    const cur = secs.find((x) => x.id === sectionKey) || secs[0];
+    const idx = secs.indexOf(cur);
+    const end = idx + 1 < secs.length ? secs[idx + 1].at : children.length;
+    const body = children.slice(cur.at, end);
+    children.length = secs[0].at;      // the heading and the range selector
+    children.push(el("div.jumpchips", { role: "tablist" }, secs.map((sec) =>
+      el("button.jchip" + (sec === cur ? ".on" : ""), { role: "tab", "aria-selected": sec === cur ? "true" : "false",
+        onclick: () => { if (sec === cur) return; sectionKey = sec.id; quietNextMount(); renderProgress(); } }, sec.label))));
+    children.push(...body);
   }
-  mount(children);
+  mount(children.filter(Boolean));
   fillStandards(standardsCard);        // async: e1RM vs bodyweight standards (fixed 8-week window)
 }
 
@@ -825,7 +834,7 @@ export async function renderComposition() {
   if (!logged.length && !(await hasBodyData())) {
     return mount([el("h1", { text: "Body" }), el("div.card", { style: "margin-top:14px" }, [
       el("p.dim", { style: "margin:0", text: "Nothing logged about your body yet. Add your bodyweight, a tape measurement or a DEXA scan under Profile, and the trends start here." }),
-      el("button.btn.primary.block", { style: "margin-top:14px", onclick: () => go("#/settings") }, "Go to Profile"),
+      el("button.btn.primary.block", { style: "margin-top:14px", onclick: () => go("#/settings/body") }, "Add body data"),
     ])]);
   }
 
@@ -1004,7 +1013,9 @@ function volRow(muscle, logged, planned, gaps = []) {
   // completion — so word it as a dose ("light/productive/high"), never "on target"
   // (which reads like a progress verdict next to the logged/planned count).
   const st = landmarkStatus(muscle, planned);
-  const chipText = st === "under" ? "light" : st === "over" ? "high" : "productive";
+  // "plan" in the chip itself: a green "productive" beside "0 / 14" read as a
+  // verdict on a week in which nothing had been logged.
+  const chipText = "plan " + (st === "under" ? "light" : st === "over" ? "high" : "productive");
   return el("div.volrow", {}, [
     el("div.volhead", {}, [
       el("span.volname", { text: labelOf(muscle) }), el("span.spacer"),

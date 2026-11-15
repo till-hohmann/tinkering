@@ -15,7 +15,7 @@ import { runKindLabel } from "../cardio-intel.js";
 import { dexaSchedule, DEXA_RETEST_MONTHS } from "../dexa.js";
 import { todayISO, WEEKDAYS } from "../model.js";
 import * as M from "../model.js";
-import { el, mount, go, countUp, setChildren } from "../ui.js";
+import { el, mount, go, countUp, setChildren, quietNextMount } from "../ui.js";
 import { illustration, workoutFigure } from "../illustrations.js";
 import { ringStat } from "../components/charts.js";
 import { orbEl } from "../components/orb.js";
@@ -43,7 +43,7 @@ function buildOrbHero(host, kicker, st, makeMini) {
   const orb = orbEl({ pct: st.pct, value: st.value, unit: st.unit, label: st.label });
   if (makeMini) orb.appendChild(makeMini());
   setChildren(host, ...[
-    el("div.label.orbkick", { text: kicker }),
+    kicker ? el("div.label.orbkick", { text: kicker }) : null,
     orb,
     el("div.orb-verdict" + (st.verdictCls ? "." + st.verdictCls : ""), { text: st.verdict }),
     st.vsub ? el("div.orb-vsub", { text: st.vsub }) : null,
@@ -214,7 +214,7 @@ async function shoeReminder() {
     el("p.dim", { style: "margin:0;font-size:.9rem;line-height:1.45",
       text: worn.map((w) => `${w.shoe.name}: ${fmtShoeKm(w.km)}, past its ${fmtShoeKm(w.shoe.limitKm)} limit.`).join(" ")
         + " Time for a new pair. Add it under Profile and retire the old one." }),
-    el("button.btn", { style: "margin-top:12px", onclick: () => go("#/settings") }, "Open Profile"),
+    el("button.btn", { style: "margin-top:12px", onclick: () => go("#/settings/devices") }, "Open shoes"),
   );
   return card;
 }
@@ -350,7 +350,7 @@ export async function renderHome() {
       el("p.dim", { style: "margin-top:0", text:
         "A few questions about what you're training for and when you can train, and the app writes the plan — then runs it with you, session by session." }),
       el("button.btn.block.primary", { style: "margin-top:16px", onclick: () => go("#/build") }, "Start"),
-      el("button.btn.block", { style: "margin-top:8px", onclick: () => go("#/settings") }, "Import a program instead"),
+      el("button.btn.block", { style: "margin-top:8px", onclick: () => go("#/settings/data") }, "Import a program instead"),
     ]),
     // YOGA DOES NOT WAIT FOR A TRAINING BLOCK. It substitutes a session, replaces
     // the mobility work, or goes on top — and only the first of those needs a
@@ -479,9 +479,9 @@ export async function renderHome() {
   // fallback for the pending state when the tracker isn't reachable
   const weekFallback = { ...weekProgress, verdict: "This week", vsub: `${completed} of ${planned} sessions done.` };
   if (done) {
-    buildOrbHero(orbHero, kicker, weekProgress, makeMini);                  // accomplished → week progress
+    buildOrbHero(orbHero, null, weekProgress, makeMini);                  // accomplished → week progress
   } else {
-    buildOrbHero(orbHero, kicker, { pct: 0, value: "—", unit: "", label: "RECOVERY",   // pending → recovery (placeholder)
+    buildOrbHero(orbHero, null, { pct: 0, value: "—", unit: "", label: "RECOVERY",   // pending → recovery (placeholder)
       verdict: "Readiness", vsub: "Checking your recovery…" });
   }
   // ===== the arc, above everything while one is running =====
@@ -489,7 +489,15 @@ export async function renderHome() {
   // for its whole run, because the countdown is the point: you see it before
   // anything else every time you open the app.
   const arc = homeProfile && homeProfile.arc;
-  const children = arcShowing(arc, iso) ? [arcHero(arc, iso), orbHero] : [orbHero];
+  // TODAY'S SESSION LEADS THE SCREEN. The week ring used to, at half the height
+  // of the phone, so the thing you open the app for (what am I doing today, and
+  // the button that starts it) sat at the fold. The ring now follows the session.
+  // The date is the page's title; the week and phase sit under it.
+  const children = [el("div.todayhead", {}, [
+    el("h1", { text: prettyDate(iso) }),
+    el("div.note", { text: kicker }),
+  ])];
+  if (arcShowing(arc, iso)) children.push(arcHero(arc, iso));
 
   // ===== backup is broken =====
   // FIRST, above everything, and the only card here that isn't about training.
@@ -499,6 +507,7 @@ export async function renderHome() {
   // miss is a tunnel, a run of them is a broken link.
   const backupWarning = await backupAlert();
   if (backupWarning) children.push(backupWarning);
+  const topCount = children.length;     // today's session is moved to here once it is built
 
   // ===== what changed since you last opened it =====
   // BELOW the backup warning: a broken backup is urgent, release notes are not.
@@ -559,6 +568,7 @@ export async function renderHome() {
   children.push(fuelToday);
 
   // ===== today hero =====
+  const todayStart = children.length;
   if (dayType === "rest") {
     children.push(el("div.hero.rest", {}, [
       el("div.htop", {}, [
@@ -676,6 +686,10 @@ export async function renderHome() {
     ]));
   }
 
+  // Today's session, its button and the day's mobility work go to the top; the
+  // week ring follows them, and the reminders and the streak after that.
+  children.splice(topCount, 0, ...children.splice(todayStart), orbHero);
+
   // ===== yoga =====
   // Always available rather than scheduled — that is the point of it. Yoga
   // substitutes a session, replaces the mobility work, or goes on top, and which
@@ -701,14 +715,14 @@ export async function renderHome() {
   }
 
   mount(children);
-  if (!done) fillReadinessHero(orbHero, kicker, weekFallback, makeMini);   // pending workout → load WHOOP recovery (fall back to week progress if unavailable)
+  if (!done) fillReadinessHero(orbHero, null, weekFallback, makeMini);   // pending workout → load WHOOP recovery (fall back to week progress if unavailable)
   // "Food & energy" switched off meant nothing here: the card filled anyway.
   if (!homeProfile || homeProfile.features.nutrition !== false) fillFuelToday(fuelToday, iso);
   // A weigh-in made on the tracker (WHOOP keeps the weight, so nobody has to
   // type it twice). Only a NEW value is logged; when one arrives, Today redraws
   // once so the arc and the protein target use it.
   syncTrackerWeight().then((r) => {
-    if (r && (location.hash === "" || location.hash === "#/")) renderHome();
+    if (r && (location.hash === "" || location.hash === "#/")) { quietNextMount(); renderHome(); }
   });
 }
 
@@ -733,7 +747,7 @@ async function backupAlert() {
     return el("div.card", { style: "border-color:var(--red)" }, [
       el("div.label", { style: "color:var(--red)", text: "Backup not working" }),
       el("p.note", { style: "margin-top:6px", text: `${detail} ${since} Everything on this device is fine — but a wipe would lose it.` }),
-      el("button.btn.block", { style: "margin-top:10px", onclick: () => go("#/settings") }, "Open backup settings"),
+      el("button.btn.block", { style: "margin-top:10px", onclick: () => go("#/settings/data") }, "Open backup settings"),
     ]);
   } catch (_) { return null; }
 }

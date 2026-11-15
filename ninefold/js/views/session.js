@@ -262,16 +262,63 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
   // A place that exists for this session only. Held on the draft, not the
   // profile, so a resume after a phone lock still knows which gym it's in.
   let adhocPlace = draft.adhocPlace || null;
+  // substitute only when actually elsewhere AND either some lift's kit is missing
+  // there, or some dumbbell lift's planned load is above the heaviest dumbbell
+  // there. The second half is the v191 fix: a dumbbell day at a lighter rack used
+  // to "just log with the local weights", which meant the planned load snapped
+  // down to the ceiling at unchanged reps, and that lighter set became the
+  // history the next session progressed from.
+  //
+  // A function of the place, because the ready screen asks it again each time
+  // you change where you are.
+  const baseEquip = await equipmentForProgram(program);
+  async function substitutingAt(loc, adhoc) {
+    if (day.type !== "strength" || loc === plannedLoc) return false;
+    const equip = withPlace(baseEquip, adhoc);
+    const impl = (e) => program.exercises[e.exerciseId].implement;
+    if ((day.exercises || []).some((e) => needsSub(impl(e), loc, equip))) return true;
+    const lighterHere = (e) => {
+      const here = loadCeiling(impl(e), loc, equip);
+      if (here == null) return false;
+      const there = loadCeiling(impl(e), plannedLoc, equip);
+      return there == null || there > here;
+    };
+    if (!(day.exercises || []).some(lighterHere)) return false;
+    const recs = await plannedRecs(program, day, weekday, srcIso, plannedLoc, equip);
+    return (day.exercises || []).some((e, i) => lighterHere(e) && recs[i].load != null
+      && recs[i].load > loadCeiling(impl(e), loc, equip) + 1e-9);
+  }
+  // Grouped for the place you are ACTUALLY in, and for the plan as the logger
+  // will arrange it (dayWithPairs), so the list matches the workout exactly.
+  const sectionsAt = (loc, adhoc) => {
+    if (day.type !== "strength") return null;
+    const place = (profile.places || []).find((pl) => pl.name === loc) || adhoc || null;
+    return planSections(day.exercises || [], dayWithPairs.supersets, { allow: supersetsAllowed(program, place) });
+  };
+
+  // readiness (strength days) eases loads / trims a set on a rough day.
+  let readiness = null;
   if (!resuming) {
     const lastLoc = await getLastLocation();
     const preferred = lastLoc && lastLoc.date === logDate ? lastLoc.location : plannedLoc;
-    const picked = await locationPrompt(stage, plannedLoc, others, preferred, profile);
+    // ONE SCREEN BEFORE THE WORKOUT, NOT THREE. Where you are, how you feel and
+    // what is coming used to be three screens in a row, each with one decision
+    // whose usual answer was the default. They are now one screen with the
+    // defaults already chosen, so an ordinary day is a single tap.
+    const picked = await readyScreen(stage, { program, template, week, day, weekNumber,
+      plannedLoc, others, preferred, profile, substitutingAt, sectionsAt });
     actualLoc = picked.location;
     adhocPlace = picked.adhoc;
+    readiness = picked.readiness;
     await setLastLocation(logDate, actualLoc);
     draft.location = actualLoc;
     draft.adhocPlace = adhocPlace;
     draft.plannedLocation = plannedLoc;
+    if (readiness) {
+      draft.sessionNotes.readiness = {
+        sleep: readiness.inputs.sleep, energy: readiness.inputs.energy, soreness: readiness.inputs.soreness,
+        recovery: readiness.inputs.recovery, score: readiness.score, band: readiness.band };
+    }
     persist();
     // Which shoes, right after where. Asked only for sessions that wear a pair;
     // with no pair yet, the prompt is where the first one gets added. The
@@ -282,59 +329,13 @@ async function runSession({ program, weekNumber, weekday, week, day, template, s
       const shoeId = await shoePrompt(stage);
       if (shoeId !== undefined) { draft.shoeId = shoeId; persist(); }
     }
+  } else if (day.type === "strength" && draft.sessionNotes && draft.sessionNotes.readiness) {
+    // On resume, rebuild the easing from the saved band instead of re-asking.
+    const r = draft.sessionNotes.readiness, drained = r.band === "Drained";
+    readiness = { mult: drained ? 0.9 : 1, dropSet: drained, band: r.band, cls: drained ? "under" : "on", inputs: r };
   }
-  // substitute only when actually elsewhere AND either some lift's kit is missing
-  // there, or some dumbbell lift's planned load is above the heaviest dumbbell
-  // there. The second half is the v191 fix: a dumbbell day at a lighter rack used
-  // to "just log with the local weights", which meant the planned load snapped
-  // down to the ceiling at unchanged reps, and that lighter set became the
-  // history the next session progressed from.
-  const sessionEquip = withPlace(await equipmentForProgram(program), adhocPlace);
-  let substituting = false;
-  if (day.type === "strength" && actualLoc !== plannedLoc) {
-    const impl = (e) => program.exercises[e.exerciseId].implement;
-    substituting = (day.exercises || []).some((e) => needsSub(impl(e), actualLoc, sessionEquip));
-    const lighterHere = (e) => {
-      const here = loadCeiling(impl(e), actualLoc, sessionEquip);
-      if (here == null) return false;
-      const there = loadCeiling(impl(e), plannedLoc, sessionEquip);
-      return there == null || there > here;
-    };
-    if (!substituting && (day.exercises || []).some(lighterHere)) {
-      const recs = await plannedRecs(program, day, weekday, srcIso, plannedLoc, sessionEquip);
-      substituting = (day.exercises || []).some((e, i) => lighterHere(e) && recs[i].load != null
-        && recs[i].load > loadCeiling(impl(e), actualLoc, sessionEquip) + 1e-9);
-    }
-  }
-
-  // readiness check (strength days) — eases loads / trims a set on a rough day.
-  // On resume, rebuild the easing from the saved band instead of re-asking.
-  let readiness = null;
-  if (day.type === "strength") {
-    if (resuming && draft.sessionNotes && draft.sessionNotes.readiness) {
-      const r = draft.sessionNotes.readiness, drained = r.band === "Drained";
-      readiness = { mult: drained ? 0.9 : 1, dropSet: drained, band: r.band, cls: drained ? "under" : "on", inputs: r };
-    } else if (!resuming) {
-      readiness = await readinessCheck(stage);
-      if (readiness) {
-        draft.sessionNotes.readiness = {
-          sleep: readiness.inputs.sleep, energy: readiness.inputs.energy, soreness: readiness.inputs.soreness,
-          recovery: readiness.inputs.recovery, score: readiness.score, band: readiness.band };
-        persist();
-      }
-    }
-  }
-
-  // intro (skipped on resume — the resume prompt already oriented you)
-  if (!resuming) {
-    // Grouped for the place you are ACTUALLY in, and for the plan as the logger
-    // will arrange it (dayWithPairs), so the list matches the workout exactly.
-    const introPlace = (profile.places || []).find((p) => p.name === actualLoc) || adhocPlace || null;
-    const sections = day.type === "strength"
-      ? planSections(day.exercises || [], dayWithPairs.supersets, { allow: supersetsAllowed(program, introPlace) })
-      : null;
-    await intro(stage, { program, template, week, day, weekNumber, actualLoc, substituting, readiness, sections });
-  }
+  const sessionEquip = withPlace(baseEquip, adhocPlace);
+  const substituting = await substitutingAt(actualLoc, adhocPlace);
 
   // pre-routine (equipment-agnostic warm-up) — skipped on resume (already warm)
   if (template.preRoutine && !resuming) { draft.preRoutineDone = await routinePhase(template.preRoutine, "Warm-up"); persist(); }
@@ -475,46 +476,102 @@ function resumePrompt(stage, saved, day) {
   });
 }
 
-function intro(stage, { program, template, week, day, weekNumber, actualLoc, substituting, readiness, sections }) {
+/**
+ * The one screen before a workout: where you are, how you feel, what is coming.
+ *
+ * Everything is pre-answered — the planned place (or the one you trained at
+ * earlier today), a middling readiness — so the common case is reading the
+ * list and pressing Start. Changing the place redraws the list for that place,
+ * because the pairing and the substitutions both depend on it.
+ *
+ * Resolves { location, adhoc, readiness }. `readiness` is null when you did not
+ * touch it and no tracker supplied a reading: an answer nobody gave is not
+ * recorded as one.
+ */
+function readyScreen(stage, { program, template, week, day, weekNumber, plannedLoc, others, preferred, profile,
+  substitutingAt, sectionsAt }) {
   return new Promise((res) => {
-    clear(stage);
-    // The day as it will actually run — pairs grouped and labelled, so being
-    // handed a different lift after your first set is never a surprise.
-    const introSections = sections || (day.exercises || []).map((e) => ({ kind: "single", entry: e }));
+    const strength = day.type === "strength";
     const hasWarm = !!template.preRoutine;
     const exName = (e) => (program.exercises[e.exerciseId] || {}).name || e.exerciseId;
-    const tileCls = day.type === "cardio" ? ".cardio" : ".strength";
-    stage.appendChild(el("div", {}, [
-      backBtn("Today", "#/"),
-      el("div.row", { style: "margin-top:6px;gap:13px" }, [
-        el("div.illotile", { style: "width:52px;height:52px;flex:none;padding:0" }, [illustration(workoutFigure(template, day))]),
-        el("div", {}, [
-          el("div.label", { text: hasWarm ? "Warm-up next" : "Get ready" }),
-          el("h1", { style: "margin:4px 0 0", text: template.label }),
-        ]),
-      ]),
-      el("div.row.wrap", { style: "margin-top:10px" }, [
-        locationBadge(actualLoc || template.location),
-        substituting ? el("span.badge", { style: "color:var(--violet);background:var(--violet-ghost);border-color:rgba(167,139,250,.3)", text: "⇄ Substitute" }) : null,
-        readiness ? el("span.volchip." + readiness.cls, { text: readiness.band }) : null,
-        el("span.badge.accent", { text: `Week ${weekNumber} · ${week.phaseName}` }),
-      ]),
-      day.type === "strength"
-        ? el("div.list", { style: "margin-top:16px" }, introSections.map((s) => {
-            const row = (e, i, size) => el("div.item", {}, [
-              el("div.ico", {}, [illustration(e.exerciseId)]),
-              el("div.meta", {}, [el("div.t", { text: exName(e) }), el("div.s", { text: `${e.prescribedSets} × ${e.repRange}` })]),
-              size > 1 ? el("span.badge.accent", { text: `${i + 1}/${size}` }) : null,
-            ]);
-            return s.kind === "single" ? row(s.entry, 0, 1)
-              : supersetGroup(s.label, s.entries.map((e, i) => row(e, i, s.entries.length)));
-          }))
-        : el("div.card", { style: "margin-top:16px" }, [el("p", { style: "margin:0", text: day.prescription })]),
-    ]));
+    let loc = preferred || plannedLoc, adhoc = null;
+    const panel = strength ? readinessPanel() : null;
+    const badges = el("div.row.wrap", { style: "margin-top:10px" });
+    const places = el("div.placepick");
+    const placeNote = el("p.note", { style: "margin:8px 2px 0" });
+    const list = el("div");
+    let bar = null;
 
-    const bar = addActionBar(
-      el("button.btn.primary.big.block", { onclick: () => { unlockAudio(); bar.remove(); res(); } },
-        hasWarm ? "Start warm-up" : "Start"));
+    const start = () => {
+      unlockAudio();
+      if (bar) bar.remove();
+      res({ location: loc, adhoc, readiness: panel ? panel.value() : null });
+    };
+
+    async function paintPlan() {
+      const mine = loc;
+      const sub = await substitutingAt(loc, adhoc);
+      if (mine !== loc) return;                       // a later tap already moved on
+      setChildren(badges,
+        el("span.badge.accent", { text: `Week ${weekNumber} · ${week.phaseName}` }),
+        sub ? el("span.badge.violet", { text: "⇄ Substitute" }) : null);
+      placeNote.hidden = loc === plannedLoc;
+      placeNote.textContent = loc === plannedLoc ? ""
+        : sub ? "Not the planned place. Lifts are matched to what is here and the results converted back into the plan."
+        : "Not the planned place. Everything planned can be done here.";
+      const sections = sectionsAt(loc, adhoc) || (day.exercises || []).map((e) => ({ kind: "single", entry: e }));
+      const row = (e, i, size) => el("div.item", {}, [
+        el("div.ico", {}, [illustration(e.exerciseId)]),
+        el("div.meta", {}, [el("div.t", { text: exName(e) }), el("div.s", { text: `${e.prescribedSets} × ${e.repRange}` })]),
+        size > 1 ? el("span.badge.accent", { text: `${i + 1}/${size}` }) : null,
+      ]);
+      setChildren(list, strength
+        ? el("div.list", {}, sections.map((sec) => sec.kind === "single" ? row(sec.entry, 0, 1)
+            : supersetGroup(sec.label, sec.entries.map((e, i) => row(e, i, sec.entries.length)))))
+        : el("div.card", { style: "margin:0" }, [el("p", { style: "margin:0", text: day.prescription })]));
+    }
+
+    function paintPlaces() {
+      const names = [plannedLoc, ...others];
+      if (adhoc && !names.includes(adhoc.name)) names.push(adhoc.name);
+      else if (!names.includes(loc)) names.push(loc);
+      setChildren(places,
+        ...names.map((n) => el("button.placechip" + (n === loc ? ".on" : ""), {
+          "aria-pressed": n === loc ? "true" : "false",
+          onclick: () => { if (n === loc) return; loc = n; if (!adhoc || adhoc.name !== n) adhoc = null; paintPlaces(); paintPlan(); },
+        }, [n, n === plannedLoc ? el("span.placechip-tag", { text: "planned" }) : null])),
+        // Somewhere new. Travelling, a hotel gym, a friend's garage — previously
+        // the only options were the places you'd already described, so the answer
+        // to "I'm somewhere else entirely" was to lie and pick the closest one.
+        el("button.placechip.add", { onclick: async () => {
+          if (bar) bar.remove();
+          const made = await newPlaceScreen(stage, profile);
+          if (made) { loc = made.location; adhoc = made.adhoc; }
+          draw();
+        } }, "+ Somewhere else"));
+    }
+
+    function draw() {
+      clear(stage);
+      stage.appendChild(el("div", {}, [
+        backBtn("Today", "#/"),
+        el("div.row", { style: "margin-top:6px;gap:13px" }, [
+          el("div.illotile", { style: "width:52px;height:52px;flex:none;padding:0" }, [illustration(workoutFigure(template, day))]),
+          el("h1", { style: "margin:0;font-size:1.4rem;line-height:1.15;text-wrap:balance", text: template.label }),
+        ]),
+        badges,
+        el("h3.readyhead", { text: "Where" }),
+        places, placeNote,
+        panel ? el("h3.readyhead", { text: "How are you today?" }) : null,
+        panel ? panel.node : null,
+        el("h3.readyhead", { text: strength ? "Today's lifts" : "Today's session" }),
+        list,
+      ]));
+      paintPlaces();
+      paintPlan();
+      bar = addActionBar(el("button.btn.primary.big.block", { onclick: start }, hasWarm ? "Start warm-up" : "Start"));
+    }
+    draw();
   });
 }
 
@@ -621,96 +678,67 @@ async function notes(stage, draft) {
 //
 // Resolves to { location, adhoc }. `adhoc` is a place record that exists for
 // this session only and is never written to the profile — see withPlace().
-function locationPrompt(stage, planned, others, preferred, profile) {
+// Somewhere new. Two exits, because "a gym I'll use again" and "a gym I'll
+// never see again" are different facts and only one of them is worth
+// remembering. Making every one-off permanent is how a frequent traveller
+// ends up choosing today's session from a list of forty dead hotels.
+//
+// Resolves { location, adhoc }, or null when you go back without adding one.
+function newPlaceScreen(stage, profile) {
   return new Promise((res) => {
-    const draw = () => {
-      clear(stage);
-      const choice = (title, sub, loc, isPlanned, isPreferred) =>
-        el("button.item", { style: "text-align:left" + (isPreferred ? ";border-color:var(--accent)" : ""), onclick: () => res({ location: loc, adhoc: null }) }, [
-          el("div.meta", {}, [el("div.t", { text: title }), el("div.s", { text: isPreferred && !isPlanned ? "earlier today · substitute here" : sub })]),
-          el("span.badge" + (isPlanned ? ".accent" : ""), { text: isPlanned ? "Planned" : "Swap" }),
-        ]);
-      const elsewhere = others.length === 1 ? others[0] : "somewhere else";
-      const blurb = others.length
-        ? `Scheduled at ${planned}. If you're at ${elsewhere}, the app swaps in equipment-matched lifts and converts your results back into the plan.`
-        : `Scheduled at ${planned}. Training somewhere else today? Add it and the app matches the session to what's actually there.`;
-      stage.appendChild(el("div", {}, [
-        backBtn("Today", "#/"),
-        el("div.label", { style: "margin-top:8px", text: "Location check" }),
-        el("h1", { style: "margin:4px 0 0", text: "Where are you training?" }),
-        el("p.dim", { text: blurb }),
-        el("div.list", { style: "margin-top:16px" }, [
-          choice(`I'm at ${planned}`, "Run the workout as planned", planned, true, preferred === planned),
-          ...others.map((o) => choice(`I'm at ${o}`, "Substitute for the equipment here", o, false, preferred === o)),
-        ]),
-        // Somewhere new. Travelling, a hotel gym, a friend's garage — previously
-        // the only options were the places you'd already described, so the answer
-        // to "I'm somewhere else entirely" was to lie and pick the closest one.
-        el("button.btn.block", { style: "margin-top:12px", onclick: addPlace }, "+ Somewhere else"),
-      ]));
-    };
+    const place = blankPlace(profile);
+    const status = el("p.note", { style: "min-height:1em;margin-top:10px" });
+    clear(stage);
+    const editor = placeEditor(place, profile, {
+      onChange: () => { status.textContent = ""; },
+      nameLabel: "What's it called? (optional)",
+    });
+    stage.appendChild(el("div", {}, [
+      backBtn("Back", "#/"),
+      el("h1", { style: "margin:4px 0 0", text: "What's here?" }),
+      el("p.dim", { text: "Tick what this place actually has. The app picks matched movements for today and converts the results back into your plan." }),
+      el("div.card", { style: "margin-top:14px" }, [editor]),
+      status,
+    ]));
 
-    // Somewhere new. Two exits, because "a gym I'll use again" and "a gym I'll
-    // never see again" are different facts and only one of them is worth
-    // remembering. Making every one-off permanent is how a frequent traveller
-    // ends up choosing today's session from a list of forty dead hotels.
-    function addPlace() {
-      const place = blankPlace(profile);
-      const status = el("p.note", { style: "min-height:1em;margin-top:10px" });
-      clear(stage);
-      const editor = placeEditor(place, profile, {
-        onChange: () => { status.textContent = ""; },
-        nameLabel: "What's it called? (optional)",
-      });
-      stage.appendChild(el("div", {}, [
-        backBtn("Back", "#/"),
-        el("div.label", { style: "margin-top:8px", text: "Somewhere else" }),
-        el("h1", { style: "margin:4px 0 0", text: "What's here?" }),
-        el("p.dim", { text: "Tick what this place actually has. The app picks matched movements for today and converts the results back into your plan." }),
-        el("div.card", { style: "margin-top:14px" }, [editor]),
-        status,
-      ]));
+    // Just for today: no name required, nothing written to the profile. It
+    // still needs A name because the engines key equipment by place name, so
+    // an unnamed one becomes "Away" — which also means a run of one-off gyms
+    // reads as one honest label in the history rather than forty singletons.
+    const useOnce = el("button.btn.big.block", { onclick: () => {
+      const made = tidyPlace(place, profile, "Away");
+      bar.remove();
+      res({ location: made.name, adhoc: made });
+    } }, "Just for today");
 
-      // Just for today: no name required, nothing written to the profile. It
-      // still needs A name because the engines key equipment by place name, so
-      // an unnamed one becomes "Away" — which also means a run of one-off gyms
-      // reads as one honest label in the history rather than forty singletons.
-      const useOnce = el("button.btn.big.block", { onclick: () => {
-        const p = tidyPlace(place, profile, "Away");
-        bar.remove();
-        res({ location: p.name, adhoc: p });
-      } }, "Just for today");
+    const saveIt = el("button.btn.primary.big.block", { onclick: async () => {
+      const named = tidyPlace(place, profile, "");
+      if (!named.name) { status.textContent = "Give it a name to save it, or use it just for today."; return; }
+      const existing = (profile && profile.places) || [];
+      if (existing.some((pl) => pl.name.toLowerCase() === named.name.toLowerCase())) {
+        status.textContent = `You already have a place called ${named.name}.`; return;
+      }
+      await patchProfile({ places: [...existing, named] }).catch(() => {});
+      profile.places = [...existing, named];
+      bar.remove();
+      res({ location: named.name, adhoc: null });
+    } }, "Save as a place");
 
-      const saveIt = el("button.btn.primary.big.block", { onclick: async () => {
-        const named = tidyPlace(place, profile, "");
-        if (!named.name) { status.textContent = "Give it a name to save it — or use it just for today."; return; }
-        const existing = (profile && profile.places) || [];
-        if (existing.some((p) => p.name.toLowerCase() === named.name.toLowerCase())) {
-          status.textContent = `You already have a place called ${named.name}.`; return;
-        }
-        await patchProfile({ places: [...existing, named] }).catch(() => {});
-        bar.remove();
-        res({ location: named.name, adhoc: null });
-      } }, "Save as a place");
-
-      const bar = addActionBar(useOnce, saveIt);
-      // Leaving the new-place screen must return to the picker, not the app.
-      const bb = stage.querySelector(".backbtn");
-      if (bb) bb.onclick = () => { bar.remove(); draw(); };
-    }
-
-    draw();
+    const bar = addActionBar(useOnce, saveIt);
+    // Leaving the new-place screen must return to the ready screen, not the app.
+    const bb = stage.querySelector(".backbtn");
+    if (bb) bb.onclick = () => { bar.remove(); res(null); };
   });
 }
 
-// --- Readiness check: ease the loads on a rough day -----------------------
+// --- Readiness: ease the loads on a rough day -----------------------------
 // WHOOP recovery (auto-pulled on open) stands in for sleep + energy — they're
 // already baked into the recovery score — so you only rate soreness by hand. If
 // WHOOP isn't reachable, it falls back to manual sleep + energy + soreness.
-function readinessCheck(stage) {
-  return new Promise((res) => {
-    clear(stage);
+function readinessPanel() {
+  {
     const state = { sleep: 1, energy: 1, soreness: 1, recovery: null }; // recovery=% when from WHOOP
+    let touched = false;
     const out = el("div.row", { style: "align-items:center;gap:10px" });
 
     function band() {
@@ -730,19 +758,22 @@ function readinessCheck(stage) {
     const seg = (key, opts) => {
       const s = el("div.segmented");
       opts.forEach(([label, val]) => {
-        const btn = el("button" + (state[key] === val ? ".on" : ""), { onclick: () => {
-          state[key] = val; [...s.children].forEach((c) => c.classList.toggle("on", c === btn)); refresh();
+        const btn = el("button" + (state[key] === val ? ".on" : ""), { "aria-label": `${key}: ${label}`, onclick: () => {
+          state[key] = val; touched = true;
+          [...s.children].forEach((c) => c.classList.toggle("on", c === btn)); refresh();
         } }, label);
         s.appendChild(btn);
       });
       return s;
     };
-    const field = (label, control) => el("div", { style: "margin-top:14px" }, [el("div.dim", { style: "margin-bottom:6px", text: label }), control]);
+    // Label beside the control, not above it: three stacked rows pushed the
+    // list of lifts off the first screen.
+    const field = (label, control) => el("div.readyrow", {}, [el("div.dim", { text: label }), control]);
 
     // Recovery area: loading → the tracker's recovery chip, or a manual
     // sleep+energy fallback. Works with any provider, and with none.
     const recoveryArea = el("div");
-    const showLoading = () => recoveryArea.replaceChildren(field("Recovery", el("p.note", { style: "margin:0", text: "Checking recovery…" })));
+    const showLoading = () => recoveryArea.replaceChildren(field("Recovery", el("p.note", { style: "margin:0;min-height:44px", text: "Checking recovery…" })));
     function showWhoop(pct, meta) {
       state.recovery = pct;
       const color = pct >= 67 ? "var(--accent)" : pct >= 34 ? "var(--amber)" : "var(--coral)";
@@ -764,21 +795,16 @@ function readinessCheck(stage) {
       recoveryArea.replaceChildren(
         field("Sleep", seg("sleep", [["Poor", 0], ["OK", 1], ["Good", 2]])),
         field("Energy", seg("energy", [["Low", 0], ["OK", 1], ["High", 2]])),
-        el("p.note", { style: "margin:8px 2px 0", text: "No recovery reading — rate it yourself." }),
       );
       refresh();
     }
     showLoading();
 
-    stage.appendChild(el("div", {}, [
-      backBtn("Today", "#/"),
-      el("div.label", { style: "margin-top:8px", text: "Readiness check" }),
-      el("h1", { style: "margin:4px 0 0", text: "How are you today?" }),
-      el("p.dim", { text: "The app eases the loads on a rough day. Skip if you like." }),
+    const node = el("div.readypanel", {}, [
       recoveryArea,
       field("Soreness", seg("soreness", [["A lot", 0], ["Some", 1], ["None", 2]])),
-      el("div.card.tight", { style: "margin-top:16px" }, [out]),
-    ]));
+      el("div.readyband", {}, [out]),
+    ]);
     refresh();
 
     // auto-pull the tracker recovery on open (no button); manual on failure
@@ -789,15 +815,18 @@ function readinessCheck(stage) {
       } catch { showManual(); }
     })();
 
-    const bar = addActionBar(
-      el("button.btn.block", { onclick: () => { bar.remove(); res(null); } }, "Skip"),
-      el("button.btn.primary.block", { onclick: () => {
-        const b = band(); bar.remove();
-        res({ ...b, inputs: { sleep: state.recovery == null ? state.sleep : null,
-          energy: state.recovery == null ? state.energy : null, soreness: state.soreness, recovery: state.recovery } });
-      } }, "Continue"),
-    );
-  });
+    return {
+      node,
+      // null when nothing here is a real answer: you did not touch it and no
+      // tracker supplied a reading. Recording the defaults would invent data.
+      value: () => {
+        if (!touched && state.recovery == null) return null;
+        const b = band();
+        return { ...b, inputs: { sleep: state.recovery == null ? state.sleep : null,
+          energy: state.recovery == null ? state.energy : null, soreness: state.soreness, recovery: state.recovery } };
+      },
+    };
+  }
 }
 
 // The engine's target for each PLANNED lift at the PLANNED place: what a

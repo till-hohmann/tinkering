@@ -4,6 +4,7 @@
 export function celebrate(durationMs = 1600) {
   if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const canvas = document.createElement("canvas");
+  canvas.className = "confetti";   // mount() clears these on a screen change
   canvas.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:999";
   const dpr = window.devicePixelRatio || 1;
   canvas.width = innerWidth * dpr;

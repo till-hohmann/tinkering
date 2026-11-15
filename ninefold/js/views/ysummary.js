@@ -18,7 +18,7 @@
 // style and level are facts about the practice you ran — changing them would
 // describe a practice that never happened, so they are shown and not offered.
 
-import { el, mount, go, backBtn } from "../ui.js";
+import { el, mount, go, backBtn, toast as showToast } from "../ui.js";
 import { yogaEntryAt, updateYogaEntry, removeYogaEntry } from "../store.js";
 import { illustration } from "../illustrations.js";
 import { intentById } from "../yoga/intents.js";
@@ -38,11 +38,7 @@ function prettyTime(at) {
   return isNaN(t) ? "" : t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
-function toast(msg) {
-  const t = el("div.toast", { text: msg });
-  document.body.appendChild(t);
-  setTimeout(() => { t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 3200);
-}
+const toast = (msg) => showToast(msg, 3200);
 
 /**
  * The pose list, collapsing a run of the same shape into "x3" — three rounds of

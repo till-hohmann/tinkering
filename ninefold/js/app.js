@@ -6,8 +6,7 @@ import { cloudPull, cloudPush, setCloudMerge } from "./cloudsync.js";
 import { migrateIfNeeded, getProfile } from "./profile.js";
 import { loadPhotoManifest } from "./exercise-photo.js";
 import { applyTheme, DEFAULT_THEME } from "./theme.js";
-import { mountAurora } from "./components/aurora.js";
-import { mount, el, showTabs, hideTabs, setHiddenTabs } from "./ui.js";
+import { mount, el, showTabs, hideTabs, setHiddenTabs, noteNavigation } from "./ui.js";
 
 import { renderHome } from "./views/home.js";
 import { renderSession, renderPlannedSession } from "./views/session.js";
@@ -63,12 +62,12 @@ const routes = [
   [/^#\/history$/, () => renderHistory(), null],
   [/^#\/welcome$/, () => renderWelcome(), null],
   [/^#\/build$/, () => renderBuilder(), null],
-  [/^#\/settings$/, () => renderSettings(), "profile"],
+  [/^#\/settings(?:\/(\w+))?$/, (m) => renderSettings(m[1]), "profile"],
   // Back from WHOOP's consent screen with a single-use claim (see whoop.js).
   [/^#\/whoop-claim\/([\w-]+)$/, async (m) => {
     const { whoopClaim } = await import("./whoop.js");
     const r = await whoopClaim(m[1]);
-    window.location.replace("#/settings");
+    window.location.replace("#/settings/devices");
     if (!r.ok) window.alert(r.message);
   }, null],
 ];
@@ -121,6 +120,7 @@ async function router() {
       // would leave the tab bar covering the screen's own controls.
       if (tab) showTabs(tab); else hideTabs();
       applySkin(hash);
+      noteNavigation(hash, !!tab);
       try { await handler(m); }
       catch (err) { showError(err); }
       return;
@@ -145,14 +145,11 @@ function showError(err) {
 }
 
 async function boot() {
-  // Theme FIRST: the aurora canvas reads its palette from the resolved CSS vars,
-  // so mounting it before the theme is applied would bake in the default colours
-  // for the life of the session.
+  // Theme FIRST, so the first screen paints in the right palette.
   try {
     const prof = await getProfile();
     applyTheme((prof && prof.theme) || DEFAULT_THEME);
   } catch (_) { applyTheme(DEFAULT_THEME); }
-  mountAurora();   // living gradient backdrop, behind everything
   // Exercise renders resolve synchronously inside illustration(), which every
   // tile in the app calls inline — so the manifest has to be in hand before the
   // first screen paints. Never throws: no manifest just means "no photos yet".

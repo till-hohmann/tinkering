@@ -8,7 +8,7 @@
 // Block-aware: on a DELOAD week of the active program the holds run at ~70% and
 // the session never updates progression state (eased holds prove nothing).
 
-import { el, mount, go } from "../ui.js";
+import { el, mount, go, toast as showToast } from "../ui.js";
 import { addMobilityDone, getActiveProgram, getMobilityProg, setMobilityProg,
   getMobilityLog } from "../store.js";
 import { todayISO, weekdayOf, weekNumberFor } from "../model.js";
@@ -17,11 +17,7 @@ import { mobilityRoutineFor, sessionFor, replayMobilityLog } from "../mobility.j
 import { runRoutine } from "./routine.js";
 
 // brief, self-dismissing toast (body-level, so it survives the navigation home)
-function toast(msg) {
-  const t = el("div.toast", { text: msg });
-  document.body.appendChild(t);
-  setTimeout(() => { t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 3200);
-}
+const toast = (msg) => showToast(msg, 3200);
 
 // `wdParam` (from #/mobility/Wed etc.) runs a SPECIFIC session on any day —
 // the "do it on a different day" path from the Plan tab. Without it, the day's

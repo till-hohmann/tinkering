@@ -3,7 +3,7 @@
 // DISCRETE value list (e.g. a set of adjustable dumbbells). getValue() returns the
 // LOGGED value: per-hand for dumbbells, stack value for cable.
 
-import { el, clear, haptic } from "../ui.js";
+import { el, clear, haptic, holdRepeat } from "../ui.js";
 import { rackAt } from "../progression.js";
 import { weightValue, weightLabel } from "../units.js";
 
@@ -68,9 +68,10 @@ export function WeightStepper(implement, equip, location, initial, onChange, pro
   function microBump(d) { val = clampCont(val + d); draw(); haptic(8); onChange && onChange(val); }
 
   const main = el("div.scroller", {}, [
-    el("button.stepbtn", { onclick: () => bump(-1) }, "−"),
+    // Hold to keep stepping: 20 to 40 kg in 2.5 kg steps was eight separate taps.
+    holdRepeat(el("button.stepbtn", { "aria-label": "Lighter", onclick: () => bump(-1) }, "−"), () => bump(-1)),
     reading,
-    el("button.stepbtn", { onclick: () => bump(1) }, "+"),
+    holdRepeat(el("button.stepbtn", { "aria-label": "Heavier", onclick: () => bump(1) }, "+"), () => bump(1)),
   ]);
 
   const children = [main];

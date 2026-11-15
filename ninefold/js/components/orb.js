@@ -38,7 +38,7 @@ export function orbEl({ pct = 0, value = "", unit = "", label = "" } = {}) {
   // animate the ring fill on mount (skipped under reduced-motion via CSS contract)
   requestAnimationFrame(() => {
     const arc = svg.querySelector(".orbarc");
-    if (arc) { arc.style.transition = "stroke-dashoffset 1.15s cubic-bezier(.2,.8,.2,1)"; arc.style.strokeDashoffset = off.toFixed(1); }
+    if (arc) { arc.style.transition = "stroke-dashoffset .6s cubic-bezier(.2,.8,.2,1)"; arc.style.strokeDashoffset = off.toFixed(1); }
   });
   return wrap;
 }

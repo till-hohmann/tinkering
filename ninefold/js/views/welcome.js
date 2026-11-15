@@ -108,7 +108,7 @@ function restore() {
   const field = (label, node) => el("div", { style: "margin-top:14px" }, [
     el("div.faint", { style: "font-size:.72rem;margin-bottom:4px", text: label }), node]);
   const inStyle = "width:100%;padding:11px 13px;background:var(--bg-elev2);border:1px solid var(--line);"
-    + "border-radius:11px;color:var(--text);font-size:.9rem";
+    + "border-radius:11px;color:var(--text);font-size:1rem";
   const epIn = el("input", { type: "text", inputmode: "url", placeholder: "https://your-backup.workers.dev", style: inStyle });
   const tokIn = el("input", { type: "password", placeholder: "your backup token", style: inStyle });
   const status = el("p.note", { style: "margin-top:12px;min-height:1.2em" });

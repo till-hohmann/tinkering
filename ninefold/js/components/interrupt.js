@@ -7,7 +7,7 @@
 // Resolves to "continue" (dismissed / keep training), "later", "complete" or
 // "discard". `canComplete` hides the complete option when nothing is logged yet.
 
-import { el } from "../ui.js";
+import { el, presentSheet } from "../ui.js";
 
 export function interruptSheet({
   title = "Leave this workout?",
@@ -38,6 +38,6 @@ export function interruptSheet({
     ]));
     ov.addEventListener("click", (e) => { if (e.target === ov) close("continue"); }); // tap backdrop = keep training
     function close(val) { ov.remove(); res(val); }
-    document.body.appendChild(ov);
+    presentSheet(ov);
   });
 }

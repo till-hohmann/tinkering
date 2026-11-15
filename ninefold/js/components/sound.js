@@ -371,6 +371,10 @@ function tone(freq, dur = 0.12, vol = 0.25) {
 // a 0.08 s blip at 0.18 gain. It is now the longest and loudest of the three,
 // because it is the cue you act on.
 export const cueTick = () => { duck(0.3); return tone(660, 0.11, 0.42); };
+// A logged set. Shorter and quieter than the countdown tick and it does not duck
+// the music: it confirms a tap, it does not announce anything. iOS has no
+// vibration API, so this is the only non-visual confirmation a set gets there.
+export const cueSetLogged = () => tone(784, 0.06, 0.26);
 export const cueItemStart = () => { duck(0.3); return tone(880, 0.14, 0.4); };
 export const cueItemEnd = () => { duck(0.35); return tone(520, 0.18, 0.4); };
 export const cueRoutineDone = () => { duck(0.6); tone(660, 0.14, 0.42); setTimeout(() => tone(990, 0.22, 0.42), 130); };

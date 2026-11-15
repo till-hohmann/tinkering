@@ -70,24 +70,144 @@ function runCleanups() {
 
 const reduceMotion = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/**
+ * HOW YOU GOT HERE DECIDES HOW THE SCREEN ARRIVES.
+ *
+ * Every screen change used to play the same 300 ms rise and jump to the top,
+ * whether you had switched tab, opened a day or come back from one. So going
+ * back looked like going forward, and a list you had scrolled lost its place.
+ *
+ *   tab      switching between the bottom tabs — instant, as a tab bar is
+ *   forward  opening something — slides in from the right
+ *   back     returning — slides in from the left, at the scroll you left it at
+ *   inner    a screen redrawing itself (a wizard step, a new phase) — the rise
+ *
+ * The router calls noteNavigation() before it runs a route; the next mount()
+ * reads the answer. A back navigation is recognised by its destination being
+ * the screen before this one, so the in-app back buttons, which navigate
+ * rather than pop history, count as well as the system gesture.
+ */
+const navStack = [];
+const scrollMemo = new Map();
+let navKind = "none";
+let restoreScroll = null;      // { y, until } — outlives one mount, for views that mount twice
+let lastHadTabs = false;
+try { if ("scrollRestoration" in history) history.scrollRestoration = "manual"; } catch {}
+
+export function noteNavigation(hash, hasTabs) {
+  const prev = navStack[navStack.length - 1];
+  if (prev != null) scrollMemo.set(prev, window.scrollY);
+  restoreScroll = null;
+  if (prev == null) { navStack.push(hash); navKind = "none"; }
+  else if (prev === hash) navKind = "inner";
+  else if (navStack[navStack.length - 2] === hash || (backTapped && sameSection(navStack[navStack.length - 2], hash))) {
+    // The back button names the parent screen, which is not always spelled the
+    // way you arrived at it ("#/week" on the way in, "#/week/<block>/1" on the
+    // way out). Same section, so it is the screen you left: use its scroll.
+    const from = navStack[navStack.length - 2];
+    navStack.pop();
+    navStack[navStack.length - 1] = hash;
+    navKind = "back";
+    restoreScroll = { y: scrollMemo.get(from) || 0, until: performance.now() + 1500 };
+  } else if (backTapped) {
+    navStack.length = 0; navStack.push(hash);
+    navKind = "back";
+  } else if (hasTabs && lastHadTabs && TABS.some(([, , href]) => href === hash)) {
+    // One tab to another: a fresh stack, nothing to go back to.
+    navStack.length = 0; navStack.push(hash);
+    navKind = "tab";
+  } else {
+    navStack.push(hash);
+    if (navStack.length > 30) navStack.shift();
+    navKind = "forward";
+  }
+  lastHadTabs = !!hasTabs;
+  backTapped = false;
+}
+let backTapped = false;
+const sameSection = (a, b) => !!a && a.split("/")[1] === b.split("/")[1];
+
+// A screen redrawing itself after one of its own controls changed (a settings
+// toggle, a range, a section tab) should simply change, not arrive again.
+export function quietNextMount() { navKind = "none"; }
+
+const ENTER = {
+  forward: [[{ opacity: 0, transform: "translateX(18px)" }, { opacity: 1, transform: "none" }], 240],
+  back: [[{ opacity: 0, transform: "translateX(-18px)" }, { opacity: 1, transform: "none" }], 200],
+  inner: [[{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], 220],
+};
+
 export function mount(children) {
   runCleanups();
   const view = document.getElementById("view");
   clear(view);
-  document.querySelectorAll(".actionbar, .resttimer, canvas").forEach((n) => n.remove());
+  document.querySelectorAll(".actionbar, .resttimer, canvas.confetti").forEach((n) => n.remove());
   document.body.classList.remove("has-actionbar");
   appendChildren(view, children);
-  window.scrollTo(0, 0);
+  const kind = navKind;
+  navKind = "inner";
+  const keep = restoreScroll && performance.now() < restoreScroll.until ? restoreScroll.y : 0;
+  window.scrollTo(0, keep);
   // view-enter motion (skipped under reduced-motion / no WAAPI)
-  if (!reduceMotion() && view.animate) {
-    try {
-      view.animate(
-        [{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }],
-        { duration: 300, easing: "cubic-bezier(.2,.75,.25,1)" }
-      );
-    } catch {}
+  const enter = ENTER[kind];
+  if (enter && !reduceMotion() && view.animate) {
+    try { view.animate(enter[0], { duration: enter[1], easing: "cubic-bezier(.2,.75,.25,1)" }); } catch {}
   }
   return view;
+}
+
+/**
+ * Put a bottom sheet on screen: it slides up over a fading backdrop, slides
+ * back down when it closes, and can be pulled down by its grip.
+ *
+ * Sheets used to appear with a 14 px nudge and vanish on close, and the grip
+ * at the top was drawn but did nothing. Call this where the sheet was
+ * appended to the body. Closing is still `ov.remove()` at every call site;
+ * the sheet's own remove is replaced here so each of them gets the exit.
+ * Pulling the grip past the threshold acts as a tap on the backdrop, so the
+ * sheet resolves exactly as that site's dismissal already does.
+ */
+export function presentSheet(ov) {
+  const card = ov.querySelector(".sheet-card");
+  document.body.appendChild(ov);
+  void ov.offsetWidth;
+  ov.classList.add("in");
+  let gone = false;
+  ov.remove = () => {
+    if (gone) return;
+    gone = true;
+    ov.classList.remove("in");
+    ov.style.pointerEvents = "none";
+    setTimeout(() => Element.prototype.remove.call(ov), reduceMotion() ? 0 : 260);
+  };
+  const grip = card && card.querySelector(".sheet-grip");
+  if (!grip) return ov;
+  let startY = 0, dy = 0, t0 = 0, dragging = false;
+  const end = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    card.style.transition = "";
+    const fast = dy / Math.max(1, performance.now() - t0) > 0.5;
+    if (e.type !== "pointercancel" && (dy > card.offsetHeight * 0.3 || (fast && dy > 24))) {
+      card.style.transform = "";
+      ov.dispatchEvent(new MouseEvent("click"));       // same path as a tap on the backdrop
+      if (!gone) ov.remove();
+    } else card.style.transform = "";
+    dy = 0;
+  };
+  grip.addEventListener("pointerdown", (e) => {
+    dragging = true; startY = e.clientY; dy = 0; t0 = performance.now();
+    card.style.transition = "none";
+    try { grip.setPointerCapture(e.pointerId); } catch {}
+  });
+  grip.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    dy = Math.max(0, e.clientY - startY);
+    card.style.transform = `translateY(${dy}px)`;
+  });
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+  return ov;
 }
 
 // Count a number up to its target on mount. fmt(value)->string. Respects reduced motion.
@@ -126,9 +246,62 @@ export function haptic(ms = 12) {
   try { if (navigator.vibrate) navigator.vibrate(ms); } catch {}
 }
 
+/**
+ * One toast, at the top, one message at a time.
+ *
+ * There were four copies of this, each appending its own pill above the bottom
+ * edge — exactly where the rest timer sits, so logging a set that also set a
+ * record hid the countdown and its −15 / +15 / Skip for two seconds, and two
+ * messages from one tap landed on top of each other. Messages now queue.
+ */
+const toastQueue = [];
+let toastBusy = false;
+export function toast(msg, ms = 2200) {
+  toastQueue.push([String(msg), ms]);
+  if (!toastBusy) nextToast();
+}
+function nextToast() {
+  const item = toastQueue.shift();
+  if (!item) { toastBusy = false; return; }
+  toastBusy = true;
+  const [msg, ms] = item;
+  const t = el("div.toast", { role: "status", text: msg });
+  document.body.appendChild(t);
+  void t.offsetWidth;                 // commit the start state so the entrance transitions
+  t.classList.add("in");
+  // A message with others waiting behind it gives way sooner.
+  const stay = toastQueue.length ? Math.min(ms, 1500) : ms;
+  setTimeout(() => {
+    t.classList.remove("in");
+    setTimeout(() => { t.remove(); nextToast(); }, 200);
+  }, stay);
+}
+
+/**
+ * Press and hold a stepper to keep stepping.
+ *
+ * A single tap is still the button's own click. Holding for 400 ms starts a
+ * repeat every 80 ms and swallows the click that follows the release, so a hold
+ * never counts one extra. A finger that starts a scroll on the button cancels
+ * the pointer, and nothing fires.
+ */
+export function holdRepeat(btn, fn) {
+  let wait = null, rep = null, held = false;
+  const stop = () => { clearTimeout(wait); clearInterval(rep); wait = rep = null; };
+  btn.addEventListener("pointerdown", (e) => {
+    if (e.button) return;
+    stop(); held = false;
+    wait = setTimeout(() => { held = true; fn(); rep = setInterval(fn, 80); }, 400);
+  });
+  for (const ev of ["pointerup", "pointercancel", "pointerleave"]) btn.addEventListener(ev, stop);
+  btn.addEventListener("click", (e) => { if (held) { held = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  btn.addEventListener("contextmenu", (e) => e.preventDefault());   // long-press menu on Android
+  return btn;
+}
+
 // Clean, native-feeling back affordance: a chevron + label, no boxy border.
 export function backBtn(label, href = "#/") {
-  return el("button.backbtn", { onclick: () => go(href), "aria-label": "Back to " + label }, [
+  return el("button.backbtn", { onclick: () => { backTapped = true; go(href); }, "aria-label": "Back to " + label }, [
     el("span.chev", { html: "‹" }), el("span", { text: label }),
   ]);
 }

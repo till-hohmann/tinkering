@@ -13,7 +13,7 @@
 // preparation behind it. Regenerate replaces the WHOLE sequence, which keeps the
 // graph intact. That is the deliberate difference between the two tabs.
 
-import { el, mount, go, addActionBar, backBtn, setChildren } from "../ui.js";
+import { el, mount, go, addActionBar, backBtn, setChildren, toast as showToast } from "../ui.js";
 import { getProfile } from "../profile.js";
 import { getYogaPrefs, setYogaPrefs, addYogaDone, getYogaLog, yogaOn } from "../store.js";
 import { todayISO } from "../model.js";
@@ -63,11 +63,7 @@ const shortDate = (iso) => {
 // and Start operate on the same object without a round-trip through storage.
 let current = null;
 
-function toast(msg) {
-  const t = el("div.toast", { text: msg });
-  document.body.appendChild(t);
-  setTimeout(() => { t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 3600);
-}
+const toast = (msg) => showToast(msg, 3600);
 
 // --- the picker --------------------------------------------------------------
 export async function renderYoga() {

@@ -26,7 +26,7 @@ import { weightLabel, weightValue, weightToKg, lengthLabel, lengthValue, lengthT
   METRIC_EQUIPMENT, IMPERIAL_EQUIPMENT } from "../units.js";
 import { resolvedConfig, setRuntimeConfig, hasBackup } from "../config.js";
 import * as db from "../db.js";
-import { el, mount, go, setChildren, esc } from "../ui.js";
+import { el, mount, go, setChildren, esc, presentSheet, backBtn, quietNextMount } from "../ui.js";
 import { shoesCard } from "../components/shoes-card.js";
 import { cloudPull, cloudCheck, getCloudHealth } from "../cloudsync.js";
 // Baked in rather than read at runtime: an iOS standalone PWA exposes neither
@@ -51,10 +51,26 @@ function daysSince(iso) {
 // lives well down a long page, and snapping to the top on each tap is its own bug.
 const redraw = () => {
   const y = window.scrollY;
-  return renderSettings().then(() => window.scrollTo(0, y));
+  quietNextMount();
+  return renderSettings(openSection).then(() => window.scrollTo(0, y));
 };
 
-export async function renderSettings() {
+// PROFILE IS A MENU AND SIX PAGES, NOT ONE PAGE.
+// It had grown to about ten screens of scrolling with twenty inputs on it, and
+// every setting was found by scrolling past all the others. Each group below is
+// its own page at #/settings/<key>; #/settings is the list of them.
+const SECTIONS = [
+  ["program", "Program", "Blocks, places and the arc"],
+  ["body", "Health & body", "Bodyweight, nutrition, measurements, scans"],
+  ["devices", "Devices & cardio", "Tracker, heart-rate zones, shoes"],
+  ["look", "Appearance", "What you track, units and theme"],
+  ["audio", "Audio", "Spoken cues and their volume"],
+  ["data", "Data & backup", "Cloud backup, export, import, delete"],
+];
+let openSection = null;
+
+export async function renderSettings(section) {
+  openSection = SECTIONS.some(([k]) => k === section) ? section : null;
   const program = await getActiveProgram();
   const programs = await getAllPrograms();
   const sel = await getSelectionMode();
@@ -468,7 +484,7 @@ export async function renderSettings() {
       placeholder: "https://your-whoop-worker.workers.dev",
       "aria-label": "WHOOP worker URL",
       style: "flex:1;min-width:0;padding:9px 11px;background:var(--bg-elev2);border:1px solid var(--line);"
-        + "border-radius:10px;color:var(--text);font-size:.82rem" });
+        + "border-radius:10px;color:var(--text);font-size:1rem" });
     const save = el("button.btn.primary", { onclick: async () => {
       const url = inp.value.trim().replace(/\/+$/, "");
       if (!/^https:\/\//i.test(url)) { trkLine.textContent = "The URL must start with https://"; return; }
@@ -711,7 +727,7 @@ export async function renderSettings() {
         el("button.btn.ghost.block", { style: "margin-top:10px", onclick: close }, "Cancel"),
       ]));
       ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
-      document.body.appendChild(ov);
+      presentSheet(ov);
     });
   }
 
@@ -922,10 +938,10 @@ export async function renderSettings() {
   const cloudStatus = el("p.note", { style: "margin-top:8px;min-height:1em" });
   const epIn = el("input", { type: "text", placeholder: "https://your-backup.workers.dev", value: (cfg0.backup && cfg0.backup.endpoint) || "",
     "aria-label": "Cloud backup endpoint URL",
-    style: "width:100%;padding:9px 11px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text);font-size:.82rem" });
+    style: "width:100%;padding:9px 11px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text);font-size:1rem" });
   const tokIn = el("input", { type: "password", placeholder: "your backup token", value: (cfg0.backup && cfg0.backup.token) || "",
     "aria-label": "Cloud backup token",
-    style: "width:100%;padding:9px 11px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text);font-size:.82rem" });
+    style: "width:100%;padding:9px 11px;background:var(--bg-elev2);border:1px solid var(--line);border-radius:10px;color:var(--text);font-size:1rem" });
   async function testCloud() {
     cloudStatus.textContent = "Checking…";
     const r = await cloudCheck();
@@ -1290,51 +1306,37 @@ export async function renderSettings() {
     dangerBody, dangerStatus,
   ]);
 
-  // section header between grouped setting cards (keeps an 11-card list scannable)
-  const sectionH = (t) => el("h2", { style: "margin:26px 2px 0", text: t });
   const shoeCard = feats.shoes ? await shoesCard() : null;
 
-  mount([
-    el("h1", { text: "Profile" }),
-
-    el("div.card", {}, [
-      el("div.label", { text: "Active program" }),
-      el("h3", { style: "margin:9px 0 2px", text: program ? program.name : "none" }),
-      el("div.note", { text: program ? `${program.lengthWeeks} weeks` : "" }),
-      el("div.statgrid.three", { style: "margin-top:18px" }, [
-        miniStat("Sessions", String(logged.length)),
-        miniStat("Volume", Math.round(totalVol).toLocaleString("en-GB")),
-        miniStat("Programs", String(programs.length)),
-      ]),
-    ]),
-
-    sectionH("Program"),
+  // Each of the body cards is gated on its own toggle in "What you track". A
+  // feature that is off keeps its data — it just stops asking about it.
+  const hasBody = feats.weight || feats.nutrition || feats.measurements || feats.dexa || feats.vo2max;
+  const pages = {
+    program: () => [
     arcCard,
     buildCard,
     ...(programCard ? [programCard] : []),
     placesCard,
-
-    // Each of these is gated on its own toggle in "What you track" below. A
-    // feature that is off keeps its data — it just stops asking about it.
-    ...(feats.weight || feats.nutrition || feats.measurements || feats.dexa || feats.vo2max ? [sectionH("Health & body")] : []),
+    ],
+    body: () => [
     // Shown for EITHER toggle: the benchmark needs it as much as the protein target does.
     (feats.weight || feats.nutrition) ? bodyweightCard : null,
     feats.nutrition ? nutritionCard : null,
     feats.measurements ? measureCard : null,
     feats.dexa ? dexaCard : null,
     feats.vo2max ? vo2Card : null,
-
-    sectionH("Devices & cardio"),
+    ],
+    devices: () => [
     trackerCard,
     feats.cardio ? hrCard : null,
     shoeCard,
-
-    sectionH("Appearance"),
+    ],
+    look: () => [
     featuresCard,
     unitsCard,
     themeCard,
-
-    sectionH("Audio"),
+    ],
+    audio: () => [
     el("div.card", {}, [
       el("div.row", {}, [el("div", { style: "flex:1" }, [el("div.label", { text: "Audio cues" }),
         el("div.note", { style: "margin-top:4px", text: "Spoken commands in warm-ups, runs & cool-downs" })]), soundBtn]),
@@ -1345,8 +1347,8 @@ export async function renderSettings() {
       el("p.note", { style: "margin-top:8px", text: "Where your phone supports it the music is also dipped for the length of each cue, rather than the cue simply competing with it. Tapping a level plays a sample." }),
       testBtn,
     ]),
-
-    sectionH("Data & backup"),
+    ],
+    data: () => [
     cloudCard,
     el("div.card", {}, [
       el("div.label", { style: "margin-bottom:8px", text: "Backup & vault export" }),
@@ -1368,6 +1370,51 @@ export async function renderSettings() {
     ]),
 
     dangerCard,
+    ],
+  };
+
+  if (openSection) {
+    const [, title] = SECTIONS.find(([k]) => k === openSection);
+    const cards = pages[openSection]().filter(Boolean);
+    mount([
+      backBtn("Profile", "#/settings"),
+      el("h1", { text: title }),
+      ...(cards.length ? cards : [el("div.card", {}, [el("p.dim", { style: "margin:0",
+        text: "Nothing is switched on here. Turn on what you want to track under Appearance." })])]),
+    ]);
+    return;
+  }
+
+  // What each row says under its title: the current state where there is one,
+  // so the menu answers the common question without opening the page.
+  const hint = {
+    program: program ? program.name : "No active block",
+    data: since == null ? "No export yet" : since >= 10 ? `Last export ${since} days ago — time for a backup`
+      : `Last export ${since === 0 ? "today" : since + (since === 1 ? " day ago" : " days ago")}`,
+  };
+  mount([
+    el("h1", { text: "Profile" }),
+
+    el("div.card", {}, [
+      el("div.label", { text: "Active program" }),
+      el("h3", { style: "margin:9px 0 2px", text: program ? program.name : "none" }),
+      el("div.note", { text: program ? `${program.lengthWeeks} weeks` : "" }),
+      el("div.statgrid.three", { style: "margin-top:18px" }, [
+        miniStat("Sessions", String(logged.length)),
+        miniStat("Volume", Math.round(totalVol).toLocaleString("en-GB")),
+        miniStat("Programs", String(programs.length)),
+      ]),
+    ]),
+    el("div.list", { style: "margin-top:16px" }, SECTIONS
+      .filter(([k]) => k !== "body" || hasBody)
+      .map(([k, title, blurb]) => el("button.item.navrow", { onclick: () => go("#/settings/" + k) }, [
+        el("div.meta", {}, [
+          el("div.t", { text: title }),
+          el("div.s" + (k === "data" && since != null && since >= 10 ? ".warn" : ""), { text: hint[k] || blurb }),
+        ]),
+        el("span.navchev", { "aria-hidden": "true", text: "›" }),
+      ]))),
+
 
     el("div.card", { style: "margin-top:12px" }, [
       el("div.label", { text: "Health disclaimer" }),

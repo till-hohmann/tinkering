@@ -13,6 +13,17 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 218, notes: [
+    "Logging a set: the weight, the reps and the tick that logs the set are on the first screen. The exercise photo is now a thumbnail beside the name; tap it for the full picture and muscle map.",
+    "Hold the plus or minus on weight or reps to keep stepping. Swap, Later, Add, the exit and the rest timer's buttons are bigger.",
+    "Messages (a new best, a load change, a superset hand-over) appear at the top, one at a time, so they no longer cover the rest timer. A short tick sounds when a set is logged.",
+    "One screen before a workout instead of three: where you are, how you feel and the day's lifts, with the usual answers already chosen. Readiness is only recorded if you change it or your tracker supplies a reading.",
+    "Today opens on today's session. The week ring is smaller and sits below it.",
+    "Profile is a short menu with a page per topic: Program, Health & body, Devices & cardio, Appearance, Audio, Data & backup.",
+    "Progress shows one section at a time. The chips under the range are now tabs.",
+    "Going back returns you to where you had scrolled, tabs switch instantly, and sheets can be pulled down by the grip at the top.",
+    "Themes other than Aurora now colour the background and highlights too, and you can pinch to zoom.",
+  ] },
   { v: 217, notes: [
     "Arc check-ins: in Settings › Arc, list milestones as days left (say 60, 30). Each opens on Today the day before its mark and stays for three days: every goal against where the straight line says it should be by now, how far ahead or behind, and the weekly weight change the rest of the arc needs. The milestones are marked on the arc's curve, and Today tells you when one is a week away.",
   ] },

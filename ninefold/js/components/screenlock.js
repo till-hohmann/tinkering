@@ -53,6 +53,7 @@ export function showScreenLock() {
   const setX = (x) => { dx = Math.max(0, Math.min(max, x)); knob.style.transform = `translateX(${dx}px)`; };
 
   function down(e) {
+    if (dragging) return;          // a second finger must not restart the drag
     dragging = true;
     max = Math.max(0, track.clientWidth - knob.offsetWidth - 6);
     startX = e.clientX - dx;
@@ -68,7 +69,7 @@ export function showScreenLock() {
   function up() {
     if (!dragging) return;
     dragging = false;
-    if (dx < max * 0.9) { knob.style.transition = "transform .18s ease"; setX(0); }
+    if (dx < max * 0.9) { knob.style.transition = "transform .18s cubic-bezier(.2,.75,.25,1)"; setX(0); }
   }
   knob.addEventListener("pointerdown", down);
   knob.addEventListener("pointermove", move);
