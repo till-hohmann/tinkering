@@ -13,6 +13,10 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 219, notes: [
+    "Sheets follow your finger: a quick flick down closes one, a slow pull you stop short lets it settle back, and pulling up past the top gives a little resistance.",
+    "The app follows three iPhone accessibility settings: with Reduce Motion on, screens fade instead of sliding; with Reduce Transparency on, cards and bars are solid; with Increase Contrast on, quiet text and edges are easier to see.",
+  ] },
   { v: 218, notes: [
     "Logging a set: the weight, the reps and the tick that logs the set are on the first screen. The exercise photo is now a thumbnail beside the name; tap it for the full picture and muscle map.",
     "Hold the plus or minus on weight or reps to keep stepping. Swap, Later, Add, the exit and the rest timer's buttons are bigger.",

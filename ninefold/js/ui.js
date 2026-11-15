@@ -148,10 +148,14 @@ export function mount(children) {
   navKind = "inner";
   const keep = restoreScroll && performance.now() < restoreScroll.until ? restoreScroll.y : 0;
   window.scrollTo(0, keep);
-  // view-enter motion (skipped under reduced-motion / no WAAPI)
+  // view-enter motion. With reduced motion on, the change is still shown, as a
+  // short fade in place: no slide, nothing travelling across the screen.
   const enter = ENTER[kind];
-  if (enter && !reduceMotion() && view.animate) {
-    try { view.animate(enter[0], { duration: enter[1], easing: "cubic-bezier(.2,.75,.25,1)" }); } catch {}
+  if (enter && view.animate) {
+    try {
+      if (reduceMotion()) view.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: "ease-out" });
+      else view.animate(enter[0], { duration: enter[1], easing: "cubic-bezier(.2,.75,.25,1)" });
+    } catch {}
   }
   return view;
 }
@@ -178,32 +182,72 @@ export function presentSheet(ov) {
     gone = true;
     ov.classList.remove("in");
     ov.style.pointerEvents = "none";
-    setTimeout(() => Element.prototype.remove.call(ov), reduceMotion() ? 0 : 260);
+    setTimeout(() => Element.prototype.remove.call(ov), reduceMotion() ? 180 : 260);
   };
   const grip = card && card.querySelector(".sheet-grip");
   if (!grip) return ov;
-  let startY = 0, dy = 0, t0 = 0, dragging = false;
+  // THE DRAG BEHAVES LIKE A THING YOU ARE HOLDING.
+  //  - It is grabbed where it is: catching a sheet that is still sliding in
+  //    starts from its live position, not from where it was heading.
+  //  - Pulling up past the top resists more the further you pull, instead of
+  //    stopping dead.
+  //  - On release it goes where the flick was taking it: the finger's speed
+  //    projects a resting point, and the sheet closes if that point is past
+  //    half its height. A short fast flick closes it; a slow long pull that
+  //    stops short does not.
+  //  - Closing continues at the finger's speed, so letting go has no seam.
+  let startY = 0, base = 0, y = 0, dragging = false, samples = [];
+  const rubber = (over, dim) => (over * dim * 0.55) / (dim + 0.55 * Math.abs(over));
+  const live = () => { try { return new DOMMatrix(getComputedStyle(card).transform).m42 || 0; } catch { return 0; } };
+  const velocity = () => {
+    // px per second over the last ~100 ms of movement
+    const now = performance.now();
+    const recent = samples.filter((p) => now - p.t < 100);
+    if (recent.length < 2) return 0;
+    const a = recent[0], b = recent[recent.length - 1];
+    return ((b.y - a.y) / Math.max(1, b.t - a.t)) * 1000;
+  };
+  const project = (v, d = 0.998) => (v / 1000) * d / (1 - d);
   const end = (e) => {
     if (!dragging) return;
     dragging = false;
-    card.style.transition = "";
-    const fast = dy / Math.max(1, performance.now() - t0) > 0.5;
-    if (e.type !== "pointercancel" && (dy > card.offsetHeight * 0.3 || (fast && dy > 24))) {
-      card.style.transform = "";
+    // Commit the dragged position as the starting point before handing over to
+    // a transition, or the browser can start the settle from a stale frame.
+    void getComputedStyle(card).transform;
+    const v = velocity(), h = card.offsetHeight || 1;
+    const dismiss = e.type !== "pointercancel" && y + project(Math.max(0, v)) > h * 0.5 && y > 4;
+    if (dismiss && !reduceMotion()) {
+      // keep the finger's speed: the time to cover what is left at that speed,
+      // within reason, decelerating into the bottom edge
+      const left = Math.max(0, h - y);
+      const ms = Math.round(Math.min(280, Math.max(140, v > 0 ? (left / v) * 1000 * 1.6 : 260)));
+      card.style.transition = `transform ${ms}ms cubic-bezier(.2,.6,.35,1)`;
+    } else {
+      card.style.transition = "";      // back to the stylesheet's settle curve, from where it is now
+    }
+    card.style.transform = "";
+    if (dismiss) {
       ov.dispatchEvent(new MouseEvent("click"));       // same path as a tap on the backdrop
       if (!gone) ov.remove();
-    } else card.style.transform = "";
-    dy = 0;
+    }
+    samples = []; y = 0;
   };
   grip.addEventListener("pointerdown", (e) => {
-    dragging = true; startY = e.clientY; dy = 0; t0 = performance.now();
+    if (dragging || gone) return;      // a second finger must not restart the drag
+    dragging = true; startY = e.clientY;
+    base = live(); y = base;
     card.style.transition = "none";
+    card.style.transform = `translateY(${base}px)`;
+    samples = [{ y: e.clientY, t: performance.now() }];
     try { grip.setPointerCapture(e.pointerId); } catch {}
   });
   grip.addEventListener("pointermove", (e) => {
     if (!dragging) return;
-    dy = Math.max(0, e.clientY - startY);
-    card.style.transform = `translateY(${dy}px)`;
+    const raw = base + e.clientY - startY;
+    y = raw >= 0 ? raw : -rubber(-raw, card.offsetHeight || 1);
+    card.style.transform = `translateY(${y}px)`;
+    samples.push({ y: e.clientY, t: performance.now() });
+    if (samples.length > 8) samples.shift();
   });
   grip.addEventListener("pointerup", end);
   grip.addEventListener("pointercancel", end);

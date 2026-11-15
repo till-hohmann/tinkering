@@ -1039,6 +1039,44 @@ input[type="range"] { accent-color: var(--accent); }
      it lands on a different phase every frame, which is a flicker. */
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important;
     transition-duration: .001ms !important; }
+  /* REDUCED IS NOT NONE. Things that appear and disappear still do it visibly,
+     as a short fade where they stand: nothing slides in from an edge. Without
+     this a sheet or a message was simply there, or simply gone. */
+  .sheet, .sheet .sheet-card, .toast, .resttimer { transition-duration: .18s !important; }
+  .sheet .sheet-card { transform: none !important; opacity: 0; transition-property: opacity !important; }
+  .sheet.in .sheet-card { opacity: 1; }
+  .toast, .toast.in { transform: translate(-50%, 0) !important; }
+}
+
+/* REDUCED TRANSPARENCY (iOS: Accessibility › Display › Reduce Transparency).
+   Every surface that blurs what is behind it becomes solid, and the backdrop
+   glow goes: someone who asks for this finds see-through layers hard to read. */
+@media (prefers-reduced-transparency: reduce) {
+  body::before, body::after { display: none; }
+  .card, .card.featured, .gtile, .ex-targets {
+    background: var(--bg-elev); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .tabbar, .jumpchips, .resttimer, .sl-top {
+    background: var(--bg-elev); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .sheet.in { background: rgba(0,0,0,.72); }
+  .screenlock { background: rgba(3, 6, 10, .9); }
+}
+
+/* INCREASED CONTRAST (iOS: Accessibility › Display › Increase Contrast).
+   The quietest text tier steps up to the middle one, hairlines become visible
+   edges, and surfaces stop being see-through. Set on body, after the Yoga
+   skins, so it applies inside them too: the theme's own values sit on the root
+   as inline style, which a stylesheet cannot override, but body can shadow. */
+@media (prefers-contrast: more) {
+  body, body.yoga-dawn, body.yoga-night {
+    --text-faint: var(--text-dim);
+    --line: color-mix(in srgb, var(--text) 34%, transparent);
+    --line-soft: color-mix(in srgb, var(--text) 22%, transparent);
+    --glass-line: color-mix(in srgb, var(--text) 34%, transparent);
+  }
+  .card, .card.featured, .gtile, .ex-targets {
+    background: var(--bg-elev); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .tabbar, .jumpchips { background: var(--bg-elev); }
+  .btn:disabled { opacity: .55; }
 }
 
 /* =========================================================
