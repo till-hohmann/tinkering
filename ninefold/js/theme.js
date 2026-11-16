@@ -19,7 +19,7 @@
 // hundreds of places for CTAs and would be churn to rename), and `--data-*` are
 // the fixed semantic hues that charts and maps must use.
 //
-// All five themes are dark. A light theme is not a palette swap: the aurora
+// All six themes are dark. A light theme is not a palette swap: the aurora
 // backdrop, the glass surfaces and every contrast decision invert, so it is its
 // own piece of work rather than a sixth entry in this list.
 
@@ -126,6 +126,31 @@ export const THEMES = [
       "--grad-vibrant": "linear-gradient(125deg, #9aa6b2 0%, #7c93e8 55%, #a78bfa 100%)",
       "--glow": "0 0 0 1px rgba(154,166,178,.14), 0 8px 26px rgba(0,0,0,.5)",
       "--aurora-1": "154,166,178", "--aurora-2": "124,147,232", "--aurora-3": "140,150,165",
+    },
+  },
+  {
+    // Celadon glaze on deep indigo, with gold as the warm light. The accent
+    // (buttons, rings, selected things) is celadon; gold appears only in the
+    // backdrop glow, the orb and the signature gradient, so it reads as light
+    // falling on the page rather than as a second thing to tap. Celadon is a
+    // pale grey-green, well clear of the bright strength mint in the charts.
+    // Measured on the lightest surface (--bg-elev3): text 11.8, dim 7.1,
+    // faint 4.95, accent 7.9; dark ink on the button 6.2 at its darkest end.
+    id: "celadon",
+    name: "Celadon",
+    blurb: "Celadon and gold on deep indigo.",
+    swatch: ["#090a1a", "#8fd8bb", "#e3b75a"],
+    vars: {
+      "--bg": "#090a1a", "--bg-1": "#0e1026", "--bg-elev": "#14173a",
+      "--bg-elev2": "#1c2049", "--bg-elev3": "#272c5c", "--bg-elev-hero": "#1d2250",
+      "--line": "#2a2f5e", "--line-soft": "#1c2045",
+      "--text": "#f3f2fb", "--text-dim": "#bbbcdb", "--text-faint": "#9a9cc4",
+      "--accent": "#8fd8bb", "--accent-press": "#6fbf9f", "--accent-ghost": "#13293a",
+      "--on-accent": "#06231a", "--accent-shadow": "143,216,187",
+      "--grad-cta": "linear-gradient(118deg, #b9ecd6 0%, #4fae8f 100%)",
+      "--grad-vibrant": "linear-gradient(125deg, #8fd8bb 0%, #e3b75a 52%, #7b7fe0 100%)",
+      "--glow": "0 0 0 1px rgba(143,216,187,.16), 0 8px 30px rgba(227,183,90,.12)",
+      "--aurora-1": "143,216,187", "--aurora-2": "227,183,90", "--aurora-3": "92,99,214",
     },
   },
 ];

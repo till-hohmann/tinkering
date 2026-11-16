@@ -1023,6 +1023,7 @@ export async function renderSettings(section) {
       }, [
         el("div", { style: "display:flex;gap:5px;align-items:center" }, [
           el("span", { style: `width:20px;height:20px;border-radius:999px;background:${t.swatch[1]};display:inline-block` }),
+          t.swatch[2] ? el("span", { style: `width:12px;height:12px;border-radius:999px;background:${t.swatch[2]};display:inline-block;margin-left:-9px;box-shadow:0 0 0 2px ${t.swatch[0]}` }) : null,
           on ? el("span", { style: `color:${t.swatch[1]};font-weight:800;font-size:.8rem`, text: "✓" }) : null,
         ].filter(Boolean)),
         el("div", { style: "margin-top:8px;font-weight:700;font-size:.84rem;color:#fff", text: t.name }),

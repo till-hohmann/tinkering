@@ -13,6 +13,9 @@
 // routine player".
 
 export const CHANGELOG = [
+  { v: 220, notes: [
+    "A new theme, Celadon: celadon and gold on deep indigo. Pick it under Profile › Appearance › Theme.",
+  ] },
   { v: 219, notes: [
     "Sheets follow your finger: a quick flick down closes one, a slow pull you stop short lets it settle back, and pulling up past the top gives a little resistance.",
     "The app follows three iPhone accessibility settings: with Reduce Motion on, screens fade instead of sliding; with Reduce Transparency on, cards and bars are solid; with Increase Contrast on, quiet text and edges are easier to see.",
